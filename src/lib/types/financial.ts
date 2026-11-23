@@ -8,12 +8,14 @@ export interface InstrumentSpecification {
   tickSize: number; // e.g. 0.01 for XAUUSD, 0.00001 for EURUSD, 1 for US30
   tickValue: number; // monetary value of 1 tick per 1 lot
   pointValue: number; // monetary value per point per 1 lot
+  lotStep?: number; // e.g. 0.01 for forex/metals, 0.1 or 1 for indices
+  minLot?: number; // e.g. 0.01
   baseCurrency: string;
   quoteCurrency: string;
 }
 
 export type TradeDirection = 'BUY' | 'SELL';
-export type TradeStatus = 'PLANNED' | 'OPEN' | 'CLOSED' | 'CANCELLED';
+export type TradeStatus = 'PLANNED' | 'OPEN' | 'PARTIALLY_CLOSED' | 'CLOSED' | 'CANCELLED' | 'INVALIDATED';
 export type ExecutionType = 'ENTRY' | 'PARTIAL_CLOSE' | 'FULL_CLOSE' | 'SL_HIT' | 'TP_HIT' | 'MANUAL_EXIT';
 
 export interface TradeExecution {
@@ -26,6 +28,8 @@ export interface TradeExecution {
   size: number; // position size (lots/contracts) closed or entered
   commission: number;
   swap: number;
+  fees?: number;
+  slippage?: number;
   realizedPnl: number;
   executionTime: string;
   notes?: string;
@@ -58,20 +62,22 @@ export interface Trade {
   instrumentSymbol: string;
   strategyId?: string;
   strategyName?: string;
+  strategyVersion?: number;
   direction: TradeDirection;
   status: TradeStatus;
+  environment?: 'live' | 'demo' | 'backtest';
   timeframe: string;
   session: 'Asian' | 'London' | 'London Close' | 'New York' | 'Sydney' | 'Off-Hours';
   setupType: string;
   entryPrice: number;
   stopLoss: number;
   takeProfit?: number;
-  plannedRiskUsd: number;
-  plannedRiskPct: number;
-  plannedRr: number;
+  plannedRiskUsd: number; // snapshotted at entry
+  plannedRiskPct: number; // snapshotted at entry
+  plannedRr: number; // snapshotted at entry
   realizedPnl: number;
   netPnl: number;
-  realizedR: number;
+  realizedR: number; // computed against plannedRiskUsd
   totalCommission: number;
   totalSwap: number;
   totalFees: number;
@@ -80,10 +86,17 @@ export interface Trade {
   tradeThesis?: string;
   technicalBias?: string;
   macroBias?: string;
+  macroBiasContext?: {
+    source: string;
+    biasLabel: string;
+    timestamp: string;
+    dataQuality: 'VERIFIED' | 'PRELIMINARY';
+  };
   marketConditions?: string;
   screenshots: string[];
   tags: string[];
   allocations: TradeAllocation[];
+  checklistAnswers?: { [key: string]: boolean };
   isRuleCompliant: boolean;
   createdAt: string;
   updatedAt: string;
@@ -98,6 +111,8 @@ export type AccountType =
   | 'demo'
   | 'custom';
 
+export type AccountStatus = 'active' | 'passed' | 'failed' | 'funded' | 'archived' | 'closed';
+
 export type RuleType = 
   | 'daily_loss_limit'
   | 'max_overall_loss'
@@ -111,7 +126,7 @@ export type RuleType =
   | 'max_consecutive_losses';
 
 export type RuleCalculationMethod = 'balance_based' | 'equity_based' | 'relative_trailing' | 'static';
-export type RuleStatus = 'SAFE' | 'WARNING' | 'BREACHED';
+export type RuleStatus = 'SAFE' | 'WARNING' | 'BREACHED' | 'UNKNOWN';
 
 export interface AccountRule {
   id: string;
@@ -120,12 +135,14 @@ export interface AccountRule {
   thresholdValue: number;
   thresholdUnit: 'currency' | 'percent' | 'count' | 'days';
   calculationMethod: RuleCalculationMethod;
-  warningThresholdPct: number; // e.g. 70 for 70%
+  warningThresholdPct: number; // e.g. 80 for 80% (must be < 100)
   isEnabled: boolean;
   currentStatus: RuleStatus;
   currentMetricValue: number;
   resetFrequency: 'daily' | 'weekly' | 'none';
   applicableTimezone: string;
+  version?: number;
+  effectiveFrom?: string;
 }
 
 export interface RuleEvaluationResult {
@@ -137,6 +154,7 @@ export interface RuleEvaluationResult {
   warningThreshold: number;
   remainingAllowance: number;
   message: string;
+  isDataComplete: boolean;
 }
 
 export interface TradingAccount {
@@ -152,7 +170,9 @@ export interface TradingAccount {
   currentEquity: number;
   highWaterMark: number;
   challengePhase: string;
-  status: 'active' | 'breached' | 'passed' | 'archived';
+  status: AccountStatus;
+  isDemo?: boolean;
+  positionMatchingMode?: 'hedging' | 'netting';
   rules: AccountRule[];
   notes?: string;
   createdAt: string;
@@ -169,11 +189,12 @@ export interface PositionSizingInput {
 }
 
 export interface PositionSizingResult {
-  maxMonetaryRisk: number; // in account currency (e.g. $1000)
-  positionSize: number; // lot size or contract count
-  potentialLoss: number;
+  maxMonetaryRisk: number; // in account currency
+  positionSize: number; // lot size or contract count rounded down to step
+  potentialLoss: number; // actual loss after rounding down
   potentialProfit?: number;
   plannedRr?: number;
   riskPctOfEquity: number;
   tickRisk: number;
+  actualRiskAfterRounding: number;
 }

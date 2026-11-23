@@ -23,7 +23,8 @@ import {
 import {
   calculateTradingStatistics,
   calculateExecutionPnl,
-  evaluateAccountRule
+  evaluateAccountRule,
+  calculateDecisionQualityScore
 } from '../lib/calculations/financialEngine';
 
 interface TradingContextType {
@@ -31,6 +32,8 @@ interface TradingContextType {
   selectedAccountId: string; // 'ALL' or specific account id
   setSelectedAccountId: (id: string) => void;
   selectedAccount: TradingAccount | null;
+  environmentFilter: 'live' | 'demo' | 'backtest' | 'ALL';
+  setEnvironmentFilter: (env: 'live' | 'demo' | 'backtest' | 'ALL') => void;
   trades: Trade[];
   filteredTrades: Trade[];
   strategies: Strategy[];
@@ -71,6 +74,8 @@ interface TradingContextType {
 
   importTrades: (newTrades: Trade[]) => void;
   resetToDemoData: () => void;
+  clearDemoData: () => void;
+  clearAllUserData: () => void;
 
   // Metrics
   portfolioMetrics: ReturnType<typeof calculateTradingStatistics> & {
@@ -86,11 +91,12 @@ interface TradingContextType {
 
 const TradingContext = createContext<TradingContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'edgeledger_v1_store';
+const STORAGE_KEY = 'edgeledger_v2_store';
 
 export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [accounts, setAccounts] = useState<TradingAccount[]>(SEED_ACCOUNTS);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
+  const [environmentFilter, setEnvironmentFilter] = useState<'live' | 'demo' | 'backtest' | 'ALL'>('live');
   const [trades, setTrades] = useState<Trade[]>(SEED_TRADES);
   const [strategies, setStrategies] = useState<Strategy[]>(SEED_STRATEGIES);
   const [instruments] = useState<InstrumentSpecification[]>(SEED_INSTRUMENTS);
@@ -141,13 +147,24 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
     return accounts.find((a) => a.id === selectedAccountId) || null;
   }, [accounts, selectedAccountId]);
 
-  // Trades filtered by selected account
+  // Trades filtered by selected account and environment
   const filteredTrades = useMemo(() => {
-    if (selectedAccountId === 'ALL') return trades;
-    return trades.filter((t) =>
-      t.allocations.some((alloc) => alloc.accountId === selectedAccountId)
-    );
-  }, [trades, selectedAccountId]);
+    let list = trades;
+
+    // Filter by environment (Live by default, unless user selected ALL or specific)
+    if (environmentFilter !== 'ALL') {
+      list = list.filter((t) => (t.environment || 'live') === environmentFilter);
+    }
+
+    // Filter by account
+    if (selectedAccountId !== 'ALL') {
+      list = list.filter((t) =>
+        t.allocations.some((alloc) => alloc.accountId === selectedAccountId)
+      );
+    }
+
+    return list;
+  }, [trades, selectedAccountId, environmentFilter]);
 
   // Portfolio & Account calculations
   const portfolioMetrics = useMemo(() => {
@@ -160,7 +177,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
     let openRisk = 0;
 
     const targetAccounts = selectedAccountId === 'ALL'
-      ? accounts
+      ? accounts.filter((a) => environmentFilter === 'ALL' || (environmentFilter === 'demo' ? a.isDemo : !a.isDemo))
       : accounts.filter((a) => a.id === selectedAccountId);
 
     targetAccounts.forEach((acc) => {
@@ -169,7 +186,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
     });
 
     // Open trades risk
-    const openTrades = relevantTrades.filter((t) => t.status === 'OPEN');
+    const openTrades = relevantTrades.filter((t) => t.status === 'OPEN' || t.status === 'PARTIALLY_CLOSED');
     openTrades.forEach((t) => {
       if (selectedAccountId === 'ALL') {
         openRisk += t.plannedRiskUsd || 0;
@@ -195,7 +212,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
         ? t.netPnl
         : (t.allocations.find((a) => a.accountId === selectedAccountId)?.netPnl || 0);
 
-      if (t.status === 'CLOSED') {
+      if (t.status === 'CLOSED' || t.status === 'PARTIALLY_CLOSED') {
         if (exitDate.toISOString().split('T')[0] === todayStr) {
           todayPnl += pnl;
         }
@@ -227,7 +244,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       monthlyPnl: Math.round(monthlyPnl * 100) / 100,
       maxDrawdownPct: Math.round(maxDrawdownPct * 100) / 100,
     };
-  }, [filteredTrades, accounts, selectedAccountId]);
+  }, [filteredTrades, accounts, selectedAccountId, environmentFilter]);
 
   // Actions
   const addAccount = (accountData: Partial<TradingAccount>) => {
@@ -246,6 +263,8 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       highWaterMark: size,
       challengePhase: accountData.challengePhase || 'Phase 1',
       status: 'active',
+      isDemo: accountData.isDemo ?? false,
+      positionMatchingMode: accountData.positionMatchingMode || 'hedging',
       rules: [
         {
           id: `rule-${Date.now()}-1`,
@@ -254,12 +273,14 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
           thresholdValue: Math.round(size * 0.05),
           thresholdUnit: 'currency',
           calculationMethod: 'equity_based',
-          warningThresholdPct: 70,
+          warningThresholdPct: 80,
           isEnabled: true,
           currentStatus: 'SAFE',
           currentMetricValue: 0,
           resetFrequency: 'daily',
           applicableTimezone: 'UTC',
+          version: 1,
+          effectiveFrom: new Date().toISOString(),
         },
         {
           id: `rule-${Date.now()}-2`,
@@ -274,6 +295,8 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
           currentMetricValue: 0,
           resetFrequency: 'none',
           applicableTimezone: 'UTC',
+          version: 1,
+          effectiveFrom: new Date().toISOString(),
         },
       ],
       notes: accountData.notes || '',
@@ -296,14 +319,12 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
   const addTrade = (tradeData: Partial<Trade>) => {
     const now = new Date().toISOString();
     const tradeId = `tr-${Date.now()}`;
-    const instrument = instruments.find((i) => i.symbol === tradeData.instrumentSymbol) || instruments[0];
-
     const targetAccount = selectedAccount || accounts[0];
     const riskUsd = tradeData.plannedRiskUsd || 500;
     const entryPrice = tradeData.entryPrice || 100;
     const stopLoss = tradeData.stopLoss || 95;
 
-    // Create single or multi-allocation
+    // Snapshot planned risk at entry
     const defaultAllocations: TradeAllocation[] = tradeData.allocations && tradeData.allocations.length > 0
       ? tradeData.allocations.map((a) => ({
           ...a,
@@ -352,15 +373,17 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       instrumentSymbol: tradeData.instrumentSymbol || 'XAUUSD',
       strategyId: tradeData.strategyId,
       strategyName: strategies.find((s) => s.id === tradeData.strategyId)?.name,
+      strategyVersion: tradeData.strategyVersion || 1,
       direction: tradeData.direction || 'BUY',
       status: tradeData.status || 'OPEN',
+      environment: tradeData.environment || 'live',
       timeframe: tradeData.timeframe || '15M',
       session: tradeData.session || 'London',
       setupType: tradeData.setupType || 'Market Structure Shift',
       entryPrice,
       stopLoss,
       takeProfit: tradeData.takeProfit,
-      plannedRiskUsd: riskUsd,
+      plannedRiskUsd: riskUsd, // Snapshotted permanently at entry
       plannedRiskPct: tradeData.plannedRiskPct || 1.0,
       plannedRr: tradeData.plannedRr || 2.0,
       realizedPnl: 0,
@@ -374,31 +397,26 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       tradeThesis: tradeData.tradeThesis || '',
       technicalBias: tradeData.technicalBias || '',
       macroBias: tradeData.macroBias || '',
+      macroBiasContext: tradeData.macroBiasContext,
       marketConditions: tradeData.marketConditions || 'Normal',
       screenshots: tradeData.screenshots || [],
       tags: tradeData.tags || ['Execution'],
       allocations: defaultAllocations,
+      checklistAnswers: tradeData.checklistAnswers || {},
       isRuleCompliant: tradeData.isRuleCompliant ?? true,
       createdAt: now,
       updatedAt: now,
     };
 
     setTrades((prev) => [newTrade, ...prev]);
-
-    // Update account risk metrics and open positions
-    setAccounts((prev) =>
-      prev.map((acc) => {
-        const alloc = defaultAllocations.find((a) => a.accountId === acc.id);
-        if (!alloc) return acc;
-        return {
-          ...acc,
-          updatedAt: now,
-        };
-      })
-    );
   };
 
   const updateTrade = (updated: Trade) => {
+    // Validates that closed trade cannot reopen
+    const existing = trades.find((t) => t.id === updated.id);
+    if (existing && existing.status === 'CLOSED' && updated.status !== 'CLOSED') {
+      throw new Error('A closed trade cannot be reopened. Record a new trade execution instead.');
+    }
     setTrades((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
   };
 
@@ -454,7 +472,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       const newRealizedPnl = alloc.realizedPnl + pnlResult.grossPnl;
       const newNetPnl = alloc.netPnl + pnlResult.netPnl;
 
-      // Update account balance and equity
+      // Update account balance and equity in ledger
       setAccounts((prevAccs) =>
         prevAccs.map((acc) => {
           if (acc.id !== alloc.accountId) return acc;
@@ -479,7 +497,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
         commission: alloc.commission + commission,
         swap: alloc.swap + swap,
         exitPrice: closePrice,
-        status: isFullyClosed ? ('CLOSED' as const) : ('OPEN' as const),
+        status: isFullyClosed ? ('CLOSED' as const) : ('PARTIALLY_CLOSED' as const),
         executions: [...alloc.executions, newExec],
       };
     });
@@ -493,10 +511,11 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       allocations: updatedAllocations,
       realizedPnl: Math.round(totalGrossPnl * 100) / 100,
       netPnl: Math.round(totalNetPnl * 100) / 100,
+      // R-multiple computed against snapshotted plannedRiskUsd
       realizedR: trade.plannedRiskUsd > 0
         ? Math.round((totalNetPnl / trade.plannedRiskUsd) * 100) / 100
         : 0,
-      status: allAllocationsClosed ? 'CLOSED' : 'OPEN',
+      status: allAllocationsClosed ? 'CLOSED' : 'PARTIALLY_CLOSED',
       exitTime: allAllocationsClosed ? now : trade.exitTime,
       updatedAt: now,
     };
@@ -518,6 +537,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       targetMethodology: strategyData.targetMethodology || '',
       riskRules: strategyData.riskRules || '',
       checklistItems: strategyData.checklistItems || ['Confirm bias', 'Check risk limit'],
+      currentVersion: 1,
       isActive: true,
       createdAt: new Date().toISOString(),
     };
@@ -533,6 +553,21 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const addJournalEntry = (entryData: Partial<JournalEntry>) => {
+    const prep = entryData.preparationScore ?? 8;
+    const disc = entryData.disciplineScore ?? 8;
+    const exec = entryData.executionScore ?? 8;
+    const rm = entryData.riskManagementScore ?? 8;
+    const ec = entryData.emotionalControlScore ?? 8;
+
+    // Calculate decision quality score independent of outcome
+    const dqScore = calculateDecisionQualityScore({
+      discipline: disc,
+      riskManagement: rm,
+      execution: exec,
+      preparation: prep,
+      emotionalControl: ec,
+    });
+
     const newEntry: JournalEntry = {
       id: `j-${entryData.entryDate || new Date().toISOString().split('T')[0]}`,
       entryDate: entryData.entryDate || new Date().toISOString().split('T')[0],
@@ -545,15 +580,19 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       emotionalState: entryData.emotionalState || 'Disciplined',
       dailySummary: entryData.dailySummary || '',
       lessonsLearned: entryData.lessonsLearned || '',
-      disciplineScore: entryData.disciplineScore ?? 8,
-      preparationScore: entryData.preparationScore ?? 8,
-      executionScore: entryData.executionScore ?? 8,
+      disciplineScore: disc,
+      preparationScore: prep,
+      executionScore: exec,
+      riskManagementScore: rm,
+      emotionalControlScore: ec,
+      decisionQualityScore: dqScore,
       fomoDetected: entryData.fomoDetected ?? false,
       revengeTrading: entryData.revengeTrading ?? false,
       overtrading: entryData.overtrading ?? false,
       movedStopLoss: entryData.movedStopLoss ?? false,
       prematureExit: entryData.prematureExit ?? false,
       ignoredRules: entryData.ignoredRules ?? false,
+      isLocked: false,
     };
     setJournalEntries((prev) => [newEntry, ...prev]);
   };
@@ -586,12 +625,14 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       thresholdValue: ruleData.thresholdValue || 1000,
       thresholdUnit: ruleData.thresholdUnit || 'currency',
       calculationMethod: ruleData.calculationMethod || 'balance_based',
-      warningThresholdPct: ruleData.warningThresholdPct || 70,
+      warningThresholdPct: ruleData.warningThresholdPct || 80,
       isEnabled: true,
       currentStatus: 'SAFE',
       currentMetricValue: 0,
       resetFrequency: ruleData.resetFrequency || 'daily',
       applicableTimezone: 'UTC',
+      version: 1,
+      effectiveFrom: new Date().toISOString(),
     };
 
     setAccounts((prev) =>
@@ -620,7 +661,10 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const importTrades = (newTrades: Trade[]) => {
-    setTrades((prev) => [...newTrades, ...prev]);
+    // Idempotent deduplication: filter out any trades whose id or signature already exists
+    const existingIds = new Set(trades.map((t) => t.id));
+    const uniqueNew = newTrades.filter((t) => !existingIds.has(t.id));
+    setTrades((prev) => [...uniqueNew, ...prev]);
   };
 
   const resetToDemoData = () => {
@@ -629,6 +673,28 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
     setStrategies(SEED_STRATEGIES);
     setJournalEntries(SEED_JOURNAL);
     setRiskAlerts(SEED_ALERTS);
+    setSelectedAccountId('ALL');
+    setEnvironmentFilter('live');
+    localStorage.removeItem(STORAGE_KEY);
+  };
+
+  const clearDemoData = () => {
+    // Remove all demo accounts and their associated trades
+    const demoAccountIds = new Set(accounts.filter((a) => a.isDemo).map((a) => a.id));
+    setAccounts((prev) => prev.filter((a) => !a.isDemo));
+    setTrades((prev) =>
+      prev.filter((t) => !t.allocations.some((a) => demoAccountIds.has(a.accountId)) && t.environment !== 'demo')
+    );
+    if (demoAccountIds.has(selectedAccountId)) {
+      setSelectedAccountId('ALL');
+    }
+  };
+
+  const clearAllUserData = () => {
+    setAccounts([]);
+    setTrades([]);
+    setJournalEntries([]);
+    setRiskAlerts([]);
     setSelectedAccountId('ALL');
     localStorage.removeItem(STORAGE_KEY);
   };
@@ -640,6 +706,8 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
         selectedAccountId,
         setSelectedAccountId,
         selectedAccount,
+        environmentFilter,
+        setEnvironmentFilter,
         trades,
         filteredTrades,
         strategies,
@@ -665,6 +733,8 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
         toggleRule,
         importTrades,
         resetToDemoData,
+        clearDemoData,
+        clearAllUserData,
         portfolioMetrics,
       }}
     >

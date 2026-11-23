@@ -18,12 +18,14 @@ interface HeaderProps {
   onOpenQuickTrade: () => void;
   onOpenAlerts: () => void;
   onOpenNewAccount: () => void;
+  onOpenCommandPalette?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenQuickTrade,
   onOpenAlerts,
-  onOpenNewAccount
+  onOpenNewAccount,
+  onOpenCommandPalette
 }) => {
   const {
     accounts,
@@ -193,6 +195,19 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right Controls: Quick Trade, Alerts, Demo Reset */}
       <div className="flex items-center space-x-2.5">
+        {onOpenCommandPalette && (
+          <button
+            onClick={onOpenCommandPalette}
+            className="hidden md:flex items-center space-x-1.5 text-[11px] font-mono text-edge-text-secondary hover:text-white px-2.5 py-1.5 rounded bg-edge-surface-secondary/60 hover:bg-edge-surface-secondary border border-edge-border transition-colors"
+            title="Open Command Palette (Cmd/Ctrl + K)"
+          >
+            <span>Command</span>
+            <kbd className="px-1 py-0.5 rounded bg-edge-surface border border-edge-border text-[9px] text-edge-accent">
+              ⌘K
+            </kbd>
+          </button>
+        )}
+
         <button
           onClick={resetToDemoData}
           className="hidden md:flex items-center space-x-1 text-[11px] font-mono text-edge-text-muted hover:text-white px-2 py-1 rounded hover:bg-edge-surface-secondary border border-transparent hover:border-edge-border transition-colors"

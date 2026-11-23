@@ -20,6 +20,7 @@ export interface Strategy {
   targetMethodology: string;
   riskRules: string;
   checklistItems: string[];
+  currentVersion: number;
   isActive: boolean;
   createdAt: string;
 }
@@ -39,12 +40,16 @@ export interface JournalEntry {
   disciplineScore: number; // 1-10
   preparationScore: number; // 1-10
   executionScore: number; // 1-10
+  riskManagementScore?: number; // 1-10
+  emotionalControlScore?: number; // 1-10
+  decisionQualityScore?: number; // 1-10 (calculated)
   fomoDetected: boolean;
   revengeTrading: boolean;
   overtrading: boolean;
   movedStopLoss: boolean;
   prematureExit: boolean;
   ignoredRules: boolean;
+  isLocked?: boolean;
 }
 
 export interface RiskAlert {
@@ -68,6 +73,8 @@ export const SEED_INSTRUMENTS: InstrumentSpecification[] = [
     tickSize: 0.01,
     tickValue: 1.0,
     pointValue: 100.0,
+    lotStep: 0.01,
+    minLot: 0.01,
     baseCurrency: 'XAU',
     quoteCurrency: 'USD'
   },
@@ -79,6 +86,8 @@ export const SEED_INSTRUMENTS: InstrumentSpecification[] = [
     tickSize: 1.0,
     tickValue: 1.0,
     pointValue: 1.0,
+    lotStep: 1.0,
+    minLot: 1.0,
     baseCurrency: 'USD',
     quoteCurrency: 'USD'
   },
@@ -90,6 +99,8 @@ export const SEED_INSTRUMENTS: InstrumentSpecification[] = [
     tickSize: 0.1,
     tickValue: 0.1,
     pointValue: 1.0,
+    lotStep: 0.1,
+    minLot: 0.1,
     baseCurrency: 'USD',
     quoteCurrency: 'USD'
   },
@@ -101,6 +112,8 @@ export const SEED_INSTRUMENTS: InstrumentSpecification[] = [
     tickSize: 0.25,
     tickValue: 0.25,
     pointValue: 1.0,
+    lotStep: 0.1,
+    minLot: 0.1,
     baseCurrency: 'USD',
     quoteCurrency: 'USD'
   },
@@ -112,6 +125,8 @@ export const SEED_INSTRUMENTS: InstrumentSpecification[] = [
     tickSize: 0.00001,
     tickValue: 1.0,
     pointValue: 100000.0,
+    lotStep: 0.01,
+    minLot: 0.01,
     baseCurrency: 'EUR',
     quoteCurrency: 'USD'
   },
@@ -123,6 +138,8 @@ export const SEED_INSTRUMENTS: InstrumentSpecification[] = [
     tickSize: 0.00001,
     tickValue: 1.0,
     pointValue: 100000.0,
+    lotStep: 0.01,
+    minLot: 0.01,
     baseCurrency: 'GBP',
     quoteCurrency: 'USD'
   },
@@ -134,6 +151,8 @@ export const SEED_INSTRUMENTS: InstrumentSpecification[] = [
     tickSize: 0.5,
     tickValue: 0.5,
     pointValue: 1.0,
+    lotStep: 0.01,
+    minLot: 0.01,
     baseCurrency: 'BTC',
     quoteCurrency: 'USD'
   },
@@ -145,6 +164,8 @@ export const SEED_INSTRUMENTS: InstrumentSpecification[] = [
     tickSize: 0.01,
     tickValue: 10.0,
     pointValue: 1000.0,
+    lotStep: 0.01,
+    minLot: 0.01,
     baseCurrency: 'USD',
     quoteCurrency: 'USD'
   }
@@ -165,6 +186,8 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
     highWaterMark: 106800,
     challengePhase: 'Funded Live',
     status: 'active',
+    isDemo: false,
+    positionMatchingMode: 'hedging',
     notes: 'Max trailing drawdown is $5,000 based on intraday peak equity. Enforce $4,000 warning threshold.',
     createdAt: '2024-01-10T08:00:00Z',
     updatedAt: '2024-03-20T16:00:00Z',
@@ -176,7 +199,7 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
         thresholdValue: 2500,
         thresholdUnit: 'currency',
         calculationMethod: 'equity_based',
-        warningThresholdPct: 70,
+        warningThresholdPct: 80,
         isEnabled: true,
         currentStatus: 'SAFE',
         currentMetricValue: 420,
@@ -190,10 +213,10 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
         thresholdValue: 5000,
         thresholdUnit: 'currency',
         calculationMethod: 'relative_trailing',
-        warningThresholdPct: 75,
+        warningThresholdPct: 80,
         isEnabled: true,
         currentStatus: 'SAFE',
-        currentMetricValue: 1380, // High water mark 106800 - 105420 = 1380
+        currentMetricValue: 1380, // HWM 106800 - 105420 = 1380
         resetFrequency: 'none',
         applicableTimezone: 'America/New_York'
       },
@@ -227,6 +250,8 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
     highWaterMark: 53280,
     challengePhase: 'Phase 1 ($5,000 Target)',
     status: 'active',
+    isDemo: false,
+    positionMatchingMode: 'hedging',
     notes: 'Aiming for 10% profit target ($5,000). Max daily loss $2,500, max total loss $5,000.',
     createdAt: '2024-02-01T08:00:00Z',
     updatedAt: '2024-03-20T16:00:00Z',
@@ -238,7 +263,7 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
         thresholdValue: 2500,
         thresholdUnit: 'currency',
         calculationMethod: 'balance_based',
-        warningThresholdPct: 70,
+        warningThresholdPct: 80,
         isEnabled: true,
         currentStatus: 'SAFE',
         currentMetricValue: 650,
@@ -266,10 +291,10 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
         thresholdValue: 5000,
         thresholdUnit: 'currency',
         calculationMethod: 'static',
-        warningThresholdPct: 100,
+        warningThresholdPct: 90,
         isEnabled: true,
         currentStatus: 'SAFE',
-        currentMetricValue: 3280, // $3280 reached of $5000 (65.6%)
+        currentMetricValue: 3280, // $3280 reached of $5000
         resetFrequency: 'none',
         applicableTimezone: 'Europe/Prague'
       }
@@ -289,6 +314,8 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
     highWaterMark: 27150,
     challengePhase: 'Personal Capital',
     status: 'active',
+    isDemo: false,
+    positionMatchingMode: 'hedging',
     notes: 'Personal live discretionary swing and intraday account with institutional cTrader execution.',
     createdAt: '2023-11-15T08:00:00Z',
     updatedAt: '2024-03-20T16:00:00Z',
@@ -300,7 +327,7 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
         thresholdValue: 1000,
         thresholdUnit: 'currency',
         calculationMethod: 'balance_based',
-        warningThresholdPct: 75,
+        warningThresholdPct: 80,
         isEnabled: true,
         currentStatus: 'SAFE',
         currentMetricValue: 120,
@@ -345,6 +372,7 @@ export const SEED_STRATEGIES: Strategy[] = [
       'Entry limit set at 50% discount of FVG',
       'Stop loss placed beyond sweep high/low'
     ],
+    currentVersion: 1,
     isActive: true,
     createdAt: '2024-01-05T10:00:00Z'
   },
@@ -367,6 +395,7 @@ export const SEED_STRATEGIES: Strategy[] = [
       'Reward to risk ratio is at least 2:1',
       'No pending red folder news in next 30 minutes'
     ],
+    currentVersion: 1,
     isActive: true,
     createdAt: '2024-01-12T10:00:00Z'
   },
@@ -388,6 +417,7 @@ export const SEED_STRATEGIES: Strategy[] = [
       'Confluence with 61.8% or 78.6% OTE Fib level',
       'Volume expansion on initial impulse'
     ],
+    currentVersion: 1,
     isActive: true,
     createdAt: '2024-01-18T10:00:00Z'
   }
@@ -400,14 +430,16 @@ export const SEED_TRADES: Trade[] = [
     instrumentSymbol: 'XAUUSD',
     strategyId: 'strat-london-sweep',
     strategyName: 'London Liquidity Sweep & Reversal',
+    strategyVersion: 1,
     direction: 'BUY',
     status: 'CLOSED',
+    environment: 'live',
     timeframe: '15M',
     session: 'London',
     setupType: 'Asian Low Sweep + FVG',
     entryPrice: 2685.50,
-    stopLoss: 2677.50, // 8.00 distance = 800 ticks
-    takeProfit: 2709.50, // 24.00 distance = 3.0R
+    stopLoss: 2677.50,
+    takeProfit: 2709.50,
     plannedRiskUsd: 1000,
     plannedRiskPct: 1.0,
     plannedRr: 3.0,
@@ -422,6 +454,12 @@ export const SEED_TRADES: Trade[] = [
     tradeThesis: 'Gold swept Asian lows at 2680 during 08:00 London open, followed by explosive 5M bullish displacement.',
     technicalBias: 'Bullish HTF daily orderflow with unmitigated 4H fair value gap above at 2715.',
     macroBias: 'US Dollar weakness ahead of CPI data release.',
+    macroBiasContext: {
+      source: 'Macro Data Terminal',
+      biasLabel: 'Bearish USD / Bullish Metals',
+      timestamp: '2024-03-18T07:30:00Z',
+      dataQuality: 'VERIFIED'
+    },
     marketConditions: 'Clean trend, high London session liquidity.',
     screenshots: [],
     tags: ['A+ Setup', 'London Open', 'Gold', 'Partial Exit'],
@@ -500,14 +538,16 @@ export const SEED_TRADES: Trade[] = [
     instrumentSymbol: 'US30',
     strategyId: 'strat-ny-fvg',
     strategyName: 'NY Session FVG Continuation',
+    strategyVersion: 1,
     direction: 'SELL',
     status: 'CLOSED',
+    environment: 'live',
     timeframe: '5M',
     session: 'New York',
     setupType: 'Displacement Breakout',
     entryPrice: 43850,
-    stopLoss: 43950, // 100 pt stop
-    takeProfit: 43600, // 250 pt target = 2.5R
+    stopLoss: 43950,
+    takeProfit: 43600,
     plannedRiskUsd: 500,
     plannedRiskPct: 1.0,
     plannedRr: 2.5,
@@ -584,14 +624,16 @@ export const SEED_TRADES: Trade[] = [
     instrumentSymbol: 'EURUSD',
     strategyId: 'strat-london-sweep',
     strategyName: 'London Liquidity Sweep & Reversal',
+    strategyVersion: 1,
     direction: 'BUY',
     status: 'CLOSED',
+    environment: 'live',
     timeframe: '15M',
     session: 'London',
     setupType: 'Liquidity Grab',
     entryPrice: 1.08250,
-    stopLoss: 1.08100, // 15 pips stop
-    takeProfit: 1.08650, // 40 pips target
+    stopLoss: 1.08100,
+    takeProfit: 1.08650,
     plannedRiskUsd: 300,
     plannedRiskPct: 0.6,
     plannedRr: 2.67,
@@ -609,7 +651,7 @@ export const SEED_TRADES: Trade[] = [
     marketConditions: 'Choppy conditions before London session open.',
     screenshots: [],
     tags: ['Loss', 'EURUSD', 'Front-Run'],
-    isRuleCompliant: false, // Rule note: front-run entry before MSS confirmed
+    isRuleCompliant: false,
     createdAt: '2024-03-19T07:45:00Z',
     updatedAt: '2024-03-19T08:20:00Z',
     allocations: [
@@ -668,14 +710,16 @@ export const SEED_TRADES: Trade[] = [
     instrumentSymbol: 'BTCUSD',
     strategyId: 'strat-htf-orderflow',
     strategyName: 'HTF Orderflow & Orderblock Retest',
+    strategyVersion: 1,
     direction: 'BUY',
     status: 'CLOSED',
+    environment: 'live',
     timeframe: '1H',
     session: 'New York',
     setupType: '4H Orderblock Tap',
     entryPrice: 65200,
-    stopLoss: 64100, // $1,100 stop
-    takeProfit: 68500, // $3,300 target = 3.0R
+    stopLoss: 64100,
+    takeProfit: 68500,
     plannedRiskUsd: 1100,
     plannedRiskPct: 1.1,
     plannedRr: 3.0,
@@ -752,14 +796,16 @@ export const SEED_TRADES: Trade[] = [
     instrumentSymbol: 'XAUUSD',
     strategyId: 'strat-london-sweep',
     strategyName: 'London Liquidity Sweep & Reversal',
+    strategyVersion: 1,
     direction: 'SELL',
     status: 'OPEN',
+    environment: 'live',
     timeframe: '15M',
     session: 'London',
     setupType: 'Asian High Sweep',
     entryPrice: 2712.00,
-    stopLoss: 2718.00, // $6.00 stop = 600 ticks
-    takeProfit: 2694.00, // $18.00 target = 3.0R
+    stopLoss: 2718.00,
+    takeProfit: 2694.00,
     plannedRiskUsd: 600,
     plannedRiskPct: 0.6,
     plannedRr: 3.0,
@@ -834,12 +880,16 @@ export const SEED_JOURNAL: JournalEntry[] = [
     disciplineScore: 10,
     preparationScore: 9,
     executionScore: 10,
+    riskManagementScore: 10,
+    emotionalControlScore: 9,
+    decisionQualityScore: 10,
     fomoDetected: false,
     revengeTrading: false,
     overtrading: false,
     movedStopLoss: false,
     prematureExit: false,
-    ignoredRules: false
+    ignoredRules: false,
+    isLocked: true
   },
   {
     id: 'j-2024-03-19',
@@ -853,15 +903,19 @@ export const SEED_JOURNAL: JournalEntry[] = [
     emotionalState: 'Frustrated',
     dailySummary: 'Violated checklist on EURUSD by front-running the signal. Lost $314. Recovered on BTC swing with $3,270 profit.',
     lessonsLearned: 'Even though net PnL ended very green, the EURUSD trade was poor discipline. Profit does not validate rule breaks.',
-    disciplineScore: 6,
+    disciplineScore: 5,
     preparationScore: 7,
     executionScore: 6,
+    riskManagementScore: 7,
+    emotionalControlScore: 5,
+    decisionQualityScore: 6,
     fomoDetected: true,
     revengeTrading: false,
     overtrading: false,
     movedStopLoss: false,
     prematureExit: false,
-    ignoredRules: true
+    ignoredRules: true,
+    isLocked: true
   },
   {
     id: 'j-2024-03-20',
@@ -878,12 +932,16 @@ export const SEED_JOURNAL: JournalEntry[] = [
     disciplineScore: 9,
     preparationScore: 9,
     executionScore: 8,
+    riskManagementScore: 9,
+    emotionalControlScore: 9,
+    decisionQualityScore: 9,
     fomoDetected: false,
     revengeTrading: false,
     overtrading: false,
     movedStopLoss: false,
     prematureExit: false,
-    ignoredRules: false
+    ignoredRules: false,
+    isLocked: false
   }
 ];
 
