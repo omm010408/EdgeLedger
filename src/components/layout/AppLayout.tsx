@@ -1,13 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, ReactNode } from 'react';
-import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { QuickTradeModal } from '../modals/QuickTradeModal';
 import { NewAccountModal } from '../modals/NewAccountModal';
 import { RiskAlertsDrawer } from '../modals/RiskAlertsDrawer';
 import { CommandPalette } from './CommandPalette';
-import { ShieldCheck } from 'lucide-react';
 
 export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [quickTradeOpen, setQuickTradeOpen] = useState(false);
@@ -28,43 +26,42 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-edge-bg text-edge-text-primary flex">
-      {/* Sidebar */}
-      <Sidebar onOpenQuickTrade={() => setQuickTradeOpen(true)} />
+    <div className="min-h-screen w-full bg-[#050A0B] text-white flex flex-col font-sans selection:bg-[#9BF3DF] selection:text-[#03211C]">
+      {/* 1. Tidewater Full-View Header with Horizontal Primary Navigation */}
+      <Header
+        onOpenQuickTrade={() => setQuickTradeOpen(true)}
+        onOpenAlerts={() => setAlertsOpen(true)}
+        onOpenNewAccount={() => setNewAccountOpen(true)}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+      />
 
-      {/* Main Content Area */}
-      <div className="flex-1 ml-16 md:ml-60 flex flex-col min-h-screen transition-all duration-300">
-        <Header
-          onOpenQuickTrade={() => setQuickTradeOpen(true)}
-          onOpenAlerts={() => setAlertsOpen(true)}
-          onOpenNewAccount={() => setNewAccountOpen(true)}
-          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-        />
+      {/* 2. Full-View Main Canvas */}
+      <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-8 py-6 overflow-x-hidden">
+        {children}
+      </main>
 
-        <main className="flex-1 p-4 md:p-6 overflow-x-hidden">
-          {children}
-        </main>
-
-        {/* Institutional Regulatory & Risk Disclaimer Footer */}
-        <footer className="p-4 border-t border-edge-border/50 bg-edge-surface/50 text-[11px] font-mono text-edge-text-muted">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
-            <div className="flex items-center space-x-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-edge-accent shrink-0" />
-              <p className="font-sans text-[11px] text-edge-text-secondary">
-                <span className="font-mono font-bold text-white uppercase mr-1">DISCLAIMER:</span>
-                EDGELEDGER is a trading management and risk analytics tool. It does not provide financial, tax, or legal advice, nor does it guarantee compliance with third-party prop-firm terms.
-              </p>
-            </div>
-            <div className="shrink-0 flex items-center space-x-3 text-[10px] text-edge-text-muted">
-              <span>Press <kbd className="px-1.5 py-0.5 rounded bg-edge-surface-secondary border border-edge-border text-edge-accent">⌘K</kbd> for command palette</span>
-              <span>•</span>
-              <span>v1.2.0 Institutional</span>
-            </div>
+      {/* 3. Institutional Regulatory & Risk Disclaimer Footer */}
+      <footer className="w-full py-5 px-4 sm:px-8 border-t border-[#34544F] bg-[#0B1415]/60 text-xs font-mono text-[#A9C1BD]">
+        <div className="max-w-[1600px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+          <div className="flex items-center space-x-2">
+            <span
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{ background: 'var(--tw-hero-line)' }}
+            />
+            <p className="font-sans text-xs text-[#CFE2DE]">
+              <span className="font-mono font-bold text-white uppercase mr-1">DISCLAIMER:</span>
+              EDGELEDGER is a quantitative trading performance intelligence and record-keeping tool. It does not provide investment, financial, legal, or tax advice, nor does it guarantee compliance with third-party prop-firm terms.
+            </p>
           </div>
-        </footer>
-      </div>
+          <div className="shrink-0 flex items-center space-x-3 text-[11px] text-[#A9C1BD]">
+            <span>Press <kbd className="px-1.5 py-0.5 rounded-md bg-[#13211F] border border-[#34544F] text-[#9BF3DF] font-mono">⌘K</kbd> for command palette</span>
+            <span>•</span>
+            <span>v1.3.0 Institutional Bento</span>
+          </div>
+        </div>
+      </footer>
 
-      {/* Global Modals & Command Palette */}
+      {/* 4. Global Modals & Command Palette */}
       <CommandPalette
         isOpen={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
