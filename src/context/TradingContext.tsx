@@ -34,6 +34,8 @@ interface TradingContextType {
   selectedAccountId: string; // 'ALL' or specific account id
   setSelectedAccountId: (id: string) => void;
   selectedAccount: TradingAccount | null;
+  periodFilter: 'Week' | 'Month' | 'All time';
+  setPeriodFilter: (p: 'Week' | 'Month' | 'All time') => void;
   environmentFilter: 'live' | 'demo' | 'backtest' | 'ALL';
   setEnvironmentFilter: (env: 'live' | 'demo' | 'backtest' | 'ALL') => void;
   trades: Trade[];
@@ -101,6 +103,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
     appConfig.app.enableDemoData ? SEED_ACCOUNTS : []
   );
   const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
+  const [periodFilter, setPeriodFilter] = useState<'Week' | 'Month' | 'All time'>('Week');
   const [environmentFilter, setEnvironmentFilter] = useState<'live' | 'demo' | 'backtest' | 'ALL'>('live');
   const [trades, setTrades] = useState<Trade[]>(() =>
     appConfig.app.enableDemoData ? SEED_TRADES : []
@@ -720,6 +723,8 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
         selectedAccountId,
         setSelectedAccountId,
         selectedAccount,
+        periodFilter,
+        setPeriodFilter,
         environmentFilter,
         setEnvironmentFilter,
         trades,
