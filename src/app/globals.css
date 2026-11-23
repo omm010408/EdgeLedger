@@ -96,3 +96,86 @@ body {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+
+/* Bento Tidewater Design System Tokens & Classes */
+:root {
+  --tw-bg: #050A0B;
+  --tw-tile: #0B1415;
+  --tw-line: #34544F;
+  --tw-line-strong: #4F7470;
+  --tw-ink: #FFFFFF;
+  --tw-ink-2: #CFE2DE;
+  --tw-ink-3: #A9C1BD;
+  --tw-pill: #13211F;
+  --tw-track: #1A2D2B;
+  --tw-ring-track: #243F3C;
+  --tw-ring-empty: #6E8B86;
+  --tw-hero: #0A4D4C;
+  --tw-hero-ink: #FFFFFF;
+  --tw-hero-2: #CFEEE6;
+  --tw-hero-line: #9BF3DF;
+  --tw-hero-rule: rgba(255, 255, 255, 0.24);
+  --tw-hero-chip: rgba(155, 243, 223, 0.18);
+  --tw-sun: #FFD56B;
+  --tw-sun-ink: #0A0800;
+  --tw-sun-disc: #FFE595;
+  --tw-aqua: #8FEBD3;
+  --tw-aqua-ink: #03211C;
+  --tw-aqua-chip: #E9FBF5;
+  --tw-gain: #5BE6AE;
+  --tw-loss: #FF8F80;
+  --tw-warn: #FFB86B;
+  --tw-warn-bg: rgba(255, 184, 107, 0.12);
+  --tw-warn-line: rgba(255, 184, 107, 0.6);
+  --tw-s1: #3987E5;
+  --tw-s2: #D95926;
+  --tw-s3: #9085E9;
+  --tw-buy-bg: #16365F;
+  --tw-buy-ink: #9CC8FF;
+  --tw-sell-bg: #1A2D2B;
+  --tw-sell-ink: #E6F2EF;
+  --tw-wave: #0E1D1E;
+  --tw-ripple: #17302D;
+}
+
+.bento-tile {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 24px;
+  border-radius: 32px;
+  background: var(--tw-tile);
+  border: 1px solid var(--tw-line);
+}
+
+.bento-tip-wrapper {
+  position: relative;
+}
+
+.bento-tip-wrapper .bento-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translate(-50%, 4px);
+  min-width: 176px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #FFFFFF;
+  color: #0B1415;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 30;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+.bento-tip-wrapper:hover .bento-tip,
+.bento-tip-wrapper:focus-within .bento-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
