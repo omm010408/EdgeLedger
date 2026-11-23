@@ -16,7 +16,7 @@ import {
   ShieldCheck,
   RefreshCw
 } from 'lucide-react';
-import { isSupabaseConfigured } from '../../lib/supabase/client';
+import { isSupabaseConfigured, getSupabaseDetails, testSupabaseConnection } from '../../lib/supabase/client';
 
 export default function SettingsPage() {
   const {
@@ -29,6 +29,30 @@ export default function SettingsPage() {
 
   const [activeTab, setActiveTab] = useState<'DATABASE' | 'INTEGRATIONS' | 'INSTRUMENTS' | 'BACKUP'>('DATABASE');
   const [webhookUrl] = useState(`https://edgeledger.terminal/api/v1/webhooks/tradingview/${Date.now().toString().slice(-8)}`);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionResult, setConnectionResult] = useState<{
+    success: boolean;
+    message: string;
+    latencyMs?: number;
+  } | null>(null);
+
+  const envDetails = getSupabaseDetails();
+
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    setConnectionResult(null);
+    try {
+      const res = await testSupabaseConnection();
+      setConnectionResult(res);
+    } catch (err: any) {
+      setConnectionResult({
+        success: false,
+        message: err?.message || 'Connection test threw an unexpected error',
+      });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
 
   // JSON export of entire trading state
   const handleExportFullState = () => {
@@ -93,58 +117,173 @@ export default function SettingsPage() {
         })}
       </div>
 
-      {/* 1. Database & Cloud */}
+      {/* 1. Database & Cloud (.env.local Configuration) */}
       {activeTab === 'DATABASE' && (
         <div className="space-y-4">
-          <div className="p-4 rounded-lg border border-edge-border bg-edge-surface space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-edge-border">
+          {/* Supabase Status Card */}
+          <div className="p-4 rounded-lg border border-edge-border bg-edge-surface space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-edge-border">
               <div className="flex items-center space-x-2">
                 <Cloud size={16} className="text-edge-accent" />
-                <h3 className="font-bold text-white uppercase">SUPABASE DATABASE LAYER</h3>
+                <h3 className="font-bold text-white uppercase">SUPABASE DATABASE & ENVIRONMENT LAYER</h3>
               </div>
-              <span
-                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                  isSupabaseConfigured
-                    ? 'bg-edge-profit/20 text-edge-profit border border-edge-profit/30'
-                    : 'bg-edge-accent/20 text-edge-accent border border-edge-accent/30'
-                }`}
-              >
-                {isSupabaseConfigured ? 'LIVE CLOUD CONNECTED' : 'LOCAL PERSISTENT STORE ACTIVE'}
-              </span>
+              <div className="flex items-center space-x-2">
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    isSupabaseConfigured
+                      ? 'bg-edge-profit/20 text-edge-profit border border-edge-profit/30'
+                      : 'bg-edge-accent/20 text-edge-accent border border-edge-accent/30'
+                  }`}
+                >
+                  {isSupabaseConfigured ? 'LIVE CLOUD CONNECTED' : 'LOCAL PERSISTENT STORE ACTIVE'}
+                </span>
+                <button
+                  onClick={handleTestConnection}
+                  disabled={testingConnection}
+                  className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-edge-surface-secondary border border-edge-border hover:border-edge-accent text-white hover:text-edge-accent transition-colors disabled:opacity-50 text-[10px]"
+                >
+                  <RefreshCw size={11} className={testingConnection ? 'animate-spin' : ''} />
+                  <span>{testingConnection ? 'Testing...' : 'Test Connection'}</span>
+                </button>
+              </div>
             </div>
 
+            {/* Live Connection Test Banner */}
+            {connectionResult && (
+              <div
+                className={`p-3 rounded border text-[11px] flex items-start space-x-2 ${
+                  connectionResult.success
+                    ? 'bg-edge-profit/10 border-edge-profit/30 text-edge-profit'
+                    : 'bg-edge-loss/10 border-edge-loss/30 text-edge-loss'
+                }`}
+              >
+                {connectionResult.success ? (
+                  <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                )}
+                <div className="space-y-0.5">
+                  <div className="font-bold">
+                    {connectionResult.success ? 'Connection Validated' : 'Connection Notice'}
+                    {connectionResult.latencyMs && (
+                      <span className="font-normal opacity-80 text-[10px] ml-2">
+                        ({connectionResult.latencyMs}ms latency)
+                      </span>
+                    )}
+                  </div>
+                  <p className="font-sans leading-relaxed text-[11px] text-white">
+                    {connectionResult.message}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <p className="text-edge-text-secondary font-sans leading-relaxed text-[11px]">
-              EdgeLedger operates using an enterprise PostgreSQL architecture with Row Level Security (RLS). You can attach your production Supabase project via environment variables or run with seamless local storage.
+              EdgeLedger operates using an enterprise PostgreSQL architecture with Row Level Security (RLS). Configuration values are loaded from <code className="text-edge-accent bg-black/40 px-1 py-0.5 rounded">.env.local</code>. When credentials are provided, EdgeLedger connects directly to your cloud PostgreSQL database; otherwise, it persists state locally with zero data loss.
             </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+            {/* Active .env.local Parameters Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
               <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
                 <span className="text-[10px] text-edge-text-muted uppercase block">
                   NEXT_PUBLIC_SUPABASE_URL
                 </span>
-                <span className="text-white truncate block">
-                  {process.env.NEXT_PUBLIC_SUPABASE_URL || 'Not specified (Using Local Store)'}
+                <span className="text-white truncate block text-[11px]" title={envDetails.url}>
+                  {envDetails.url}
                 </span>
               </div>
 
               <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
                 <span className="text-[10px] text-edge-text-muted uppercase block">
-                  ROW LEVEL SECURITY STATUS
+                  SUPABASE ANON KEY
                 </span>
-                <span className="text-edge-profit font-semibold flex items-center space-x-1">
-                  <ShieldCheck size={14} />
-                  <span>Enforced on all 16 tables</span>
+                <span className="text-white truncate block text-[11px]">
+                  {envDetails.maskedKey}
+                </span>
+              </div>
+
+              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
+                <span className="text-[10px] text-edge-text-muted uppercase block">
+                  ENVIRONMENT MODE
+                </span>
+                <span className="text-edge-accent font-semibold uppercase block text-[11px]">
+                  {envDetails.environment}
+                </span>
+              </div>
+
+              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
+                <span className="text-[10px] text-edge-text-muted uppercase block">
+                  BASE CURRENCY
+                </span>
+                <span className="text-white font-semibold block text-[11px]">
+                  {envDetails.baseCurrency}
+                </span>
+              </div>
+
+              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
+                <span className="text-[10px] text-edge-text-muted uppercase block">
+                  DECIMAL PRECISION
+                </span>
+                <span className="text-edge-profit font-semibold block text-[11px]">
+                  {envDetails.decimalPrecision} digits (decimal.js)
+                </span>
+              </div>
+
+              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
+                <span className="text-[10px] text-edge-text-muted uppercase block">
+                  RISK CHECK CADENCE
+                </span>
+                <span className="text-white font-semibold block text-[11px]">
+                  {envDetails.riskCheckIntervalMs}ms
+                </span>
+              </div>
+
+              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
+                <span className="text-[10px] text-edge-text-muted uppercase block">
+                  DEMO DATA SEEDING
+                </span>
+                <span className="text-white font-semibold block text-[11px]">
+                  {envDetails.enableDemoData ? 'Enabled' : 'Clean Blank Portfolio'}
+                </span>
+              </div>
+
+              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
+                <span className="text-[10px] text-edge-text-muted uppercase block">
+                  WORKED FIXTURES
+                </span>
+                <span className="text-edge-profit font-semibold flex items-center space-x-1 text-[11px]">
+                  <ShieldCheck size={13} />
+                  <span>{envDetails.enableWorkedFixtures ? 'Active (Fixtures 1 & 2)' : 'Disabled'}</span>
                 </span>
               </div>
             </div>
 
-            <div className="p-3 rounded bg-edge-surface-secondary/20 border border-edge-border space-y-1 text-edge-text-muted">
-              <span className="text-[10px] uppercase font-bold text-white block">
-                Database Schema Migrations
+            {/* Setup Guide Box */}
+            <div className="p-3.5 rounded bg-edge-surface-secondary/20 border border-edge-border space-y-2">
+              <span className="text-[11px] uppercase font-bold text-white flex items-center space-x-1.5">
+                <Cpu size={14} className="text-edge-accent" />
+                <span>How to Connect Your Live Supabase Database</span>
               </span>
-              <p className="text-[11px] font-sans">
-                Full SQL migrations are located at <code className="text-edge-accent">/supabase/migrations/001_initial_schema.sql</code> and <code className="text-edge-accent">002_seed_data.sql</code> with all RLS policies, numeric precision constraints, and audit tables.
-              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1 text-[11px] font-sans text-edge-text-secondary">
+                <div className="space-y-1">
+                  <div className="text-white font-mono font-bold text-[10px]">1. CONFIGURE .env.local</div>
+                  <p>
+                    Add your Supabase project URL and anon public key to <code className="text-edge-accent">.env.local</code> in the root directory.
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-white font-mono font-bold text-[10px]">2. RUN SQL MIGRATION</div>
+                  <p>
+                    Execute <code className="text-edge-accent">/supabase/migrations/001_initial_schema.sql</code> in the Supabase SQL Editor.
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-white font-mono font-bold text-[10px]">3. RESTART TERMINAL</div>
+                  <p>
+                    Restart Next.js to apply environment changes and click &quot;Test Connection&quot; above to verify cloud synchronization.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

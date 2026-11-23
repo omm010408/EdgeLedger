@@ -7,9 +7,11 @@ import {
   AccountRule,
   RuleEvaluationResult
 } from '../types/financial';
+import { getAppConfig } from '../config/env';
 
-// Configure Decimal precision for financial calculations (28 digits)
-Decimal.set({ precision: 28, rounding: Decimal.ROUND_HALF_UP });
+// Configure Decimal precision for financial calculations (loaded from .env.local, default 28 digits)
+const precision = getAppConfig().app.decimalPrecision || 28;
+Decimal.set({ precision, rounding: Decimal.ROUND_HALF_UP });
 
 /**
  * Validates that warning threshold is strictly stricter than breach threshold.

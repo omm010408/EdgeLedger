@@ -26,8 +26,10 @@ import {
   evaluateAccountRule,
   calculateDecisionQualityScore
 } from '../lib/calculations/financialEngine';
+import { getAppConfig } from '../lib/config/env';
 
 interface TradingContextType {
+  baseCurrency: string;
   accounts: TradingAccount[];
   selectedAccountId: string; // 'ALL' or specific account id
   setSelectedAccountId: (id: string) => void;
@@ -92,16 +94,27 @@ interface TradingContextType {
 const TradingContext = createContext<TradingContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'edgeledger_v2_store';
+const appConfig = getAppConfig();
 
 export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [accounts, setAccounts] = useState<TradingAccount[]>(SEED_ACCOUNTS);
+  const [accounts, setAccounts] = useState<TradingAccount[]>(() =>
+    appConfig.app.enableDemoData ? SEED_ACCOUNTS : []
+  );
   const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
   const [environmentFilter, setEnvironmentFilter] = useState<'live' | 'demo' | 'backtest' | 'ALL'>('live');
-  const [trades, setTrades] = useState<Trade[]>(SEED_TRADES);
-  const [strategies, setStrategies] = useState<Strategy[]>(SEED_STRATEGIES);
+  const [trades, setTrades] = useState<Trade[]>(() =>
+    appConfig.app.enableDemoData ? SEED_TRADES : []
+  );
+  const [strategies, setStrategies] = useState<Strategy[]>(() =>
+    appConfig.app.enableDemoData ? SEED_STRATEGIES : []
+  );
   const [instruments] = useState<InstrumentSpecification[]>(SEED_INSTRUMENTS);
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(SEED_JOURNAL);
-  const [riskAlerts, setRiskAlerts] = useState<RiskAlert[]>(SEED_ALERTS);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(() =>
+    appConfig.app.enableDemoData ? SEED_JOURNAL : []
+  );
+  const [riskAlerts, setRiskAlerts] = useState<RiskAlert[]>(() =>
+    appConfig.app.enableDemoData ? SEED_ALERTS : []
+  );
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
   // Load state from localStorage on mount
@@ -702,6 +715,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
   return (
     <TradingContext.Provider
       value={{
+        baseCurrency: appConfig.app.defaultBaseCurrency,
         accounts,
         selectedAccountId,
         setSelectedAccountId,
