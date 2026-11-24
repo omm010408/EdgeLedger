@@ -273,14 +273,14 @@ body {
   --focus: var(--tw-focus);
 }
 
-/* Tidewater Dark Full Layout & Classes (Exact from Design Mockup) */
+/* Tidewater Dark Full Layout & Classes (Exact from Design Mockup with Fluid Responsiveness) */
 .tw-board {
   width: 100%;
   max-width: 1440px;
-  height: 1080px;
+  min-height: 100vh;
+  height: auto;
   margin: 0 auto;
   position: relative;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   padding: 0 28px 28px;
@@ -291,6 +291,25 @@ body {
   line-height: 20px;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
+}
+
+@media (min-width: 1280px) and (min-height: 960px) {
+  .tw-board {
+    height: 1080px;
+    overflow: hidden;
+  }
+}
+
+@media (max-width: 1024px) {
+  .tw-board {
+    padding: 0 16px 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  .tw-board {
+    padding: 0 12px 20px;
+  }
 }
 
 .tw-ripple {
@@ -306,14 +325,58 @@ body {
   stroke-width: 1.5;
 }
 
+@media (max-width: 768px) {
+  .tw-ripple {
+    display: none;
+  }
+}
+
 .tw-top {
   position: relative;
-  z-index: 2;
+  z-index: 20;
   display: flex;
   align-items: center;
-  gap: 28px;
-  height: 64px;
+  gap: 20px;
+  min-height: 64px;
   flex: none;
+}
+
+@media (max-width: 1080px) {
+  .tw-top {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 10px 0;
+    min-height: auto;
+  }
+  .tw-nav {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .tw-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .tw-tools {
+    margin-left: auto;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .tw-top {
+    gap: 8px;
+  }
+  .tw-tools {
+    gap: 6px;
+  }
+  .tw-tools .tw-btn {
+    padding: 0 10px;
+    font-size: 12px;
+  }
 }
 
 .tw-brand {
@@ -441,10 +504,67 @@ body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-template-rows: repeat(4, minmax(0, 1fr));
   gap: 16px;
   margin-top: 16px;
+}
+
+/* Desktop Bento Layout (>= 1200px) */
+@media (min-width: 1200px) {
+  .tw-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+  }
+  .tw-hero { grid-column: 1 / 6; grid-row: 1 / 3; }
+  .tw-arch { grid-column: 6 / 8; grid-row: 1 / 2; }
+  .tw-ring { grid-column: 8 / 10; grid-row: 1 / 2; }
+  .tw-aqua { grid-column: 10 / 13; grid-row: 1 / 2; }
+  .tw-week { grid-column: 6 / 11; grid-row: 2 / 3; }
+  .tw-qual { grid-column: 11 / 13; grid-row: 2 / 3; }
+  .tw-inst { grid-column: 1 / 5; grid-row: 3 / 4; }
+  .tw-opos { grid-column: 1 / 5; grid-row: 4 / 5; }
+  .tw-ladder { grid-column: 5 / 9; grid-row: 3 / 5; }
+  .tw-exec { grid-column: 9 / 13; grid-row: 3 / 5; }
+}
+
+/* Tablet Layout (768px - 1199px) */
+@media (min-width: 768px) and (max-width: 1199px) {
+  .tw-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-auto-rows: auto;
+    gap: 16px;
+  }
+  .tw-hero { grid-column: 1 / 13; min-height: 380px; }
+  .tw-arch { grid-column: 1 / 5; min-height: 220px; }
+  .tw-ring { grid-column: 5 / 9; min-height: 220px; }
+  .tw-aqua { grid-column: 9 / 13; min-height: 220px; }
+  .tw-week { grid-column: 1 / 8; min-height: 220px; }
+  .tw-qual { grid-column: 8 / 13; min-height: 220px; }
+  .tw-inst { grid-column: 1 / 7; }
+  .tw-opos { grid-column: 7 / 13; }
+  .tw-ladder { grid-column: 1 / 7; }
+  .tw-exec { grid-column: 7 / 13; }
+}
+
+/* Mobile Layout (< 768px) */
+@media (max-width: 767px) {
+  .tw-grid {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+    gap: 14px;
+  }
+  .tw-hero,
+  .tw-arch,
+  .tw-ring,
+  .tw-aqua,
+  .tw-week,
+  .tw-qual,
+  .tw-inst,
+  .tw-opos,
+  .tw-ladder,
+  .tw-exec {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+  }
 }
 
 .tw-tile {
@@ -551,8 +671,6 @@ body {
 
 /* Specific Tile Styling */
 .tw-hero {
-  grid-column: 1 / 6;
-  grid-row: 1 / 3;
   padding: 28px 30px 24px;
   border: 0;
   border-radius: 44px;
@@ -565,15 +683,15 @@ body {
 
 .tw-big {
   margin-top: 10px;
-  font-size: 88px;
-  line-height: 88px;
+  font-size: clamp(40px, 6vw, 88px);
+  line-height: 1;
   font-weight: 600;
   letter-spacing: -0.045em;
   color: var(--tw-hero-ink);
 }
 
 .tw-big small {
-  font-size: 40px;
+  font-size: clamp(20px, 3vw, 40px);
   letter-spacing: -0.02em;
   font-weight: 500;
   color: var(--tw-hero-2);
@@ -687,8 +805,6 @@ body {
 
 /* Profit Factor Arch */
 .tw-arch {
-  grid-column: 6 / 8;
-  grid-row: 1 / 2;
   align-items: center;
   justify-content: flex-end;
   padding: 0 20px 24px;
@@ -711,13 +827,11 @@ body {
 }
 
 .tw-arch .tw-lbl { position: relative; color: var(--tw-sun-ink); }
-.tw-arch .tw-n { position: relative; margin-top: 6px; font-size: 56px; line-height: 56px; }
+.tw-arch .tw-n { position: relative; margin-top: 6px; font-size: clamp(36px, 4vw, 56px); line-height: 1; }
 .tw-arch .tw-sub { position: relative; margin-top: 8px; color: var(--tw-sun-ink); }
 
 /* Win Rate Ring */
 .tw-ring {
-  grid-column: 8 / 10;
-  grid-row: 1 / 2;
   align-items: center;
   justify-content: space-between;
   text-align: center;
@@ -727,8 +841,6 @@ body {
 
 /* Aqua Expectancy */
 .tw-aqua {
-  grid-column: 10 / 13;
-  grid-row: 1 / 2;
   justify-content: space-between;
   background: var(--tw-aqua);
   border-color: transparent;
@@ -736,14 +848,12 @@ body {
 }
 
 .tw-aqua .tw-lbl { color: var(--tw-aqua-ink); }
-.tw-exp { font-size: 46px; line-height: 46px; }
+.tw-exp { font-size: clamp(30px, 3.5vw, 46px); line-height: 1.1; }
 .tw-aqua .tw-exp { color: var(--tw-aqua-num); }
 .tw-aqua .tw-pill { background: var(--tw-aqua-chip); color: var(--tw-aqua-ink); }
 
 /* Week Bubbles */
 .tw-week {
-  grid-column: 6 / 11;
-  grid-row: 2 / 3;
 }
 
 .tw-clip {
@@ -806,8 +916,6 @@ body {
 
 /* Trade Quality */
 .tw-qual {
-  grid-column: 11 / 13;
-  grid-row: 2 / 3;
   justify-content: space-between;
 }
 
@@ -831,8 +939,6 @@ body {
 
 /* Instrument Share */
 .tw-inst {
-  grid-column: 1 / 5;
-  grid-row: 3 / 4;
 }
 
 .tw-split {
@@ -862,8 +968,6 @@ body {
 
 /* R Ladder */
 .tw-ladder {
-  grid-column: 5 / 9;
-  grid-row: 3 / 5;
 }
 
 .tw-rows {
@@ -900,8 +1004,6 @@ body {
 
 /* Executions Table */
 .tw-exec {
-  grid-column: 9 / 13;
-  grid-row: 3 / 5;
 }
 
 .tw-tbl {
@@ -958,8 +1060,6 @@ body {
 
 /* Open Position & Risk */
 .tw-opos {
-  grid-column: 1 / 5;
-  grid-row: 4 / 5;
   justify-content: space-between;
 }
 
@@ -970,6 +1070,256 @@ body {
 }
 
 .tw-ticket { font-size: 24px; line-height: 28px; font-weight: 600; letter-spacing: -0.02em; }
+
+/* ========================================================================= */
+/* Tidewater Calendar Responsive System                                      */
+/* ========================================================================= */
+.tw-cal-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+@media (min-width: 1200px) {
+  .tw-cal-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+  }
+  .tw-cal { grid-column: 1 / 9; grid-row: 1 / 4; }
+  .tw-cal-hero { grid-column: 9 / 13; grid-row: 1; }
+  .tw-cal-detail { grid-column: 9 / 13; grid-row: 2; }
+  .tw-cal-sunt { grid-column: 9 / 11; grid-row: 3; }
+  .tw-cal-mint { grid-column: 11 / 13; grid-row: 3; }
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+  .tw-cal-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-auto-rows: auto;
+  }
+  .tw-cal { grid-column: span 12; }
+  .tw-cal-hero { grid-column: span 6; }
+  .tw-cal-detail { grid-column: span 6; }
+  .tw-cal-sunt { grid-column: span 6; }
+  .tw-cal-mint { grid-column: span 6; }
+}
+
+@media (max-width: 767px) {
+  .tw-cal-grid {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+  }
+  .tw-cal,
+  .tw-cal-hero,
+  .tw-cal-detail,
+  .tw-cal-sunt,
+  .tw-cal-mint {
+    grid-column: 1 / -1;
+  }
+}
+
+.tw-calhead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.tw-calhead h2 {
+  margin: 0;
+  font-size: clamp(20px, 2.5vw, 24px);
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.tw-calhead p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--tw-ink-3);
+}
+
+.tw-cal-legend {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--tw-ink-2);
+}
+
+.tw-cal-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tw-sw {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--tw-pill);
+}
+
+.tw-sw.p { background: var(--tw-hero); }
+.tw-sw.op { background: transparent; border: 1.5px dashed var(--tw-warn); }
+
+.tw-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 18px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tw-ink-3);
+  text-align: left;
+  padding: 0 4px;
+}
+
+.tw-weeks {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  flex: 1;
+  min-height: 380px;
+  margin-top: 8px;
+}
+
+@media (max-width: 640px) {
+  .tw-weeks {
+    min-height: 440px;
+    gap: 4px;
+  }
+}
+
+.tw-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 8px 6px;
+  border-radius: 14px;
+  border: 1px solid var(--tw-line);
+  background: var(--tw-pill);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.tw-cell .dn {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  color: var(--tw-ink-2);
+}
+
+.tw-cell .pl {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: clamp(11px, 1.2vw, 14px);
+  line-height: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tw-cell .ct {
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--tw-ink-3);
+  white-space: normal;
+}
+
+.tw-cell.mu { opacity: 0.35; }
+.tw-cell.mu .dn { color: var(--tw-ink-3); }
+
+.tw-cell.p {
+  background: var(--tw-hero);
+  border-color: var(--tw-hero-line);
+}
+.tw-cell.p .dn, .tw-cell.p .ct { color: var(--tw-hero-2); }
+.tw-cell.p .pl { color: var(--tw-hero-ink); }
+
+.tw-cell.l {
+  background: color-mix(in srgb, var(--tw-loss) 15%, transparent);
+  border-color: color-mix(in srgb, var(--tw-loss) 40%, transparent);
+}
+.tw-cell.l .pl { color: var(--tw-loss); }
+
+.tw-cell.op {
+  border: 1.5px dashed var(--tw-warn);
+  background: var(--tw-warn-bg);
+}
+
+.tw-cell.sel {
+  box-shadow: 0 0 0 2px var(--tw-sun);
+}
+.tw-cell.sel .dn { color: var(--tw-ink); }
+
+.tw-cal-hero {
+  border-radius: 36px;
+  background: var(--tw-hero);
+  color: var(--tw-hero-ink);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.tw-cal-detail {
+  padding: 20px 22px;
+  border-radius: 28px;
+  background: var(--tw-tile);
+  border: 1px solid var(--tw-line);
+  display: flex;
+  flex-direction: column;
+}
+
+.tw-cal-sunt {
+  background: var(--tw-sun);
+  border: 0;
+  border-radius: 28px;
+  color: var(--tw-sun-ink);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.tw-cal-sunt .lbl { color: var(--tw-sun-ink); font-weight: 600; }
+.tw-cal-sunt .n { font-size: 32px; font-weight: 700; color: var(--tw-sun-ink); font-family: 'JetBrains Mono', monospace; }
+.tw-cal-sunt .foot { color: var(--tw-sun-ink); opacity: 0.85; font-size: 12px; }
+
+.tw-cal-mint {
+  background: var(--tw-aqua);
+  border: 0;
+  border-radius: 28px;
+  color: var(--tw-aqua-ink);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.tw-cal-mint .lbl { color: var(--tw-aqua-ink); font-weight: 600; }
+.tw-cal-mint .n { font-size: 32px; font-weight: 700; color: var(--tw-aqua-ink); font-family: 'JetBrains Mono', monospace; }
+.tw-cal-mint .foot { color: var(--tw-aqua-ink); opacity: 0.85; font-size: 12px; }
+
+.tw-cal-disc {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--tw-pill);
+  border: 1px solid var(--tw-line);
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--tw-ink-3);
+}
 
 /* ------------------------------------------------------------------------- */
 /* Trade Execution Ledger (Tidewater Reference System)                       */

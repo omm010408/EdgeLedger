@@ -119,7 +119,8 @@ export const Header: React.FC<HeaderProps> = ({
             aria-expanded={accountDropdownOpen}
             aria-haspopup="listbox"
           >
-            <span>{activeDeskLabel}</span>
+            <span className="truncate max-w-[120px] sm:max-w-none">{activeDeskLabel}</span>
+            <ChevronDown size={13} className="opacity-70 shrink-0" />
           </button>
 
           {accountDropdownOpen && (
