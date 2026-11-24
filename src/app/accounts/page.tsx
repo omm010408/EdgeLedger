@@ -100,25 +100,25 @@ export default function AccountsPage() {
   return (
     <div className="space-y-6 -mt-2">
       {/* 1. Page Header & Primary Provision Button */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-[#34544F]">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-[var(--tw-line)]">
         <div>
           <div className="flex items-center space-x-2">
             <span
               className="w-2.5 h-2.5 rounded-full"
               style={{ background: 'var(--tw-hero-line)' }}
             />
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white font-sans">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--tw-ink)] font-sans">
               Multi-account desk
             </h1>
           </div>
-          <p className="text-xs sm:text-sm text-[#CFE2DE] mt-1 font-sans">
+          <p className="text-xs sm:text-sm text-[var(--tw-ink-2)] mt-1 font-sans">
             Independent account segregation, prop-firm rules and risk limits for each desk.
           </p>
         </div>
 
         <button
           onClick={() => setNewAccountModalOpen(true)}
-          className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-full bg-white text-[#0B1415] hover:bg-gray-100 font-sans font-semibold text-xs sm:text-sm transition-all shadow-md self-start sm:self-auto cursor-pointer"
+          className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-full bg-[var(--tw-ink)] text-[var(--tw-tile)] hover:opacity-90 font-sans font-semibold text-xs sm:text-sm transition-all shadow-md self-start sm:self-auto cursor-pointer"
         >
           <Plus size={16} />
           <span>+ Provision account</span>
@@ -253,21 +253,21 @@ export default function AccountsPage() {
           </div>
         </section>
 
-        {/* SUMMARY TILE 4: ACTIVE DESKS (Cols 11-12) — Dark Tile */}
+        {/* SUMMARY TILE 4: ACTIVE DESKS (Cols 11-12) — Dynamic Tile */}
         <section
           aria-label="Active desks"
-          className="bento-tile md:col-span-2 lg:col-span-2 justify-between"
+          className="tw-tile md:col-span-2 lg:col-span-2 justify-between"
           style={{ minHeight: '220px' }}
         >
-          <div className="text-xs font-bold uppercase tracking-wide text-[#CFE2DE]">
+          <div className="text-xs font-bold uppercase tracking-wide text-[var(--tw-ink-2)]">
             Active desks
           </div>
 
-          <div className="text-4xl font-mono font-bold tracking-tight text-white">
+          <div className="text-4xl font-mono font-bold tracking-tight text-[var(--tw-ink)]">
             {accounts.length}
           </div>
 
-          <div className="text-xs font-sans text-[#A9C1BD]">
+          <div className="text-xs font-sans text-[var(--tw-ink-3)]">
             {portfolioSummary.totalClosed} closed trades in total
           </div>
         </section>
@@ -300,19 +300,19 @@ export default function AccountsPage() {
           return (
             <div
               key={acc.id}
-              className={`rounded-[32px] p-6 border transition-all flex flex-col justify-between space-y-5 bg-[#0B1415] ${
+              className={`rounded-[32px] p-6 border transition-all flex flex-col justify-between space-y-5 bg-[var(--tw-tile)] ${
                 isSelected
-                  ? 'border-[#9BF3DF] shadow-glow'
-                  : 'border-[#34544F] hover:border-[#4F7470]'
+                  ? 'border-[var(--tw-hero-line)] shadow-glow'
+                  : 'border-[var(--tw-line)] hover:border-[var(--tw-line-strong)]'
               }`}
             >
               {/* Account Card Header */}
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <h2 className="text-lg sm:text-xl font-bold font-sans tracking-tight text-white">
+                  <h2 className="text-lg sm:text-xl font-bold font-sans tracking-tight text-[var(--tw-ink)]">
                     {acc.name}
                   </h2>
-                  <p className="text-xs text-[#A9C1BD] font-sans">
+                  <p className="text-xs text-[var(--tw-ink-3)] font-sans">
                     {acc.brokerOrFirm}, {acc.challengePhase}
                   </p>
                 </div>
@@ -320,10 +320,10 @@ export default function AccountsPage() {
                 <span
                   className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                     isFunded
-                      ? 'bg-[#FFD56B] text-[#0A0800]'
+                      ? 'bg-[var(--tw-sun)] text-[var(--tw-sun-ink)]'
                       : isEval
-                      ? 'bg-[rgba(255,184,107,0.15)] text-[#FFB86B] border border-[rgba(255,184,107,0.6)]'
-                      : 'bg-[#13211F] text-[#CFE2DE] border border-[#34544F]'
+                      ? 'bg-[var(--tw-warn-bg)] text-[var(--tw-warn)] border border-[var(--tw-warn-line)]'
+                      : 'bg-[var(--tw-pill)] text-[var(--tw-ink-2)] border border-[var(--tw-line)]'
                   }`}
                 >
                   {isFunded ? 'Funded' : isEval ? 'Prop evaluation' : 'Personal'}
@@ -331,41 +331,41 @@ export default function AccountsPage() {
               </div>
 
               {/* Equity & Return Metrics Row */}
-              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[#34544F] font-mono">
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[var(--tw-line)] font-mono">
                 <div>
-                  <div className="text-xs text-[#CFE2DE]">Equity</div>
-                  <div className="text-xl sm:text-2xl font-bold text-white mt-1 tabular-nums">
+                  <div className="text-xs text-[var(--tw-ink-2)]">Equity</div>
+                  <div className="text-xl sm:text-2xl font-bold text-[var(--tw-ink)] mt-1 tabular-nums">
                     {formatCurrency(acc.currentEquity)}
                   </div>
-                  <small className="text-[11px] text-[#A9C1BD] block mt-1">
+                  <small className="text-[11px] text-[var(--tw-ink-3)] block mt-1">
                     Start {formatCurrency(acc.startingBalance)}
                   </small>
                 </div>
 
                 <div className="text-right">
-                  <div className="text-xs text-[#CFE2DE]">Net gain</div>
-                  <div className={`text-base sm:text-lg font-bold mt-1 tabular-nums ${netProfit >= 0 ? 'text-[#5BE6AE]' : 'text-[#FF8F80]'}`}>
+                  <div className="text-xs text-[var(--tw-ink-2)]">Net gain</div>
+                  <div className={`text-base sm:text-lg font-bold mt-1 tabular-nums ${netProfit >= 0 ? 'text-[var(--tw-gain)]' : 'text-[var(--tw-loss)]'}`}>
                     {netProfit >= 0 ? '+' : ''}{formatCurrency(netProfit)} ({returnPct >= 0 ? '+' : ''}{returnPct.toFixed(1)}%)
                   </div>
-                  <small className="text-[11px] text-[#A9C1BD] block mt-1">
+                  <small className="text-[11px] text-[var(--tw-ink-3)] block mt-1">
                     Drawdown {currentDdPct.toFixed(1)}%, {formatCurrency(currentDd)}
                   </small>
                 </div>
               </div>
 
               {/* Mini Metrics Strip (Trades, Win Rate, Peak Eq) */}
-              <dl className="grid grid-cols-3 rounded-2xl bg-[#13211F] py-3 text-center font-mono border border-[#34544F]">
+              <dl className="grid grid-cols-3 rounded-2xl bg-[var(--tw-pill)] py-3 text-center font-mono border border-[var(--tw-line)]">
                 <div>
-                  <dt className="text-[11px] text-[#A9C1BD]">Trades</dt>
-                  <dd className="text-sm sm:text-base font-bold text-white mt-1">{closedTrades.length}</dd>
+                  <dt className="text-[11px] text-[var(--tw-ink-3)]">Trades</dt>
+                  <dd className="text-sm sm:text-base font-bold text-[var(--tw-ink)] mt-1">{closedTrades.length}</dd>
                 </div>
-                <div className="border-x border-[#34544F]">
-                  <dt className="text-[11px] text-[#A9C1BD]">Win rate</dt>
-                  <dd className="text-sm sm:text-base font-bold text-white mt-1">{winRate.toFixed(1)}%</dd>
+                <div className="border-x border-[var(--tw-line)]">
+                  <dt className="text-[11px] text-[var(--tw-ink-3)]">Win rate</dt>
+                  <dd className="text-sm sm:text-base font-bold text-[var(--tw-ink)] mt-1">{winRate.toFixed(1)}%</dd>
                 </div>
                 <div>
-                  <dt className="text-[11px] text-[#A9C1BD]">Peak equity</dt>
-                  <dd className="text-sm sm:text-base font-bold text-white mt-1">
+                  <dt className="text-[11px] text-[var(--tw-ink-3)]">Peak equity</dt>
+                  <dd className="text-sm sm:text-base font-bold text-[var(--tw-ink)] mt-1">
                     ${(acc.highWaterMark / 1000).toFixed(1)}k
                   </dd>
                 </div>
@@ -373,24 +373,24 @@ export default function AccountsPage() {
 
               {/* Active Rule Limits List */}
               <div className="space-y-2 pt-1 font-mono text-xs">
-                <div className="flex justify-between items-center text-[#CFE2DE] text-[11px] font-semibold pb-1">
+                <div className="flex justify-between items-center text-[var(--tw-ink-2)] text-[11px] font-semibold pb-1">
                   <span>Active rule limits ({acc.rules.length})</span>
                   <span>Status</span>
                 </div>
 
-                <div className="space-y-1.5 divide-y divide-[#34544F]/60">
+                <div className="space-y-1.5 divide-y divide-[var(--tw-line)]">
                   {acc.rules.slice(0, 3).map((r) => (
-                    <div key={r.id} className="pt-2 flex justify-between items-center text-[#CFE2DE]">
+                    <div key={r.id} className="pt-2 flex justify-between items-center text-[var(--tw-ink-2)]">
                       <span className="truncate pr-2">{r.ruleType.replace(/_/g, ' ')}</span>
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                           r.currentStatus === 'SAFE'
-                            ? 'bg-[#8FEBD3] text-[#03211C]'
+                            ? 'bg-[var(--tw-aqua)] text-[var(--tw-aqua-ink)]'
                             : r.currentStatus === 'WARNING'
-                            ? 'bg-[rgba(255,184,107,0.15)] text-[#FFB86B] border border-[rgba(255,184,107,0.6)]'
+                            ? 'bg-[var(--tw-warn-bg)] text-[var(--tw-warn)] border border-[var(--tw-warn-line)]'
                             : r.currentStatus === 'BREACHED'
-                            ? 'bg-[rgba(255,143,128,0.2)] text-[#FF8F80] border border-[rgba(255,143,128,0.6)]'
-                            : 'bg-[#13211F] text-[#CFE2DE]'
+                            ? 'bg-[var(--tw-loss)]/15 text-[var(--tw-loss)] border border-[var(--tw-loss)]/60'
+                            : 'bg-[var(--tw-pill)] text-[var(--tw-ink-2)]'
                         }`}
                       >
                         {r.currentStatus.toLowerCase()}
@@ -406,8 +406,8 @@ export default function AccountsPage() {
                   onClick={() => setSelectedAccountId(isSelected ? 'ALL' : acc.id)}
                   className={`flex-1 h-10 rounded-full font-sans font-semibold text-xs tracking-wider transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
                     isSelected
-                      ? 'bg-[#9BF3DF] text-[#03211C] shadow-glow font-bold'
-                      : 'bg-[#13211F] text-[#CFE2DE] hover:text-white hover:bg-[#1A2D2B] border border-[#34544F]'
+                      ? 'bg-[var(--tw-hero-line)] text-[var(--tw-hero)] shadow-glow font-bold'
+                      : 'bg-[var(--tw-pill)] text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)] border border-[var(--tw-line)]'
                   }`}
                 >
                   {isSelected ? (
@@ -422,7 +422,7 @@ export default function AccountsPage() {
 
                 <button
                   onClick={() => setEditingRuleAccount(acc)}
-                  className="w-10 h-10 rounded-full flex items-center justify-center bg-[#13211F] border border-[#34544F] text-[#CFE2DE] hover:text-white hover:border-[#9BF3DF] transition-all cursor-pointer"
+                  className="w-10 h-10 rounded-full flex items-center justify-center bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)] hover:border-[var(--tw-line-strong)] transition-all cursor-pointer"
                   title="Configure Rules"
                   aria-label="Configure rules"
                 >
@@ -431,7 +431,7 @@ export default function AccountsPage() {
 
                 <button
                   onClick={() => deleteAccount(acc.id)}
-                  className="w-10 h-10 rounded-full flex items-center justify-center bg-[#13211F] border border-[#34544F] text-[#A9C1BD] hover:text-[#FF8F80] hover:border-[#FF8F80] transition-all cursor-pointer"
+                  className="w-10 h-10 rounded-full flex items-center justify-center bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink-3)] hover:text-[var(--tw-loss)] hover:border-[var(--tw-loss)] transition-all cursor-pointer"
                   title="Archive Account"
                   aria-label={`Remove ${acc.name}`}
                 >
@@ -446,23 +446,23 @@ export default function AccountsPage() {
       {/* 4. Rule Engine Configuration Modal */}
       {editingRuleAccount && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-[#34544F] bg-[#0B1415] shadow-2xl text-xs p-6 space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-[#34544F]">
+          <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-[var(--tw-line)] bg-[var(--tw-tile)] shadow-2xl text-xs p-6 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--tw-line)]">
               <div className="flex items-center space-x-2">
-                <ShieldCheck size={18} className="text-[#9BF3DF]" />
-                <h2 className="font-mono text-sm font-bold tracking-wider text-white uppercase">
+                <ShieldCheck size={18} className="text-[var(--tw-gain)]" />
+                <h2 className="font-mono text-sm font-bold tracking-wider text-[var(--tw-ink)] uppercase">
                   RULE ENGINE SURVEILLANCE: {editingRuleAccount.name}
                 </h2>
               </div>
               <button
                 onClick={() => setEditingRuleAccount(null)}
-                className="w-8 h-8 rounded-full bg-[#13211F] border border-[#34544F] text-[#CFE2DE] hover:text-white flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)] flex items-center justify-center"
               >
                 ✕
               </button>
             </div>
 
-            <p className="text-[#A9C1BD] font-sans text-xs leading-relaxed">
+            <p className="text-[var(--tw-ink-3)] font-sans text-xs leading-relaxed">
               Autonomous risk monitoring rules enforce prop-firm constraints and drawdown thresholds in real time with 4-state evaluation (Safe, Warning, Breached, Unknown).
             </p>
 
@@ -470,7 +470,7 @@ export default function AccountsPage() {
               {editingRuleAccount.rules.map((rule) => (
                 <div
                   key={rule.id}
-                  className="p-3.5 rounded-2xl border border-[#34544F] bg-[#13211F] space-y-2.5"
+                  className="p-3.5 rounded-2xl border border-[var(--tw-line)] bg-[var(--tw-pill)]/60 space-y-2.5"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2.5">
@@ -478,43 +478,43 @@ export default function AccountsPage() {
                         type="checkbox"
                         checked={rule.isEnabled}
                         onChange={() => toggleRule(editingRuleAccount.id, rule.id)}
-                        className="rounded border-[#34544F] text-[#9BF3DF] focus:ring-0 cursor-pointer"
+                        className="rounded border-[var(--tw-line)] text-[var(--tw-gain)] focus:ring-0 cursor-pointer"
                       />
-                      <span className="font-bold text-white uppercase text-xs">
+                      <span className="font-bold text-[var(--tw-ink)] uppercase text-xs">
                         {rule.ruleType.replace(/_/g, ' ')}
                       </span>
                     </div>
                     <span
                       className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                         rule.currentStatus === 'SAFE'
-                          ? 'bg-[#8FEBD3] text-[#03211C]'
+                          ? 'bg-[var(--tw-aqua)] text-[var(--tw-aqua-ink)]'
                           : rule.currentStatus === 'WARNING'
-                          ? 'bg-[rgba(255,184,107,0.15)] text-[#FFB86B]'
+                          ? 'bg-[var(--tw-warn-bg)] text-[var(--tw-warn)]'
                           : rule.currentStatus === 'BREACHED'
-                          ? 'bg-[rgba(255,143,128,0.2)] text-[#FF8F80]'
-                          : 'bg-[#0B1415] text-[#CFE2DE]'
+                          ? 'bg-[var(--tw-loss)]/15 text-[var(--tw-loss)]'
+                          : 'bg-[var(--tw-tile)] text-[var(--tw-ink-2)]'
                       }`}
                     >
                       {rule.currentStatus}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 text-[11px] text-[#A9C1BD] pt-1 border-t border-[#34544F]/50">
+                  <div className="grid grid-cols-3 gap-3 text-[11px] text-[var(--tw-ink-3)] pt-1 border-t border-[var(--tw-line)]/50">
                     <div>
-                      <span className="block text-[9px] uppercase font-bold text-[#CFE2DE]">Limit Threshold</span>
-                      <span className="font-semibold text-white">
+                      <span className="block text-[9px] uppercase font-bold text-[var(--tw-ink-2)]">Limit Threshold</span>
+                      <span className="font-semibold text-[var(--tw-ink)]">
                         {rule.thresholdUnit === 'percent'
                           ? `${rule.thresholdValue}%`
                           : formatCurrency(rule.thresholdValue)}
                       </span>
                     </div>
                     <div>
-                      <span className="block text-[9px] uppercase font-bold text-[#CFE2DE]">Calculation Method</span>
-                      <span className="font-semibold text-white">{rule.calculationMethod}</span>
+                      <span className="block text-[9px] uppercase font-bold text-[var(--tw-ink-2)]">Calculation Method</span>
+                      <span className="font-semibold text-[var(--tw-ink)]">{rule.calculationMethod}</span>
                     </div>
                     <div>
-                      <span className="block text-[9px] uppercase font-bold text-[#CFE2DE]">Warning Buffer</span>
-                      <span className="font-semibold text-[#FFB86B]">{rule.warningThresholdPct}%</span>
+                      <span className="block text-[9px] uppercase font-bold text-[var(--tw-ink-2)]">Warning Buffer</span>
+                      <span className="font-semibold text-[var(--tw-warn)]">{rule.warningThresholdPct}%</span>
                     </div>
                   </div>
                 </div>
@@ -524,7 +524,7 @@ export default function AccountsPage() {
             <div className="pt-2 flex justify-end">
               <button
                 onClick={() => setEditingRuleAccount(null)}
-                className="px-5 py-2.5 rounded-full bg-white text-[#0B1415] font-sans font-bold hover:bg-gray-100 transition-colors shadow-sm"
+                className="px-5 py-2.5 rounded-full bg-[var(--tw-ink)] text-[var(--tw-tile)] font-sans font-bold hover:opacity-90 transition-colors shadow-sm"
               >
                 Close &amp; Apply
               </button>

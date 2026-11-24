@@ -16,6 +16,23 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [newAccountOpen, setNewAccountOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  // Load theme from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('edgeledger_theme') as 'dark' | 'light';
+    if (saved) {
+      setTheme(saved);
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    localStorage.setItem('edgeledger_theme', next);
+    document.documentElement.setAttribute('data-theme', next);
+  };
 
   // Global Cmd+K / Ctrl+K listener
   useEffect(() => {
@@ -30,7 +47,10 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
   }, []);
 
   return (
-    <div className="min-h-screen w-full bg-[#050A0B] text-white flex flex-col font-sans selection:bg-[#9BF3DF] selection:text-[#03211C]">
+    <div
+      data-theme={theme}
+      className={`min-h-screen w-full bg-[var(--tw-bg)] text-[var(--tw-ink)] flex flex-col font-sans selection:bg-[#9BF3DF] selection:text-[#03211C] ${theme}`}
+    >
       {isOverview ? (
         /* Overview Page: Exact Tidewater 1080p Board Canvas */
         <div className="tw-board">
@@ -47,6 +67,8 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
             onOpenAlerts={() => setAlertsOpen(true)}
             onOpenNewAccount={() => setNewAccountOpen(true)}
             onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+            theme={theme}
+            onToggleTheme={toggleTheme}
           />
 
           {/* Bento Grid Canvas */}
@@ -66,6 +88,8 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
               onOpenAlerts={() => setAlertsOpen(true)}
               onOpenNewAccount={() => setNewAccountOpen(true)}
               onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+              theme={theme}
+              onToggleTheme={toggleTheme}
             />
           </div>
 

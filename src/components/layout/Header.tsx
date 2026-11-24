@@ -4,18 +4,22 @@ import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTrading } from '../../context/TradingContext';
-import { ChevronDown, Check, Plus, ExternalLink } from 'lucide-react';
+import { ChevronDown, Check, Plus, ExternalLink, Sun, Moon } from 'lucide-react';
 
 interface HeaderProps {
   onOpenQuickTrade: () => void;
   onOpenAlerts: () => void;
   onOpenNewAccount: () => void;
   onOpenCommandPalette?: () => void;
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
 }
 
 const PRIMARY_NAV = [
   { name: 'Overview', href: '/' },
+  { name: 'Accounts', href: '/accounts' },
   { name: 'Trades', href: '/trades' },
+  { name: 'Calendar', href: '/calendar' },
   { name: 'Journal', href: '/journal' },
   { name: 'Risk', href: '/risk' },
   { name: 'Reports', href: '/reports' },
@@ -26,6 +30,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAlerts,
   onOpenNewAccount,
   onOpenCommandPalette,
+  theme = 'dark',
+  onToggleTheme,
 }) => {
   const pathname = usePathname();
   const {
@@ -194,6 +200,20 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
+
+        {/* Theme Toggle Button */}
+        {onToggleTheme && (
+          <button
+            className="tw-btn quiet"
+            type="button"
+            onClick={onToggleTheme}
+            title={theme === 'dark' ? 'Switch to Light theme' : 'Switch to Dark theme'}
+            aria-label="Toggle color theme"
+          >
+            {theme === 'dark' ? <Sun size={14} className="text-[#FFD56B]" /> : <Moon size={14} className="text-[#0A4D4C]" />}
+            <span className="hidden sm:inline text-xs">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+          </button>
+        )}
 
         {/* Search / Command Palette Button */}
         <button

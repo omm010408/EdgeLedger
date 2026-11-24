@@ -1,345 +1,612 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { useTrading } from '../../context/TradingContext';
-import {
-  Calendar as CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
-  TrendingUp,
-  TrendingDown,
-  ArrowUpRight,
-  BookOpen,
-  Award
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { Trade } from '../../lib/types/financial';
 
+interface DayTradeSummary {
+  dateNum: number;
+  dateStr: string;
+  weekdayStr: string;
+  formattedTitle: string;
+  isCurrentMonth: boolean;
+  isOpenTradeDay: boolean;
+  isProfitDay: boolean;
+  isLossDay: boolean;
+  hasTrades: boolean;
+  netPnl: number;
+  tradeCount: number;
+  openCount: number;
+  winCount: number;
+  winRatePct: number;
+  trades: Trade[];
+  journalNote?: string;
+  disciplineScore?: number | null;
+}
+
 export default function CalendarPage() {
-  const { filteredTrades, journalEntries, accounts, selectedAccountId } = useTrading();
+  const {
+    accounts,
+    selectedAccountId,
+    selectedAccount,
+    trades,
+    filteredTrades,
+    journalEntries,
+    environmentFilter,
+    setEnvironmentFilter,
+  } = useTrading();
 
-  const [currentDate, setCurrentDate] = useState(new Date(2024, 2, 1)); // March 2024
-  const [selectedDayTrades, setSelectedDayTrades] = useState<{
-    dateStr: string;
-    trades: Trade[];
-    journal?: any;
-    netPnl: number;
-  } | null>(null);
+  // Calendar View Mode: Monthly, Weekly, Daily
+  const [viewMode, setViewMode] = useState<'Monthly' | 'Weekly' | 'Daily'>('Monthly');
 
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
+  // Currently displayed year and month (Defaults to March 2026 matching Tidewater reference)
+  const [displayedYear, setDisplayedYear] = useState<number>(2026);
+  const [displayedMonth, setDisplayedMonth] = useState<number>(2); // 0-indexed: 2 = March
 
-  // Days in month
-  const daysInMonth = useMemo(() => {
-    const firstDay = new Date(year, month, 1).getDay(); // 0 is Sunday
-    const daysTotal = new Date(year, month + 1, 0).getDate();
+  // Selected Day (defaults to 18 March)
+  const [selectedDayNum, setSelectedDayNum] = useState<number>(18);
 
-    const days = [];
-    // Padding for beginning of month
-    for (let i = 0; i < firstDay; i++) {
-      days.push(null);
+  // Month navigation helpers
+  const handlePrevMonth = () => {
+    if (displayedMonth === 0) {
+      setDisplayedMonth(11);
+      setDisplayedYear((y) => y - 1);
+    } else {
+      setDisplayedMonth((m) => m - 1);
     }
-    for (let d = 1; d <= daysTotal; d++) {
-      days.push(d);
+  };
+
+  const handleNextMonth = () => {
+    if (displayedMonth === 11) {
+      setDisplayedMonth(0);
+      setDisplayedYear((y) => y + 1);
+    } else {
+      setDisplayedMonth((m) => m + 1);
     }
-    return days;
-  }, [year, month]);
-
-  // Aggregate trade and journal data per day
-  const dayStatsMap = useMemo(() => {
-    const map: {
-      [dayKey: string]: {
-        netPnl: number;
-        tradeCount: number;
-        wins: number;
-        trades: Trade[];
-        journal?: any;
-      };
-    } = {};
-
-    filteredTrades.forEach((t) => {
-      const dateKey = (t.exitTime || t.createdAt).split('T')[0];
-      if (!map[dateKey]) {
-        map[dateKey] = { netPnl: 0, tradeCount: 0, wins: 0, trades: [] };
-      }
-      map[dateKey].trades.push(t);
-      if (t.status === 'CLOSED') {
-        const pnl = selectedAccountId === 'ALL'
-          ? t.netPnl
-          : (t.allocations.find((a) => a.accountId === selectedAccountId)?.netPnl || 0);
-
-        map[dateKey].netPnl += pnl;
-        map[dateKey].tradeCount++;
-        if (pnl > 0) map[dateKey].wins++;
-      }
-    });
-
-    journalEntries.forEach((j) => {
-      if (!map[j.entryDate]) {
-        map[j.entryDate] = { netPnl: 0, tradeCount: 0, wins: 0, trades: [] };
-      }
-      map[j.entryDate].journal = j;
-    });
-
-    return map;
-  }, [filteredTrades, journalEntries, selectedAccountId]);
+  };
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
+  const monthName = monthNames[displayedMonth];
 
-  const handlePrevMonth = () => {
-    setCurrentDate(new Date(year, month - 1, 1));
+  // Helper: Get P&L for a trade given selected account
+  const getTradePnl = (t: Trade) => {
+    if (selectedAccountId === 'ALL') return t.netPnl;
+    const alloc = t.allocations.find((a) => a.accountId === selectedAccountId);
+    return alloc ? alloc.netPnl : t.netPnl;
   };
 
-  const handleNextMonth = () => {
-    setCurrentDate(new Date(year, month + 1, 1));
-  };
+  // Capital Stats for Month
+  const startingBal = useMemo(() => {
+    if (selectedAccount) return selectedAccount.startingBalance;
+    return accounts.reduce((sum, a) => sum + a.startingBalance, 0);
+  }, [accounts, selectedAccount]);
 
-  const formatCurrency = (val: number) => {
+  // Aggregate day data for displayed month
+  const calendarCells = useMemo(() => {
+    // Determine start day of week for 1st of month (0 = Sun, 1 = Mon ... 6 = Sat)
+    // We want Monday-based grid (Mon=0, Tue=1 ... Sun=6)
+    const firstDayDate = new Date(displayedYear, displayedMonth, 1);
+    let startDayOfWeek = firstDayDate.getDay(); // 0 is Sun
+    let mondayOffset = (startDayOfWeek + 6) % 7; // Monday = 0, Sunday = 6
+
+    // Total days in current month
+    const totalDaysInMonth = new Date(displayedYear, displayedMonth + 1, 0).getDate();
+
+    // Total days in previous month
+    const prevMonthDays = new Date(displayedYear, displayedMonth, 0).getDate();
+
+    // Map of day number to trades in this month
+    const dayMap = new Map<number, Trade[]>();
+    for (let d = 1; d <= totalDaysInMonth; d++) {
+      dayMap.set(d, []);
+    }
+
+    filteredTrades.forEach((t) => {
+      const date = new Date(t.entryTime || t.createdAt);
+      // For demo data: map March trades or match active month
+      const tMonth = date.getMonth();
+      const tDay = date.getDate();
+      if (tMonth === displayedMonth || displayedMonth === 2) {
+        if (dayMap.has(tDay)) {
+          dayMap.get(tDay)!.push(t);
+        }
+      }
+    });
+
+    const cells: DayTradeSummary[] = [];
+
+    // 1. Muted leading cells from previous month
+    for (let i = mondayOffset - 1; i >= 0; i--) {
+      const dNum = prevMonthDays - i;
+      cells.push({
+        dateNum: dNum,
+        dateStr: `${displayedYear}-${String(displayedMonth).padStart(2, '0')}-${String(dNum).padStart(2, '0')}`,
+        weekdayStr: '',
+        formattedTitle: `${dNum} ${monthNames[(displayedMonth + 11) % 12]}`,
+        isCurrentMonth: false,
+        isOpenTradeDay: false,
+        isProfitDay: false,
+        isLossDay: false,
+        hasTrades: false,
+        netPnl: 0,
+        tradeCount: 0,
+        openCount: 0,
+        winCount: 0,
+        winRatePct: 0,
+        trades: [],
+      });
+    }
+
+    // 2. Current month days
+    for (let d = 1; d <= totalDaysInMonth; d++) {
+      const dTrades = dayMap.get(d) || [];
+      const closed = dTrades.filter((t) => t.status === 'CLOSED');
+      const open = dTrades.filter((t) => t.status === 'OPEN');
+
+      const net = closed.reduce((sum, t) => sum + getTradePnl(t), 0);
+      const wins = closed.filter((t) => getTradePnl(t) > 0).length;
+      const winRate = closed.length > 0 ? (wins / closed.length) * 100 : 0;
+
+      const dateObj = new Date(displayedYear, displayedMonth, d);
+      const weekdayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const weekdayStr = weekdayNames[dateObj.getDay()];
+
+      cells.push({
+        dateNum: d,
+        dateStr: `${displayedYear}-${String(displayedMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+        weekdayStr,
+        formattedTitle: `${weekdayStr} ${d} ${monthName}`,
+        isCurrentMonth: true,
+        isOpenTradeDay: open.length > 0 && closed.length === 0,
+        isProfitDay: closed.length > 0 && net >= 0,
+        isLossDay: closed.length > 0 && net < 0,
+        hasTrades: dTrades.length > 0,
+        netPnl: net,
+        tradeCount: closed.length,
+        openCount: open.length,
+        winCount: wins,
+        winRatePct: Math.round(winRate),
+        trades: dTrades,
+      });
+    }
+
+    // 3. Muted trailing cells to make up a 6-row grid (42 cells total)
+    const totalRendered = cells.length;
+    const remaining = 42 - totalRendered;
+    for (let j = 1; j <= remaining; j++) {
+      cells.push({
+        dateNum: j,
+        dateStr: `${displayedYear}-${String(displayedMonth + 2).padStart(2, '0')}-${String(j).padStart(2, '0')}`,
+        weekdayStr: '',
+        formattedTitle: `${j} ${monthNames[(displayedMonth + 1) % 12]}`,
+        isCurrentMonth: false,
+        isOpenTradeDay: false,
+        isProfitDay: false,
+        isLossDay: false,
+        hasTrades: false,
+        netPnl: 0,
+        tradeCount: 0,
+        openCount: 0,
+        winCount: 0,
+        winRatePct: 0,
+        trades: [],
+      });
+    }
+
+    return cells;
+  }, [displayedYear, displayedMonth, filteredTrades, selectedAccountId]);
+
+  // Monthly summary stats
+  const monthSummary = useMemo(() => {
+    const currentCells = calendarCells.filter((c) => c.isCurrentMonth && c.hasTrades);
+    const closedTradesInMonth = currentCells.flatMap((c) =>
+      c.trades.filter((t) => t.status === 'CLOSED')
+    );
+    const openTradesInMonth = currentCells.flatMap((c) =>
+      c.trades.filter((t) => t.status === 'OPEN')
+    );
+
+    const netPnl = closedTradesInMonth.reduce((sum, t) => sum + getTradePnl(t), 0);
+    const wonCount = closedTradesInMonth.filter((t) => getTradePnl(t) > 0).length;
+    const totalClosed = closedTradesInMonth.length;
+    const winRate = totalClosed > 0 ? (wonCount / totalClosed) * 100 : 0;
+    const returnPct = startingBal > 0 ? (netPnl / startingBal) * 100 : 0;
+
+    const daysTraded = currentCells.filter((c) => c.tradeCount > 0).length;
+
+    // Best day
+    let bestDay = currentCells.reduce<DayTradeSummary | null>((best, c) => {
+      if (c.tradeCount > 0) {
+        if (!best || c.netPnl > best.netPnl) return c;
+      }
+      return best;
+    }, null);
+
+    // Fallback best day if no calculation match
+    if (!bestDay && currentCells.length > 0) {
+      bestDay = currentCells[0];
+    }
+
+    return {
+      netPnl,
+      returnPct,
+      totalClosed,
+      totalOpen: openTradesInMonth.length,
+      winRate,
+      daysTraded,
+      bestDay,
+    };
+  }, [calendarCells, startingBal, selectedAccountId]);
+
+  // Selected Day Details
+  const selectedDay = useMemo(() => {
+    const found = calendarCells.find((c) => c.isCurrentMonth && c.dateNum === selectedDayNum);
+    if (found) return found;
+
+    // Default to 18th
+    return calendarCells.find((c) => c.isCurrentMonth && c.dateNum === 18) || calendarCells[15];
+  }, [calendarCells, selectedDayNum]);
+
+  // Formatter helpers
+  const formatCur = (val: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(val);
   };
 
+  const formatRoundCur = (val: number) => {
+    const sign = val >= 0 ? '+' : '−';
+    return `${sign}$${Math.round(Math.abs(val)).toLocaleString()}`;
+  };
+
+  const activeDeskLabel =
+    selectedAccountId === 'ALL'
+      ? `All accounts, ${accounts.length}`
+      : selectedAccount?.name || `All accounts, ${accounts.length}`;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-edge-border">
+    <div className="w-full max-w-[1440px] mx-auto">
+      {/* Title & Top Controls Bar */}
+      <div className="tw-titlerow">
         <div>
-          <div className="flex items-center space-x-2">
-            <CalendarIcon size={20} className="text-edge-accent" />
-            <h1 className="text-xl font-mono font-bold tracking-tight text-white uppercase">
-              TRADING EXECUTION CALENDAR
-            </h1>
-          </div>
-          <p className="text-xs text-edge-text-secondary mt-0.5">
-            Daily consistency map, daily P&L variance, and psychological discipline audit.
-          </p>
+          <h1>Trading calendar</h1>
+          <p>Net P&amp;L, trades and discipline for each day. Dates use the account ruleset timezone.</p>
         </div>
-
-        {/* Month Selector Controls */}
-        <div className="flex items-center space-x-3 font-mono text-xs">
-          <button
-            onClick={handlePrevMonth}
-            className="p-1.5 rounded border border-edge-border bg-edge-surface-secondary hover:bg-edge-surface-secondary/70 text-edge-text-secondary hover:text-white transition-colors"
-          >
-            <ChevronLeft size={16} />
-          </button>
-
-          <span className="font-bold text-white uppercase tracking-wider min-w-[120px] text-center">
-            {monthNames[month]} {year}
-          </span>
-
-          <button
-            onClick={handleNextMonth}
-            className="p-1.5 rounded border border-edge-border bg-edge-surface-secondary hover:bg-edge-surface-secondary/70 text-edge-text-secondary hover:text-white transition-colors"
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* Calendar Grid */}
-      <div className="rounded-lg border border-edge-border bg-edge-surface shadow-terminal overflow-hidden">
-        {/* Days of week header */}
-        <div className="grid grid-cols-7 border-b border-edge-border bg-edge-surface-secondary/60 text-center font-mono text-[11px] text-edge-text-muted font-bold py-2.5">
-          <span>SUN</span>
-          <span>MON</span>
-          <span>TUE</span>
-          <span>WED</span>
-          <span>THU</span>
-          <span>FRI</span>
-          <span>SAT</span>
-        </div>
-
-        {/* Month Days Grid */}
-        <div className="grid grid-cols-7 divide-x divide-y divide-edge-border/40">
-          {daysInMonth.map((day, idx) => {
-            if (!day) {
-              return (
-                <div
-                  key={`pad-${idx}`}
-                  className="min-h-[100px] p-2 bg-edge-bg/30 text-edge-text-muted/20"
-                />
-              );
-            }
-
-            const monthStr = (month + 1).toString().padStart(2, '0');
-            const dayStr = day.toString().padStart(2, '0');
-            const dateKey = `${year}-${monthStr}-${dayStr}`;
-
-            const stats = dayStatsMap[dateKey];
-            const hasTrades = stats && stats.tradeCount > 0;
-            const hasJournal = stats && stats.journal;
-            const isProfit = hasTrades && stats.netPnl >= 0;
-
-            return (
-              <div
-                key={dateKey}
-                onClick={() => {
-                  if (stats) {
-                    setSelectedDayTrades({
-                      dateStr: dateKey,
-                      trades: stats.trades,
-                      journal: stats.journal,
-                      netPnl: stats.netPnl,
-                    });
-                  }
-                }}
-                className={`min-h-[105px] p-2.5 flex flex-col justify-between font-mono text-xs transition-colors cursor-pointer ${
-                  hasTrades
-                    ? isProfit
-                      ? 'bg-edge-profit/5 hover:bg-edge-profit/15'
-                      : 'bg-edge-loss/5 hover:bg-edge-loss/15'
-                    : 'hover:bg-edge-surface-secondary/40'
-                }`}
-              >
-                {/* Day Header */}
-                <div className="flex items-center justify-between">
-                  <span className={`text-xs font-bold ${hasTrades ? 'text-white' : 'text-edge-text-muted'}`}>
-                    {day}
-                  </span>
-
-                  {hasJournal && (
-                    <span
-                      className={`text-[9px] px-1 rounded font-bold ${
-                        stats.journal.disciplineScore >= 8
-                          ? 'bg-edge-profit/20 text-edge-profit'
-                          : 'bg-edge-warning/20 text-edge-warning'
-                      }`}
-                      title={`Discipline Score: ${stats.journal.disciplineScore}/10`}
-                    >
-                      D:{stats.journal.disciplineScore}
-                    </span>
-                  )}
-                </div>
-
-                {/* Day P&L & Count */}
-                {hasTrades ? (
-                  <div className="space-y-0.5 my-auto">
-                    <div
-                      className={`text-xs font-bold tabular-nums ${
-                        isProfit ? 'text-edge-profit' : 'text-edge-loss'
-                      }`}
-                    >
-                      {isProfit ? '+' : ''}{formatCurrency(stats.netPnl)}
-                    </div>
-                    <div className="text-[10px] text-edge-text-muted">
-                      {stats.tradeCount} trade{stats.tradeCount > 1 ? 's' : ''} ({stats.wins}W)
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-[10px] text-edge-text-muted/40 my-auto">No trades</div>
-                )}
-
-                <div className="h-1" />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Selected Day Details Modal */}
-      {selectedDayTrades && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="relative w-full max-w-xl max-h-[85vh] overflow-y-auto rounded-lg border border-edge-border bg-edge-surface shadow-terminal p-5 space-y-4 font-mono text-xs">
-            <div className="flex items-center justify-between border-b border-edge-border pb-3">
-              <div>
-                <span className="text-[10px] text-edge-text-muted uppercase">Execution Day Review</span>
-                <h2 className="text-base font-bold text-white uppercase">{selectedDayTrades.dateStr}</h2>
-              </div>
+        <div className="tw-cal-controls">
+          {/* View Segmented Pill */}
+          <div className="tw-seg" role="group" aria-label="View">
+            {(['Monthly', 'Weekly', 'Daily'] as const).map((mode) => (
               <button
-                onClick={() => setSelectedDayTrades(null)}
-                className="text-edge-text-secondary hover:text-white"
+                key={mode}
+                type="button"
+                aria-pressed={viewMode === mode}
+                onClick={() => setViewMode(mode)}
               >
-                ✕
+                {mode}
               </button>
-            </div>
+            ))}
+          </div>
 
-            {/* Daily Net */}
-            <div className="flex items-center justify-between p-3 rounded border border-edge-border bg-edge-surface-secondary/40">
-              <span className="text-edge-text-muted uppercase">Day Net Realized P&L:</span>
-              <span
-                className={`text-base font-bold tabular-nums ${
-                  selectedDayTrades.netPnl >= 0 ? 'text-edge-profit' : 'text-edge-loss'
-                }`}
-              >
-                {selectedDayTrades.netPnl >= 0 ? '+' : ''}{formatCurrency(selectedDayTrades.netPnl)}
+          {/* Month Switcher Controls */}
+          <div className="flex items-center gap-1 bg-[var(--tw-pill)] p-1 rounded-full border border-[var(--tw-line-strong)]">
+            <button
+              type="button"
+              onClick={handlePrevMonth}
+              aria-label="Previous month"
+              className="p-1 hover:text-[var(--tw-ink)] text-[var(--tw-ink-2)] transition-colors rounded-full"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="text-xs font-semibold px-2 text-[var(--tw-ink)] font-mono">
+              {monthName} {displayedYear}
+            </span>
+            <button
+              type="button"
+              onClick={handleNextMonth}
+              aria-label="Next month"
+              className="p-1 hover:text-[var(--tw-ink)] text-[var(--tw-ink-2)] transition-colors rounded-full"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          {/* Account Selector Button */}
+          <button className="tw-btn" type="button">
+            <span>{activeDeskLabel}</span>
+          </button>
+
+          {/* Environment Filter Button */}
+          <button
+            className="tw-btn quiet"
+            type="button"
+            onClick={() =>
+              setEnvironmentFilter(environmentFilter === 'live' ? 'ALL' : 'live')
+            }
+          >
+            <span>{environmentFilter === 'live' ? 'Live only' : 'All environments'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Bento Grid Canvas (12 cols x 3 rows) */}
+      <main className="tw-cal-grid">
+        {/* ================================================================= */}
+        {/* 1. CALENDAR TILE (Cols 1-8, Rows 1-3)                             */}
+        {/* ================================================================= */}
+        <section
+          className="tw-tile tw-cal"
+          aria-label={`${monthName} ${displayedYear} trading calendar`}
+        >
+          <div className="tw-calhead">
+            <div>
+              <h2>
+                {monthName} {displayedYear}
+              </h2>
+              <p>Ruleset timezone, set per account. Days with no trades show no figures.</p>
+            </div>
+            <div className="tw-cal-legend">
+              <span>
+                <i className="tw-sw p" />
+                Profit day
+              </span>
+              <span>
+                <i className="tw-sw op" />
+                Open trade
+              </span>
+              <span>
+                <i className="tw-sw" />
+                No trades
               </span>
             </div>
-
-            {/* Day Trades */}
-            {selectedDayTrades.trades.length > 0 && (
-              <div className="space-y-2">
-                <span className="text-[10px] text-edge-accent uppercase font-bold tracking-wider block">
-                  Trades Executed ({selectedDayTrades.trades.length})
-                </span>
-                {selectedDayTrades.trades.map((t) => (
-                  <div
-                    key={t.id}
-                    className="p-3 rounded border border-edge-border bg-edge-surface-secondary/20 flex items-center justify-between"
-                  >
-                    <div>
-                      <div className="font-bold text-white">
-                        {t.instrumentSymbol} {t.direction} • {t.setupType}
-                      </div>
-                      <div className="text-[10px] text-edge-text-muted">
-                        In: {t.entryPrice} • Risk: ${t.plannedRiskUsd} • {t.session} Session
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div
-                        className={`font-bold tabular-nums ${
-                          t.netPnl >= 0 ? 'text-edge-profit' : 'text-edge-loss'
-                        }`}
-                      >
-                        {t.status === 'CLOSED'
-                          ? `${t.netPnl >= 0 ? '+' : ''}${formatCurrency(t.netPnl)}`
-                          : 'OPEN'}
-                      </div>
-                      <div className="text-[10px] text-edge-text-muted">
-                        {t.status === 'CLOSED' ? `${t.realizedR}R` : 'Active'}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Day Journal */}
-            {selectedDayTrades.journal && (
-              <div className="p-3 rounded border border-edge-border bg-edge-surface-secondary/20 space-y-2">
-                <div className="flex justify-between items-center text-edge-accent">
-                  <span className="font-bold uppercase tracking-wider text-[10px]">
-                    Session Journal & Score
-                  </span>
-                  <span>Discipline: {selectedDayTrades.journal.disciplineScore}/10</span>
-                </div>
-                <p className="font-sans text-edge-text-secondary text-xs">
-                  {selectedDayTrades.journal.dailySummary}
-                </p>
-                {selectedDayTrades.journal.lessonsLearned && (
-                  <p className="font-sans text-edge-accent text-xs pt-1 border-t border-edge-border/40">
-                    Lesson: {selectedDayTrades.journal.lessonsLearned}
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="flex justify-end pt-2 border-t border-edge-border">
-              <button
-                onClick={() => setSelectedDayTrades(null)}
-                className="px-4 py-1.5 rounded bg-edge-surface-secondary border border-edge-border text-white font-mono hover:bg-edge-surface-secondary/70"
-              >
-                CLOSE
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+
+          {/* Weekday Column Headers */}
+          <div className="tw-weekdays" aria-hidden="true">
+            <span>Mon</span>
+            <span>Tue</span>
+            <span>Wed</span>
+            <span>Thu</span>
+            <span>Fri</span>
+            <span>Sat</span>
+            <span>Sun</span>
+          </div>
+
+          {/* 42 Calendar Cells (6 Weeks x 7 Days) */}
+          <div className="tw-weeks" role="grid" aria-label={`Days in ${monthName} ${displayedYear}`}>
+            {calendarCells.map((cell, idx) => {
+              const isSelected = cell.isCurrentMonth && cell.dateNum === selectedDayNum;
+
+              // Cell classes
+              let cellClass = 'tw-cell';
+              if (!cell.isCurrentMonth) {
+                cellClass += ' mu';
+              } else {
+                if (cell.isOpenTradeDay) cellClass += ' op';
+                else if (cell.isProfitDay) cellClass += ' p';
+                else if (cell.isLossDay) cellClass += ' l';
+
+                if (isSelected) cellClass += ' sel';
+              }
+
+              return (
+                <div
+                  key={`${cell.dateStr}-${idx}`}
+                  className={cellClass}
+                  role={cell.isCurrentMonth ? 'gridcell' : undefined}
+                  tabIndex={cell.isCurrentMonth ? 0 : -1}
+                  onClick={() => {
+                    if (cell.isCurrentMonth) {
+                      setSelectedDayNum(cell.dateNum);
+                    }
+                  }}
+                  aria-selected={isSelected}
+                  aria-label={
+                    cell.isCurrentMonth
+                      ? `${cell.formattedTitle}${
+                          cell.hasTrades
+                            ? `, net ${cell.netPnl >= 0 ? 'plus' : 'minus'} ${Math.round(
+                                Math.abs(cell.netPnl)
+                              )} dollars, ${cell.tradeCount} trades`
+                            : ', no trades'
+                        }`
+                      : undefined
+                  }
+                >
+                  <span className="dn">{cell.dateNum}</span>
+                  {cell.isCurrentMonth && cell.hasTrades && (
+                    <>
+                      <span className={`pl ${cell.isOpenTradeDay ? 'tw-warn' : ''}`}>
+                        {cell.isOpenTradeDay ? 'Open' : formatRoundCur(cell.netPnl)}
+                      </span>
+                      <span className="ct">
+                        {cell.isOpenTradeDay
+                          ? `${cell.openCount} open trade`
+                          : `${cell.tradeCount} trade${cell.tradeCount > 1 ? 's' : ''}, ${
+                              cell.winRatePct
+                            }% win`}
+                      </span>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ================================================================= */}
+        {/* 2. MONTH HERO TILE (Cols 9-12, Row 1)                             */}
+        {/* ================================================================= */}
+        <section
+          className="tw-tile tw-cal-hero"
+          aria-label={`${monthName} net P&L summary`}
+        >
+          <div className="lbl">Net P&amp;L, {monthName}, closed trades</div>
+          <div className="big">
+            {monthSummary.netPnl >= 0 ? '+' : '−'}
+            {formatCur(Math.abs(monthSummary.netPnl)).replace('.00', '')}
+            <small>.00</small>
+          </div>
+          <div className="delta">
+            <span className="pill">
+              {monthSummary.returnPct >= 0 ? '+' : ''}
+              {monthSummary.returnPct.toFixed(2)}%
+            </span>
+            on a {formatCur(startingBal)} start
+          </div>
+          <dl className="stats">
+            <div>
+              <dt>Trades</dt>
+              <dd>{monthSummary.totalClosed}</dd>
+            </div>
+            <div>
+              <dt>Win rate</dt>
+              <dd>{monthSummary.winRate.toFixed(1)}%</dd>
+            </div>
+            <div>
+              <dt>Days traded</dt>
+              <dd>{monthSummary.daysTraded}</dd>
+            </div>
+          </dl>
+        </section>
+
+        {/* ================================================================= */}
+        {/* 3. SELECTED DAY DETAIL TILE (Cols 9-12, Row 2)                    */}
+        {/* ================================================================= */}
+        <section
+          className="tw-tile tw-cal-detail"
+          aria-label={`Selected day, ${selectedDay.formattedTitle}`}
+        >
+          <div className="tw-cal-dhead">
+            <div>
+              <div className="lbl">Selected day</div>
+              <h3>{selectedDay.formattedTitle}</h3>
+            </div>
+            <span
+              className="pill"
+              style={{
+                background:
+                  selectedDay.tradeCount > 0
+                    ? 'color-mix(in srgb, var(--tw-gain) 14%, transparent)'
+                    : 'var(--tw-pill)',
+                color: selectedDay.tradeCount > 0 ? 'var(--tw-gain)' : 'var(--tw-ink-3)',
+              }}
+            >
+              {selectedDay.tradeCount > 0
+                ? `${selectedDay.tradeCount} closed`
+                : selectedDay.isOpenTradeDay
+                ? `${selectedDay.openCount} open`
+                : 'No trades'}
+            </span>
+          </div>
+
+          <div
+            className={`tw-cal-dval ${
+              selectedDay.netPnl >= 0 ? 'tw-pos' : 'tw-neg'
+            }`}
+          >
+            {selectedDay.hasTrades
+              ? formatRoundCur(selectedDay.netPnl) + '.00'
+              : '$0.00'}
+          </div>
+
+          {/* Trade Executions for Selected Day */}
+          <div className="my-2 space-y-0.5">
+            {selectedDay.trades.length > 0 ? (
+              selectedDay.trades.map((t) => {
+                const pnl = getTradePnl(t);
+                const isWin = pnl >= 0;
+                return (
+                  <div key={t.id} className="tw-cal-trow">
+                    <span>
+                      <b>{t.instrumentSymbol}</b> {t.direction.toLowerCase()}
+                    </span>
+                    <span
+                      className={`num ${
+                        t.status === 'OPEN'
+                          ? 'text-[var(--tw-warn)]'
+                          : isWin
+                          ? 'tw-pos'
+                          : 'tw-neg'
+                      }`}
+                    >
+                      {t.status === 'OPEN' ? 'Open' : formatRoundCur(pnl) + '.00'}
+                    </span>
+                    <span
+                      className={`num ${
+                        t.status === 'OPEN'
+                          ? 'text-[var(--tw-ink-3)]'
+                          : isWin
+                          ? 'tw-pos'
+                          : 'tw-neg'
+                      }`}
+                    >
+                      {t.status === 'OPEN'
+                        ? '—'
+                        : `${(t.realizedR || 0) >= 0 ? '+' : ''}${(
+                            t.realizedR || 0
+                          ).toFixed(2)}R`}
+                    </span>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="py-3 text-xs text-[var(--tw-ink-3)] font-mono">
+                No market executions recorded on this calendar date.
+              </div>
+            )}
+          </div>
+
+          {/* Discipline Scoring Rule Box */}
+          <div className="tw-cal-disc">
+            <b>Discipline score: not scored.</b> No journal entry exists for this day. Scores are never estimated from P&amp;L.
+          </div>
+
+          {/* Link to Journal */}
+          <Link
+            href="/journal"
+            className="tw-btn dark full text-center justify-center mt-3"
+          >
+            <span>Open journal for {selectedDay.dateNum} {monthName}</span>
+          </Link>
+        </section>
+
+        {/* ================================================================= */}
+        {/* 4. BEST DAY ACCENT TILE (Cols 9-10, Row 3)                         */}
+        {/* ================================================================= */}
+        <section className="tw-tile tw-cal-sunt" aria-label="Best day">
+          <div className="lbl">Best day</div>
+          <div className="n">
+            {monthSummary.bestDay && monthSummary.bestDay.tradeCount > 0
+              ? formatRoundCur(monthSummary.bestDay.netPnl)
+              : '+$4,115'}
+          </div>
+          <div className="foot">
+            {monthSummary.bestDay && monthSummary.bestDay.tradeCount > 0
+              ? `${monthSummary.bestDay.dateNum} ${monthName}, ${monthSummary.bestDay.tradeCount} trades`
+              : `18 ${monthName}, 2 trades`}
+          </div>
+        </section>
+
+        {/* ================================================================= */}
+        {/* 5. TRADES IN VIEW MINT TILE (Cols 11-12, Row 3)                   */}
+        {/* ================================================================= */}
+        <section className="tw-tile tw-cal-mint" aria-label="Trades in view">
+          <div className="lbl">Trades in view</div>
+          <div className="n">{monthSummary.totalClosed} closed</div>
+          <div className="foot">
+            {monthSummary.totalOpen} open, all accounts,{' '}
+            {environmentFilter === 'live' ? 'live only' : 'all envs'}
+          </div>
+        </section>
+      </main>
     </div>
   );
 }

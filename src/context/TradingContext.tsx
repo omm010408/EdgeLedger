@@ -7,7 +7,8 @@ import {
   InstrumentSpecification,
   AccountRule,
   TradeAllocation,
-  TradeExecution
+  TradeExecution,
+  AccountType
 } from '../lib/types/financial';
 import {
   SEED_ACCOUNTS,
@@ -75,6 +76,7 @@ interface TradingContextType {
   updateRule: (accountId: string, rule: AccountRule) => void;
   addRule: (accountId: string, rule: Partial<AccountRule>) => void;
   toggleRule: (accountId: string, ruleId: string) => void;
+  deleteRule: (accountId: string, ruleId: string) => void;
 
   importTrades: (newTrades: Trade[]) => void;
   resetToDemoData: () => void;
@@ -126,7 +128,23 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed.accounts && parsed.accounts.length > 0) setAccounts(parsed.accounts);
+        if (parsed.accounts && parsed.accounts.length > 0) {
+          // Merge rich seed rules if stored accounts have missing/outdated rules
+          const hydratedAccounts = parsed.accounts.map((acc: TradingAccount) => {
+            const seed = SEED_ACCOUNTS.find((s) => s.id === acc.id);
+            if (seed && (!acc.rules || acc.rules.length < seed.rules.length)) {
+              return { ...acc, rules: seed.rules };
+            }
+            if (!acc.rules || acc.rules.length === 0) {
+              return {
+                ...acc,
+                rules: generatePersonalizedRules(acc.id, acc.accountType, acc.brokerOrFirm, acc.accountSize),
+              };
+            }
+            return acc;
+          });
+          setAccounts(hydratedAccounts);
+        }
         if (parsed.trades && parsed.trades.length > 0) setTrades(parsed.trades);
         if (parsed.strategies && parsed.strategies.length > 0) setStrategies(parsed.strategies);
         if (parsed.journalEntries && parsed.journalEntries.length > 0) setJournalEntries(parsed.journalEntries);
@@ -262,15 +280,241 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
     };
   }, [filteredTrades, accounts, selectedAccountId, environmentFilter]);
 
+function generatePersonalizedRules(
+  accountId: string,
+  accountType: AccountType,
+  brokerOrFirm: string,
+  size: number
+): AccountRule[] {
+  const firmLower = (brokerOrFirm || '').toLowerCase();
+  const now = new Date().toISOString();
+
+  if (accountType === 'funded' || firmLower.includes('apex') || firmLower.includes('topstep')) {
+    return [
+      {
+        id: `rule-${Date.now()}-1`,
+        accountId,
+        ruleType: 'daily_loss_limit',
+        thresholdValue: Math.round(size * 0.025), // e.g. $2,500 on 100k
+        thresholdUnit: 'currency',
+        calculationMethod: 'equity_based',
+        warningThresholdPct: 80,
+        isEnabled: true,
+        currentStatus: 'SAFE',
+        currentMetricValue: 0,
+        resetFrequency: 'daily',
+        applicableTimezone: 'America/New_York',
+        version: 1,
+        effectiveFrom: now,
+      },
+      {
+        id: `rule-${Date.now()}-2`,
+        accountId,
+        ruleType: 'trailing_drawdown',
+        thresholdValue: Math.round(size * 0.05), // e.g. $5,000 trailing
+        thresholdUnit: 'currency',
+        calculationMethod: 'relative_trailing',
+        warningThresholdPct: 80,
+        isEnabled: true,
+        currentStatus: 'SAFE',
+        currentMetricValue: 0,
+        resetFrequency: 'none',
+        applicableTimezone: 'America/New_York',
+        version: 1,
+        effectiveFrom: now,
+      },
+      {
+        id: `rule-${Date.now()}-3`,
+        accountId,
+        ruleType: 'max_risk_per_trade_pct',
+        thresholdValue: 1.5,
+        thresholdUnit: 'percent',
+        calculationMethod: 'equity_based',
+        warningThresholdPct: 80,
+        isEnabled: true,
+        currentStatus: 'SAFE',
+        currentMetricValue: 0,
+        resetFrequency: 'none',
+        applicableTimezone: 'America/New_York',
+        version: 1,
+        effectiveFrom: now,
+      },
+      {
+        id: `rule-${Date.now()}-4`,
+        accountId,
+        ruleType: 'max_open_risk_pct',
+        thresholdValue: 2.5,
+        thresholdUnit: 'percent',
+        calculationMethod: 'equity_based',
+        warningThresholdPct: 80,
+        isEnabled: true,
+        currentStatus: 'SAFE',
+        currentMetricValue: 0,
+        resetFrequency: 'none',
+        applicableTimezone: 'America/New_York',
+        version: 1,
+        effectiveFrom: now,
+      },
+    ];
+  }
+
+  if (
+    accountType === 'prop_evaluation' ||
+    accountType === 'prop_verification' ||
+    firmLower.includes('ftmo') ||
+    firmLower.includes('mff') ||
+    firmLower.includes('alpha')
+  ) {
+    return [
+      {
+        id: `rule-${Date.now()}-1`,
+        accountId,
+        ruleType: 'daily_loss_limit',
+        thresholdValue: Math.round(size * 0.05), // 5% daily limit
+        thresholdUnit: 'currency',
+        calculationMethod: 'balance_based',
+        warningThresholdPct: 80,
+        isEnabled: true,
+        currentStatus: 'SAFE',
+        currentMetricValue: 0,
+        resetFrequency: 'daily',
+        applicableTimezone: 'Europe/Prague',
+        version: 1,
+        effectiveFrom: now,
+      },
+      {
+        id: `rule-${Date.now()}-2`,
+        accountId,
+        ruleType: 'max_overall_loss',
+        thresholdValue: Math.round(size * 0.10), // 10% total max loss
+        thresholdUnit: 'currency',
+        calculationMethod: 'static',
+        warningThresholdPct: 80,
+        isEnabled: true,
+        currentStatus: 'SAFE',
+        currentMetricValue: 0,
+        resetFrequency: 'none',
+        applicableTimezone: 'Europe/Prague',
+        version: 1,
+        effectiveFrom: now,
+      },
+      {
+        id: `rule-${Date.now()}-3`,
+        accountId,
+        ruleType: 'profit_target',
+        thresholdValue: Math.round(size * 0.10), // 10% profit target
+        thresholdUnit: 'currency',
+        calculationMethod: 'static',
+        warningThresholdPct: 90,
+        isEnabled: true,
+        currentStatus: 'SAFE',
+        currentMetricValue: 0,
+        resetFrequency: 'none',
+        applicableTimezone: 'Europe/Prague',
+        version: 1,
+        effectiveFrom: now,
+      },
+      {
+        id: `rule-${Date.now()}-4`,
+        accountId,
+        ruleType: 'min_trading_days',
+        thresholdValue: 4,
+        thresholdUnit: 'days',
+        calculationMethod: 'static',
+        warningThresholdPct: 50,
+        isEnabled: true,
+        currentStatus: 'SAFE',
+        currentMetricValue: 0,
+        resetFrequency: 'none',
+        applicableTimezone: 'Europe/Prague',
+        version: 1,
+        effectiveFrom: now,
+      },
+    ];
+  }
+
+  // Personal / Live Retail / Custom
+  return [
+    {
+      id: `rule-${Date.now()}-1`,
+      accountId,
+      ruleType: 'daily_loss_limit',
+      thresholdValue: Math.round(size * 0.04), // 4% daily loss cap
+      thresholdUnit: 'currency',
+      calculationMethod: 'balance_based',
+      warningThresholdPct: 80,
+      isEnabled: true,
+      currentStatus: 'SAFE',
+      currentMetricValue: 0,
+      resetFrequency: 'daily',
+      applicableTimezone: 'UTC',
+      version: 1,
+      effectiveFrom: now,
+    },
+    {
+      id: `rule-${Date.now()}-2`,
+      accountId,
+      ruleType: 'max_risk_per_trade_pct',
+      thresholdValue: 2.0,
+      thresholdUnit: 'percent',
+      calculationMethod: 'equity_based',
+      warningThresholdPct: 80,
+      isEnabled: true,
+      currentStatus: 'SAFE',
+      currentMetricValue: 0,
+      resetFrequency: 'none',
+      applicableTimezone: 'UTC',
+      version: 1,
+      effectiveFrom: now,
+    },
+    {
+      id: `rule-${Date.now()}-3`,
+      accountId,
+      ruleType: 'max_overall_loss',
+      thresholdValue: Math.round(size * 0.10), // 10% max drawdown
+      thresholdUnit: 'currency',
+      calculationMethod: 'static',
+      warningThresholdPct: 80,
+      isEnabled: true,
+      currentStatus: 'SAFE',
+      currentMetricValue: 0,
+      resetFrequency: 'none',
+      applicableTimezone: 'UTC',
+      version: 1,
+      effectiveFrom: now,
+    },
+    {
+      id: `rule-${Date.now()}-4`,
+      accountId,
+      ruleType: 'max_open_positions',
+      thresholdValue: 3,
+      thresholdUnit: 'count',
+      calculationMethod: 'static',
+      warningThresholdPct: 66,
+      isEnabled: true,
+      currentStatus: 'SAFE',
+      currentMetricValue: 0,
+      resetFrequency: 'none',
+      applicableTimezone: 'UTC',
+      version: 1,
+      effectiveFrom: now,
+    },
+  ];
+}
+
   // Actions
   const addAccount = (accountData: Partial<TradingAccount>) => {
     const size = Number(accountData.accountSize) || 100000;
+    const accountId = `acc-${Date.now()}`;
+    const accountType = accountData.accountType || 'prop_evaluation';
+    const brokerOrFirm = accountData.brokerOrFirm || 'Prop Desk';
+
     const newAccount: TradingAccount = {
-      id: `acc-${Date.now()}`,
+      id: accountId,
       userId: 'user-default',
-      name: accountData.name || 'New Trading Account',
-      brokerOrFirm: accountData.brokerOrFirm || 'Prop Desk',
-      accountType: accountData.accountType || 'prop_evaluation',
+      name: accountData.name || `${brokerOrFirm} $${(size / 1000).toFixed(0)}k`,
+      brokerOrFirm,
+      accountType,
       currency: accountData.currency || 'USD',
       accountSize: size,
       startingBalance: size,
@@ -281,40 +525,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       status: 'active',
       isDemo: accountData.isDemo ?? false,
       positionMatchingMode: accountData.positionMatchingMode || 'hedging',
-      rules: [
-        {
-          id: `rule-${Date.now()}-1`,
-          accountId: `acc-${Date.now()}`,
-          ruleType: 'daily_loss_limit',
-          thresholdValue: Math.round(size * 0.05),
-          thresholdUnit: 'currency',
-          calculationMethod: 'equity_based',
-          warningThresholdPct: 80,
-          isEnabled: true,
-          currentStatus: 'SAFE',
-          currentMetricValue: 0,
-          resetFrequency: 'daily',
-          applicableTimezone: 'UTC',
-          version: 1,
-          effectiveFrom: new Date().toISOString(),
-        },
-        {
-          id: `rule-${Date.now()}-2`,
-          accountId: `acc-${Date.now()}`,
-          ruleType: 'max_overall_loss',
-          thresholdValue: Math.round(size * 0.10),
-          thresholdUnit: 'currency',
-          calculationMethod: 'static',
-          warningThresholdPct: 80,
-          isEnabled: true,
-          currentStatus: 'SAFE',
-          currentMetricValue: 0,
-          resetFrequency: 'none',
-          applicableTimezone: 'UTC',
-          version: 1,
-          effectiveFrom: new Date().toISOString(),
-        },
-      ],
+      rules: generatePersonalizedRules(accountId, accountType, brokerOrFirm, size),
       notes: accountData.notes || '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -676,6 +887,18 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
     );
   };
 
+  const deleteRule = (accountId: string, ruleId: string) => {
+    setAccounts((prev) =>
+      prev.map((acc) => {
+        if (acc.id !== accountId) return acc;
+        return {
+          ...acc,
+          rules: acc.rules.filter((r) => r.id !== ruleId),
+        };
+      })
+    );
+  };
+
   const importTrades = (newTrades: Trade[]) => {
     // Idempotent deduplication: filter out any trades whose id or signature already exists
     const existingIds = new Set(trades.map((t) => t.id));
@@ -750,6 +973,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
         updateRule,
         addRule,
         toggleRule,
+        deleteRule,
         importTrades,
         resetToDemoData,
         clearDemoData,

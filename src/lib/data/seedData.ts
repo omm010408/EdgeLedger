@@ -233,6 +233,20 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
         currentMetricValue: 1.0,
         resetFrequency: 'none',
         applicableTimezone: 'America/New_York'
+      },
+      {
+        id: 'rule-apex-4',
+        accountId: 'acc-apex-100k',
+        ruleType: 'max_open_risk_pct',
+        thresholdValue: 2.5,
+        thresholdUnit: 'percent',
+        calculationMethod: 'equity_based',
+        warningThresholdPct: 80,
+        isEnabled: true,
+        currentStatus: 'SAFE',
+        currentMetricValue: 1.8,
+        resetFrequency: 'none',
+        applicableTimezone: 'America/New_York'
       }
     ]
   },
@@ -297,6 +311,20 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
         currentMetricValue: 3280, // $3280 reached of $5000
         resetFrequency: 'none',
         applicableTimezone: 'Europe/Prague'
+      },
+      {
+        id: 'rule-ftmo-4',
+        accountId: 'acc-ftmo-50k',
+        ruleType: 'min_trading_days',
+        thresholdValue: 4,
+        thresholdUnit: 'days',
+        calculationMethod: 'static',
+        warningThresholdPct: 50,
+        isEnabled: true,
+        currentStatus: 'SAFE',
+        currentMetricValue: 2,
+        resetFrequency: 'none',
+        applicableTimezone: 'Europe/Prague'
       }
     ]
   },
@@ -337,14 +365,42 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
       {
         id: 'rule-ic-2',
         accountId: 'acc-icmarkets-25k',
-        ruleType: 'max_open_risk_pct',
-        thresholdValue: 3.0,
+        ruleType: 'max_risk_per_trade_pct',
+        thresholdValue: 2.0,
         thresholdUnit: 'percent',
         calculationMethod: 'equity_based',
         warningThresholdPct: 80,
         isEnabled: true,
         currentStatus: 'SAFE',
         currentMetricValue: 1.0,
+        resetFrequency: 'none',
+        applicableTimezone: 'UTC'
+      },
+      {
+        id: 'rule-ic-3',
+        accountId: 'acc-icmarkets-25k',
+        ruleType: 'max_overall_loss',
+        thresholdValue: 2500,
+        thresholdUnit: 'currency',
+        calculationMethod: 'static',
+        warningThresholdPct: 80,
+        isEnabled: true,
+        currentStatus: 'SAFE',
+        currentMetricValue: 0,
+        resetFrequency: 'none',
+        applicableTimezone: 'UTC'
+      },
+      {
+        id: 'rule-ic-4',
+        accountId: 'acc-icmarkets-25k',
+        ruleType: 'max_open_positions',
+        thresholdValue: 3,
+        thresholdUnit: 'count',
+        calculationMethod: 'static',
+        warningThresholdPct: 66,
+        isEnabled: true,
+        currentStatus: 'SAFE',
+        currentMetricValue: 1,
         resetFrequency: 'none',
         applicableTimezone: 'UTC'
       }
