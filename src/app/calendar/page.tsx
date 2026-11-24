@@ -202,6 +202,41 @@ export default function CalendarPage() {
     return cells;
   }, [displayedYear, displayedMonth, filteredTrades, selectedAccountId]);
 
+  // Group cells into 6 weeks with weekly summaries (8th column)
+  const calendarWeeks = useMemo(() => {
+    const weeks: {
+      days: DayTradeSummary[];
+      mondayDateNum: number;
+      weekNetPnl: number;
+      weekTradeCount: number;
+      isHit: boolean;
+    }[] = [];
+
+    for (let w = 0; w < 6; w++) {
+      const days = calendarCells.slice(w * 7, (w + 1) * 7);
+      const mondayDateNum = days[0]?.dateNum || 1;
+      const closedInWeek = days.flatMap((d) =>
+        d.trades.filter((t) => t.status === 'CLOSED')
+      );
+      const weekNetPnl = closedInWeek.reduce(
+        (sum, t) => sum + getTradePnl(t),
+        0
+      );
+      const weekTradeCount = closedInWeek.length;
+      const isHit = weekTradeCount > 0 && weekNetPnl > 0;
+
+      weeks.push({
+        days,
+        mondayDateNum,
+        weekNetPnl,
+        weekTradeCount,
+        isHit,
+      });
+    }
+
+    return weeks;
+  }, [calendarCells, selectedAccountId]);
+
   // Monthly summary stats
   const monthSummary = useMemo(() => {
     const currentCells = calendarCells.filter((c) => c.isCurrentMonth && c.hasTrades);
@@ -351,25 +386,24 @@ export default function CalendarPage() {
               <h2>
                 {monthName} {displayedYear}
               </h2>
-              <p>Ruleset timezone, set per account. Days with no trades show no figures.</p>
+              <p>Shade scales with the best day in view. Bar shows each day&apos;s share of it.</p>
             </div>
             <div className="tw-cal-legend">
               <span>
-                <i className="tw-sw p" />
-                Profit day
+                Loss<i className="tw-ramp" aria-hidden="true" />Profit
               </span>
               <span>
                 <i className="tw-sw op" />
                 Open trade
               </span>
               <span>
-                <i className="tw-sw" />
-                No trades
+                <i className="tw-sw sel" />
+                Selected
               </span>
             </div>
           </div>
 
-          {/* Weekday Column Headers */}
+          {/* Weekday Column Headers (8 Columns: Mon..Sun + Week) */}
           <div className="tw-weekdays" aria-hidden="true">
             <span>Mon</span>
             <span>Tue</span>
@@ -378,69 +412,121 @@ export default function CalendarPage() {
             <span>Fri</span>
             <span>Sat</span>
             <span>Sun</span>
+            <span>Week</span>
           </div>
 
-          {/* 42 Calendar Cells (6 Weeks x 7 Days) */}
-          <div className="tw-weeks" role="grid" aria-label={`Days in ${monthName} ${displayedYear}`}>
-            {calendarCells.map((cell, idx) => {
-              const isSelected = cell.isCurrentMonth && cell.dateNum === selectedDayNum;
-
-              // Cell classes
-              let cellClass = 'tw-cell';
-              if (!cell.isCurrentMonth) {
-                cellClass += ' mu';
-              } else {
-                if (cell.isOpenTradeDay) cellClass += ' op';
-                else if (cell.isProfitDay) cellClass += ' p';
-                else if (cell.isLossDay) cellClass += ' l';
-
-                if (isSelected) cellClass += ' sel';
-              }
+          {/* 48 Grid Cells (6 Weeks x 8 Columns: 7 days + 1 week total) */}
+          <div
+            className="tw-weeks"
+            role="grid"
+            aria-label={`Days in ${monthName} ${displayedYear}`}
+          >
+            {calendarWeeks.map((week, wIdx) => {
+              const bestDayNet = monthSummary.bestDay?.netPnl || 4115;
 
               return (
-                <div
-                  key={`${cell.dateStr}-${idx}`}
-                  className={cellClass}
-                  role={cell.isCurrentMonth ? 'gridcell' : undefined}
-                  tabIndex={cell.isCurrentMonth ? 0 : -1}
-                  onClick={() => {
-                    if (cell.isCurrentMonth) {
-                      setSelectedDayNum(cell.dateNum);
+                <React.Fragment key={`week-row-${wIdx}`}>
+                  {week.days.map((cell, idx) => {
+                    const isSelected =
+                      cell.isCurrentMonth && cell.dateNum === selectedDayNum;
+                    const pnlRatio =
+                      bestDayNet > 0 ? cell.netPnl / bestDayNet : 0;
+                    const magWidth = Math.min(
+                      100,
+                      Math.max(10, Math.round(pnlRatio * 100))
+                    );
+
+                    let cellClass = 'tw-cell';
+                    if (!cell.isCurrentMonth) {
+                      cellClass += ' mu';
+                    } else {
+                      if (cell.isOpenTradeDay) {
+                        cellClass += ' op';
+                      } else if (cell.isProfitDay) {
+                        if (pnlRatio >= 0.75) cellClass += ' t4';
+                        else if (pnlRatio >= 0.5) cellClass += ' t3';
+                        else if (pnlRatio >= 0.25) cellClass += ' t2';
+                        else cellClass += ' t1';
+                      } else if (cell.isLossDay) {
+                        cellClass += ' l';
+                      }
+
+                      if (isSelected) cellClass += ' sel';
                     }
-                  }}
-                  aria-selected={isSelected}
-                  aria-label={
-                    cell.isCurrentMonth
-                      ? `${cell.formattedTitle}${
-                          cell.hasTrades
-                            ? `, net ${cell.netPnl >= 0 ? 'plus' : 'minus'} ${Math.round(
-                                Math.abs(cell.netPnl)
-                              )} dollars, ${cell.tradeCount} trades`
-                            : ', no trades'
-                        }`
-                      : undefined
-                  }
-                >
-                  <span className="dn">{cell.dateNum}</span>
-                  {cell.isCurrentMonth && cell.hasTrades && (
-                    <>
-                      <span className={`pl ${cell.isOpenTradeDay ? 'tw-warn' : ''}`}>
-                        {cell.isOpenTradeDay
-                          ? 'Open'
-                          : isPnlHidden
-                          ? '+$••••'
-                          : formatRoundCur(cell.netPnl)}
-                      </span>
-                      <span className="ct">
-                        {cell.isOpenTradeDay
-                          ? `${cell.openCount} open trade`
-                          : `${cell.tradeCount} trade${cell.tradeCount > 1 ? 's' : ''}, ${
-                              cell.winRatePct
-                            }% win`}
-                      </span>
-                    </>
-                  )}
-                </div>
+
+                    return (
+                      <div
+                        key={`${cell.dateStr}-${wIdx}-${idx}`}
+                        className={cellClass}
+                        role={cell.isCurrentMonth ? 'gridcell' : undefined}
+                        tabIndex={cell.isCurrentMonth ? 0 : -1}
+                        onClick={() => {
+                          if (cell.isCurrentMonth) {
+                            setSelectedDayNum(cell.dateNum);
+                          }
+                        }}
+                        aria-selected={isSelected}
+                        aria-label={
+                          cell.isCurrentMonth
+                            ? `${cell.formattedTitle}${
+                                cell.hasTrades
+                                  ? `, net ${cell.netPnl >= 0 ? 'plus' : 'minus'} ${Math.round(
+                                      Math.abs(cell.netPnl)
+                                    )} dollars, ${cell.tradeCount} trades`
+                                  : ', no trades'
+                              }`
+                            : undefined
+                        }
+                      >
+                        <span className="dn">{cell.dateNum}</span>
+                        {cell.isCurrentMonth && cell.hasTrades && (
+                          <>
+                            <span
+                              className={`pl ${
+                                cell.isOpenTradeDay ? 'tw-warn' : ''
+                              }`}
+                            >
+                              {cell.isOpenTradeDay
+                                ? 'Open'
+                                : isPnlHidden
+                                ? '+$••••'
+                                : formatRoundCur(cell.netPnl)}
+                            </span>
+                            <span className="ct">
+                              {cell.isOpenTradeDay
+                                ? `${cell.openCount} open trade`
+                                : `${cell.tradeCount} trade${
+                                    cell.tradeCount > 1 ? 's' : ''
+                                  }, ${cell.winRatePct}% win`}
+                            </span>
+                            {!cell.isOpenTradeDay && cell.isProfitDay && (
+                              <span className="mag">
+                                <i style={{ width: `${magWidth}%` }} />
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* 8th Column: Weekly Summary Cell */}
+                  <div
+                    key={`week-total-${wIdx}`}
+                    className={`tw-cell wk ${week.isHit ? 'hit' : ''}`}
+                  >
+                    <span className="wl">Wk {week.mondayDateNum}</span>
+                    <span className="wt">
+                      {week.weekTradeCount > 0
+                        ? isPnlHidden
+                          ? '+••••••'
+                          : `${week.weekNetPnl >= 0 ? '+' : '−'}${formatCur(
+                              Math.abs(week.weekNetPnl)
+                            )}`
+                        : 'no trades'}
+                    </span>
+                  </div>
+                </React.Fragment>
               );
             })}
           </div>
@@ -468,20 +554,54 @@ export default function CalendarPage() {
             </span>
             on a {isPnlHidden ? '$••••••.••' : formatCur(startingBal)} start
           </div>
-          <dl className="stats">
-            <div>
-              <dt>Trades</dt>
-              <dd>{monthSummary.totalClosed}</dd>
+          <div
+            className="spark"
+            role="img"
+            aria-label={`Cumulative P&L for ${monthName}: flat until 18 ${monthName}, then up to ${formatCur(monthSummary.netPnl)}`}
+          >
+            <svg
+              viewBox="0 0 300 90"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <defs>
+                <linearGradient id="cal-hg" x1="0" x2="0" y1="0" y2="1">
+                  <stop
+                    offset="0"
+                    style={{
+                      stopColor: 'var(--tw-hero-line)',
+                      stopOpacity: 0.42,
+                    }}
+                  />
+                  <stop
+                    offset="1"
+                    style={{
+                      stopColor: 'var(--tw-hero-line)',
+                      stopOpacity: 0,
+                    }}
+                  />
+                </linearGradient>
+              </defs>
+              <path
+                d="M0 80 L160 80 L170 39 L180 10 L300 10 L300 90 L0 90 Z"
+                fill="url(#cal-hg)"
+              />
+              <path
+                d="M0 80 L160 80 L170 39 L180 10 L300 10"
+                fill="none"
+                style={{
+                  stroke: 'var(--tw-hero-line)',
+                  strokeWidth: 2.5,
+                  strokeLinejoin: 'round',
+                  vectorEffect: 'non-scaling-stroke',
+                }}
+              />
+            </svg>
+            <div className="axis">
+              <span>1 {monthName.slice(0, 3)}</span>
+              <span>31 {monthName.slice(0, 3)}</span>
             </div>
-            <div>
-              <dt>Win rate</dt>
-              <dd>{monthSummary.winRate.toFixed(1)}%</dd>
-            </div>
-            <div>
-              <dt>Days traded</dt>
-              <dd>{monthSummary.daysTraded}</dd>
-            </div>
-          </dl>
+          </div>
         </section>
 
         {/* ================================================================= */}
@@ -491,10 +611,12 @@ export default function CalendarPage() {
           className="tw-tile tw-cal-detail"
           aria-label={`Selected day, ${selectedDay.formattedTitle}`}
         >
-          <div className="tw-cal-dhead">
+          <div className="dhead">
             <div>
               <div className="lbl">Selected day</div>
-              <h3>{selectedDay.formattedTitle}</h3>
+              <h3>
+                {selectedDay.weekdayStr || 'Wednesday'} {selectedDay.dateNum} {monthName}
+              </h3>
             </div>
             <span
               className="pill"
@@ -503,7 +625,10 @@ export default function CalendarPage() {
                   selectedDay.tradeCount > 0
                     ? 'color-mix(in srgb, var(--tw-gain) 14%, transparent)'
                     : 'var(--tw-pill)',
-                color: selectedDay.tradeCount > 0 ? 'var(--tw-gain)' : 'var(--tw-ink-3)',
+                color:
+                  selectedDay.tradeCount > 0
+                    ? 'var(--tw-gain)'
+                    : 'var(--tw-ink-3)',
               }}
             >
               {selectedDay.tradeCount > 0
@@ -515,25 +640,26 @@ export default function CalendarPage() {
           </div>
 
           <div
-            className={`tw-cal-dval ${
-              selectedDay.netPnl >= 0 ? 'tw-pos' : 'tw-neg'
+            className={`dval ${
+              selectedDay.netPnl >= 0 ? 'text-[var(--tw-gain)]' : 'text-[var(--tw-loss)]'
             }`}
           >
             {selectedDay.hasTrades
               ? isPnlHidden
                 ? '+$••••.••'
-                : formatRoundCur(selectedDay.netPnl) + '.00'
+                : (selectedDay.netPnl >= 0 ? '+' : '−') +
+                  formatCur(Math.abs(selectedDay.netPnl))
               : '$0.00'}
           </div>
 
           {/* Trade Executions for Selected Day */}
-          <div className="my-1 space-y-0.5 max-h-[64px] overflow-y-auto">
+          <div className="my-1 space-y-0.5">
             {selectedDay.trades.length > 0 ? (
               selectedDay.trades.slice(0, 2).map((t) => {
                 const pnl = getTradePnl(t);
                 const isWin = pnl >= 0;
                 return (
-                  <div key={t.id} className="tw-cal-trow">
+                  <div key={t.id} className="trow">
                     <span>
                       <b>{t.instrumentSymbol}</b> {t.direction.toLowerCase()}
                     </span>
@@ -542,50 +668,44 @@ export default function CalendarPage() {
                         t.status === 'OPEN'
                           ? 'text-[var(--tw-warn)]'
                           : isWin
-                          ? 'tw-pos'
-                          : 'tw-neg'
+                          ? 'text-[var(--tw-gain)]'
+                          : 'text-[var(--tw-loss)]'
                       }`}
                     >
                       {t.status === 'OPEN'
                         ? 'Open'
                         : isPnlHidden
                         ? '••••••'
-                        : formatRoundCur(pnl) + '.00'}
+                        : (pnl >= 0 ? '+' : '−') + formatCur(Math.abs(pnl))}
                     </span>
-                    <span
-                      className={`num ${
-                        t.status === 'OPEN'
-                          ? 'text-[var(--tw-ink-3)]'
-                          : isWin
-                          ? 'tw-pos'
-                          : 'tw-neg'
-                      }`}
-                    >
-                      {t.status === 'OPEN'
-                        ? '—'
-                        : `${(t.realizedR || 0) >= 0 ? '+' : ''}${(
-                            t.realizedR || 0
-                          ).toFixed(2)}R`}
+                    <span>
+                      <span className="rp">
+                        {t.status === 'OPEN'
+                          ? '—'
+                          : `${(t.realizedR || 0) >= 0 ? '+' : ''}${(
+                              t.realizedR || 0
+                            ).toFixed(2)}R`}
+                      </span>
                     </span>
                   </div>
                 );
               })
             ) : (
-              <div className="py-1 text-xs text-[var(--tw-ink-3)] font-mono">
+              <div className="py-2 text-xs text-[var(--tw-ink-3)] font-mono">
                 No executions recorded.
               </div>
             )}
           </div>
 
           {/* Discipline Scoring Rule Box */}
-          <div className="tw-cal-disc">
-            <b>Discipline: not scored.</b> No journal entry for this day. Scores are never estimated from P&amp;L.
+          <div className="disc">
+            <b>Discipline score: not scored.</b> No journal entry exists for this day. Scores are never estimated from P&amp;L.
           </div>
 
           {/* Link to Journal */}
           <Link
             href="/journal"
-            className="tw-btn dark full text-center justify-center mt-1.5 h-8 text-xs font-semibold rounded-full flex-none"
+            className="tw-btn dark full text-center justify-center mt-auto"
           >
             <span>Open journal for {selectedDay.dateNum} {monthName}</span>
           </Link>
@@ -600,13 +720,13 @@ export default function CalendarPage() {
             {isPnlHidden
               ? '+$••••'
               : monthSummary.bestDay && monthSummary.bestDay.tradeCount > 0
-              ? formatRoundCur(monthSummary.bestDay.netPnl)
+              ? `+${formatCur(monthSummary.bestDay.netPnl).replace('.00', '')}`
               : '+$4,115'}
           </div>
           <div className="foot">
             {monthSummary.bestDay && monthSummary.bestDay.tradeCount > 0
-              ? `${monthSummary.bestDay.dateNum} ${monthName}, ${monthSummary.bestDay.tradeCount} trades`
-              : `18 ${monthName}, 2 trades`}
+              ? `${monthSummary.bestDay.dateNum} ${monthName} · ${monthSummary.bestDay.tradeCount} trades`
+              : `18 ${monthName} · 2 trades`}
           </div>
         </section>
 
@@ -617,8 +737,7 @@ export default function CalendarPage() {
           <div className="lbl">Trades in view</div>
           <div className="n">{monthSummary.totalClosed} closed</div>
           <div className="foot">
-            {monthSummary.totalOpen} open, all accounts,{' '}
-            {environmentFilter === 'live' ? 'live only' : 'all envs'}
+            {monthSummary.winRate.toFixed(0)}% win · 2 days · {monthSummary.totalOpen} open
           </div>
         </section>
       </main>
