@@ -1,0 +1,867 @@
+'use client';
+
+import React, { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useTrading } from '../../context/TradingContext';
+import { SEED_FIRM_TEMPLATES } from '../../lib/data/accountRepository';
+import { computeGateState, validateRuleSetAgainstFirmCeiling } from '../../lib/calculations/gateEngine';
+import { AccountTypeCategory, DailyLossMode, TotalLossMode, EnforcementMode } from '../../lib/types/gate';
+import { Check, AlertTriangle, ShieldAlert, Lock, RefreshCw } from 'lucide-react';
+
+interface AddAccountFormProps {
+  onCancel?: () => void;
+  onSuccess?: () => void;
+  isModal?: boolean;
+}
+
+const COMMON_TIMEZONES = [
+  { value: 'UTC', label: 'UTC (+00:00)' },
+  { value: 'America/New_York', label: 'New York (EST/EDT)' },
+  { value: 'America/Chicago', label: 'Chicago (CST/CDT)' },
+  { value: 'Europe/London', label: 'London (GMT/BST)' },
+  { value: 'Europe/Prague', label: 'Prague / CE(S)T' },
+  { value: 'Asia/Tokyo', label: 'Tokyo (JST)' },
+  { value: 'Asia/Dubai', label: 'Dubai (GST)' },
+  { value: 'Australia/Sydney', label: 'Sydney (AEST)' },
+];
+
+export const AddAccountForm: React.FC<AddAccountFormProps> = ({
+  onCancel,
+  onSuccess,
+  isModal = false,
+}) => {
+  const router = useRouter();
+  const { addAccount } = useTrading();
+
+  // Form Fields
+  const [label, setLabel] = useState('Apex 100K Funded Live #1');
+  // Manual prop firm / broker name (NO dropdown/select)
+  const [brokerOrFirm, setBrokerOrFirm] = useState('Apex Trader Funding');
+  const [baseCurrency, setBaseCurrency] = useState('USD');
+  const [accountType, setAccountType] = useState<AccountTypeCategory>('evaluation');
+  const [startingBalance, setStartingBalance] = useState('100000');
+  const [phase, setPhase] = useState<number | null>(1);
+
+  // Personalized Loss Limits
+  const [dailyLossMode, setDailyLossMode] = useState<DailyLossMode>('pct_day_start');
+  const [dailyLossValue, setDailyLossValue] = useState('5.0');
+  const [dailyResetLocalTime, setDailyResetLocalTime] = useState('00:00');
+  const [dailyResetTimezone, setDailyResetTimezone] = useState('UTC');
+
+  const [totalLossMode, setTotalLossMode] = useState<TotalLossMode>('trailing_peak');
+  const [totalLossValue, setTotalLossValue] = useState('5.0');
+  const [warnThresholdPct, setWarnThresholdPct] = useState(80);
+  const [enforcement, setEnforcement] = useState<EnforcementMode>('enforce');
+  const [newsRestricted, setNewsRestricted] = useState(true);
+
+  const [notes, setNotes] = useState('Trailing drawdown from peak, scale down after 3 losing days, no trading during London open.');
+
+  // Submission State
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [serverErrors, setServerErrors] = useState<Array<{ name: string; reason: string }>>([]);
+  const [generalError, setGeneralError] = useState<string | null>(null);
+
+  // Match known firm template based on user's manually typed firm name
+  const activeFirmTemplate = useMemo(() => {
+    const firmLower = (brokerOrFirm || '').trim().toLowerCase();
+    if (!firmLower) return null;
+    const match = SEED_FIRM_TEMPLATES.find((t) => {
+      const isMatch = firmLower.includes(t.firmId) || t.firmName.toLowerCase().includes(firmLower);
+      return isMatch && (t.phase === phase || (t.phase === null && phase === null));
+    });
+    if (match) return match;
+    return SEED_FIRM_TEMPLATES.find((t) =>
+      firmLower.includes(t.firmId) || t.firmName.toLowerCase().includes(firmLower)
+    ) || null;
+  }, [brokerOrFirm, phase]);
+
+  // Sync news restricted flag if firm specifies it
+  useEffect(() => {
+    if (activeFirmTemplate) {
+      setNewsRestricted(activeFirmTemplate.newsRestricted);
+    }
+  }, [activeFirmTemplate]);
+
+  // Adjust defaults when a recognized firm name is typed
+  useEffect(() => {
+    if (activeFirmTemplate) {
+      setDailyLossValue(activeFirmTemplate.dailyLossPct.toFixed(1));
+      setTotalLossValue(activeFirmTemplate.totalLossPct.toFixed(1));
+      setTotalLossMode(activeFirmTemplate.totalLossMode);
+    }
+  }, [activeFirmTemplate?.id]);
+
+  // Calculate live limits in currency
+  const calculatedLimits = useMemo(() => {
+    const startBal = parseFloat(startingBalance) || 100000;
+    let dailyLimitDollars = 0;
+    if (dailyLossMode === 'pct_day_start') {
+      dailyLimitDollars = startBal * ((parseFloat(dailyLossValue) || 5) / 100);
+    } else {
+      dailyLimitDollars = parseFloat(dailyLossValue) || 5000;
+    }
+
+    const totalLossPct = (parseFloat(totalLossValue) || 10) / 100;
+    const totalLimitDollars = startBal * totalLossPct;
+    const totalFloorDollars = startBal - totalLimitDollars;
+    const targetDollars = startBal * ((activeFirmTemplate?.profitTargetPct || 10) / 100);
+
+    return {
+      dailyLimitDollars,
+      totalLimitDollars,
+      totalFloorDollars,
+      targetDollars,
+      startBal,
+    };
+  }, [startingBalance, dailyLossMode, dailyLossValue, totalLossMode, totalLossValue, activeFirmTemplate]);
+
+  // Client-Side Gate Preview
+  const previewGateState = useMemo(() => {
+    try {
+      const mockAcc: any = {
+        id: 'preview',
+        userId: 'preview',
+        label,
+        brokerOrFirmId: brokerOrFirm,
+        accountType,
+        baseCurrency,
+        startingBalance: calculatedLimits.startBal.toFixed(2),
+        currentBalance: calculatedLimits.startBal.toFixed(2),
+        currentEquity: calculatedLimits.startBal.toFixed(2),
+        peakEquity: calculatedLimits.startBal.toFixed(2),
+        dailyStartEquity: calculatedLimits.startBal.toFixed(2),
+        phase,
+        phaseStatus: 'active',
+        version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const mockRuleSet: any = {
+        id: 'ruleset-preview',
+        accountId: 'preview',
+        version: 1,
+        createdAt: new Date().toISOString(),
+        effectiveFrom: new Date().toISOString(),
+        dailyLossMode,
+        dailyLossValue,
+        dailyResetLocalTime,
+        dailyResetTimezone,
+        totalLossMode,
+        totalLossValue,
+        warnThresholdPct,
+        enforcement,
+        profitTargetValue: activeFirmTemplate?.profitTargetPct ? String(activeFirmTemplate.profitTargetPct) : null,
+        minTradingDays: activeFirmTemplate?.minTradingDays || null,
+        maxRiskPerTradePct: activeFirmTemplate?.maxRiskPerTradePct ? String(activeFirmTemplate.maxRiskPerTradePct) : null,
+        isActive: true,
+      };
+
+      return computeGateState({
+        account: mockAcc,
+        ruleSet: mockRuleSet,
+        firmTemplate: activeFirmTemplate,
+        currentEquity: calculatedLimits.startBal,
+        peakEquity: calculatedLimits.startBal,
+        dailyStartEquity: calculatedLimits.startBal,
+        openFloatingPnl: 0,
+      });
+    } catch {
+      return null;
+    }
+  }, [
+    label,
+    brokerOrFirm,
+    accountType,
+    baseCurrency,
+    calculatedLimits,
+    phase,
+    dailyLossMode,
+    dailyLossValue,
+    dailyResetLocalTime,
+    dailyResetTimezone,
+    totalLossMode,
+    totalLossValue,
+    warnThresholdPct,
+    enforcement,
+    activeFirmTemplate,
+  ]);
+
+  // Pre-validate locally
+  const localValidation = useMemo(() => {
+    const draft = {
+      dailyLossMode,
+      dailyLossValue,
+      dailyResetLocalTime,
+      dailyResetTimezone,
+      totalLossMode,
+      totalLossValue,
+      warnThresholdPct,
+      enforcement,
+    };
+    return validateRuleSetAgainstFirmCeiling(draft, startingBalance, activeFirmTemplate);
+  }, [
+    dailyLossMode,
+    dailyLossValue,
+    dailyResetLocalTime,
+    dailyResetTimezone,
+    totalLossMode,
+    totalLossValue,
+    warnThresholdPct,
+    enforcement,
+    startingBalance,
+    activeFirmTemplate,
+  ]);
+
+  const handleCancel = () => {
+    if (onCancel) {
+      onCancel();
+    } else {
+      router.push('/accounts');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setServerErrors([]);
+    setGeneralError(null);
+
+    if (!localValidation.isValid) {
+      setServerErrors(localValidation.errors);
+      return;
+    }
+
+    setIsSubmitting(true);
+    const idempotencyKey = `idemp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    try {
+      const payload = {
+        label: label.trim(),
+        broker_or_firm_id: brokerOrFirm.trim(),
+        account_type: accountType,
+        base_currency: baseCurrency,
+        starting_balance: startingBalance,
+        phase: phase,
+        daily_loss_mode: dailyLossMode,
+        daily_loss_value: dailyLossValue,
+        daily_reset_local_time: dailyResetLocalTime,
+        daily_reset_timezone: dailyResetTimezone,
+        total_loss_mode: totalLossMode,
+        total_loss_value: totalLossValue,
+        warn_threshold_pct: warnThresholdPct,
+        enforcement: enforcement,
+        profit_target_value: activeFirmTemplate?.profitTargetPct,
+        min_trading_days: activeFirmTemplate?.minTradingDays,
+        max_risk_per_trade_pct: activeFirmTemplate?.maxRiskPerTradePct,
+        notes: notes,
+      };
+
+      const res = await fetch('/api/v1/accounts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (data.invalid_params) {
+          setServerErrors(data.invalid_params);
+        } else {
+          setGeneralError(data.detail || 'Server rejected account creation.');
+        }
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Add to TradingContext state
+      const size = parseFloat(startingBalance) || 100000;
+      addAccount({
+        name: data.account.label,
+        brokerOrFirm: brokerOrFirm.trim(),
+        accountType:
+          accountType === 'live'
+            ? 'personal'
+            : accountType === 'funded'
+            ? 'funded'
+            : 'prop_evaluation',
+        accountSize: size,
+        startingBalance: size,
+        currentBalance: size,
+        currentEquity: size,
+        currency: baseCurrency,
+        challengePhase: phase ? `Phase ${phase}` : 'Funded',
+        notes: notes,
+      });
+
+      setIsSubmitting(false);
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.push('/accounts');
+      }
+    } catch (err: any) {
+      setGeneralError(err.message || 'Network error communicating with gate engine.');
+      setIsSubmitting(false);
+    }
+  };
+
+  const getFieldError = (fieldName: string) => {
+    return serverErrors.find((e) => e.name === fieldName)?.reason;
+  };
+
+  return (
+    <div className={`tw-add-account-board w-full ${isModal ? 'max-w-6xl rounded-[32px] border border-[var(--line)] bg-[var(--tile)] shadow-2xl p-6 sm:p-8' : 'max-w-[1440px] mx-auto p-4 sm:p-7'}`}>
+      
+      {/* Top Header & Steps */}
+      <div className="tw-titlerow pb-4 border-b border-[var(--line)]">
+        <div>
+          <div className="flex items-center gap-3">
+            <span className="w-8 h-8 rounded-[12px] bg-[var(--hero)] text-[var(--hero-ink)] font-bold grid place-items-center text-sm shadow-sm">
+              E
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--ink)]">
+              Add trading account
+            </h1>
+          </div>
+          <p className="text-xs sm:text-sm text-[var(--ink-2)] mt-1.5">
+            Set the account's phase, your own loss limits, and whether a breach blocks new trades.
+          </p>
+        </div>
+        <div className="tw-controls">
+          <div className="tw-steps hidden md:flex" role="list" aria-label="Steps">
+            <span role="listitem"><b>1</b>Identity</span>
+            <span role="listitem" aria-current="step"><b>2</b>Limits</span>
+            <span role="listitem"><b>3</b>Review</span>
+          </div>
+          <button
+            onClick={handleCancel}
+            className="btn quiet hover:bg-[var(--pill)] px-4 py-2 rounded-full border border-[var(--line-strong)] text-[var(--ink-2)] text-xs sm:text-sm font-medium"
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="btn dark px-5 py-2 rounded-full bg-[var(--ink)] text-[var(--tile)] font-semibold text-xs sm:text-sm flex items-center gap-2 hover:opacity-90 disabled:opacity-50 cursor-pointer"
+            type="button"
+          >
+            {isSubmitting ? (
+              <>
+                <RefreshCw size={14} className="animate-spin" />
+                <span>Validating...</span>
+              </>
+            ) : (
+              'Create account'
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Validation Error Alert */}
+      {(serverErrors.length > 0 || generalError) && (
+        <div className="mt-4 p-4 rounded-2xl bg-[var(--warn-bg)] border border-[var(--warn-line)] text-[var(--warn)] flex items-start gap-3">
+          <ShieldAlert size={20} className="shrink-0 mt-0.5" />
+          <div className="text-xs space-y-1">
+            <b className="font-semibold text-sm">Gate Validation Rejected:</b>
+            {generalError && <div>{generalError}</div>}
+            {serverErrors.map((err, i) => (
+              <div key={i} className="font-mono">
+                • <span className="font-semibold">{err.name}</span>: {err.reason}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 12-Column Grid */}
+      <form onSubmit={handleSubmit} className="tw-grid mt-6">
+
+        {/* Section 1: Account Identity (Cols 1-7) */}
+        <section className="tw-tile tw-ident" aria-label="Account identity">
+          <div className="tw-thead">
+            <span className="tw-lbl">Account identity</span>
+            <span className="tw-sub">Required fields are marked by their label</span>
+          </div>
+
+          <div className="tw-field" style={{ marginBottom: '12px' }}>
+            <span className="tw-lbl">Account label</span>
+            <div className={`tw-input ${getFieldError('label') ? 'border-[var(--loss)]' : ''}`}>
+              <input
+                type="text"
+                placeholder="e.g. Apex 100K Funded Live #1"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                required
+              />
+            </div>
+            {getFieldError('label') && (
+              <span className="text-[11px] text-[var(--loss)]">{getFieldError('label')}</span>
+            )}
+          </div>
+
+          <div className="tw-grid2" style={{ marginBottom: '12px' }}>
+            {/* MANUAL PROP FIRM / BROKER NAME - NO DROPDOWN/SELECT */}
+            <div className="tw-field">
+              <div className="flex items-center justify-between">
+                <span className="tw-lbl">Broker or prop firm</span>
+                {activeFirmTemplate && (
+                  <span className="text-[10px] text-[var(--gain)] font-mono font-medium">Ceilings detected</span>
+                )}
+              </div>
+              <div className="tw-input">
+                <input
+                  type="text"
+                  placeholder="e.g. Apex, FTMO, Topstep, IC Markets"
+                  value={brokerOrFirm}
+                  onChange={(e) => setBrokerOrFirm(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="tw-field">
+              <span className="tw-lbl">Base currency</span>
+              <div className="tw-input">
+                <select
+                  value={baseCurrency}
+                  onChange={(e) => setBaseCurrency(e.target.value)}
+                >
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="GBP">GBP (£)</option>
+                </select>
+                <span className="tw-chev">▼</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="tw-field">
+            <span className="tw-lbl">Account type</span>
+            <div className="tw-cats" role="group" aria-label="Account type">
+              <button
+                className="tw-cat"
+                type="button"
+                aria-pressed={accountType === 'evaluation'}
+                onClick={() => {
+                  setAccountType('evaluation');
+                  setPhase(1);
+                }}
+              >
+                <b>Evaluation</b>
+                <small>Challenge, phased</small>
+              </button>
+              <button
+                className="tw-cat"
+                type="button"
+                aria-pressed={accountType === 'funded'}
+                onClick={() => {
+                  setAccountType('funded');
+                  setPhase(null);
+                }}
+              >
+                <b>Funded</b>
+                <small>Firm capital</small>
+              </button>
+              <button
+                className="tw-cat"
+                type="button"
+                aria-pressed={accountType === 'payout'}
+                onClick={() => {
+                  setAccountType('payout');
+                  setPhase(null);
+                }}
+              >
+                <b>Payout</b>
+                <small>Withdrawal stage</small>
+              </button>
+              <button
+                className="tw-cat"
+                type="button"
+                aria-pressed={accountType === 'live'}
+                onClick={() => {
+                  setAccountType('live');
+                  setPhase(null);
+                }}
+              >
+                <b>Live</b>
+                <small>Your own capital</small>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Section 2: Capital and Phase (Cols 8-12, Sun Tile) */}
+        <section className="tw-tile tw-capital" aria-label="Capital and phase">
+          <div className="tw-thead" style={{ marginBottom: '6px' }}>
+            <span className="tw-lbl font-semibold">Capital and phase</span>
+            <span className="pill px-3 py-0.5 rounded-full text-xs font-bold bg-[var(--sun-ink)] text-[var(--sun)]">
+              {accountType === 'evaluation' ? `Phase ${phase || 1} of 2` : 'Funded Stage'}
+            </span>
+          </div>
+
+          <div className="tw-big">
+            {Number(startingBalance || 0).toLocaleString('en-US')}
+            <small>{baseCurrency}</small>
+          </div>
+
+          <div className="tw-sub font-medium" style={{ marginTop: '6px' }}>
+            Starting balance. {activeFirmTemplate?.profitTargetPct ? `Profit target ${activeFirmTemplate.profitTargetPct}%, from the firm rules below.` : 'Trader-defined target.'}
+          </div>
+
+          <div className="mt-3">
+            <span className="tw-lbl text-[11px] uppercase tracking-wider block mb-1">Starting balance</span>
+            <div className="tw-input mono font-semibold">
+              <input
+                type="number"
+                value={startingBalance}
+                onChange={(e) => setStartingBalance(e.target.value)}
+                min="1000"
+                step="1000"
+              />
+              <span className="text-xs">{baseCurrency}</span>
+            </div>
+          </div>
+
+          <div className="tw-phases">
+            <div
+              className="tw-ph"
+              aria-current={phase === 1 ? 'step' : undefined}
+              onClick={() => setPhase(1)}
+            >
+              <b>Phase 1</b>
+              <small>Target ${(calculatedLimits.startBal * (activeFirmTemplate?.profitTargetPct || 10) / 100).toLocaleString('en-US')}</small>
+            </div>
+            <div
+              className="tw-ph"
+              aria-current={phase === 2 ? 'step' : undefined}
+              onClick={() => setPhase(2)}
+            >
+              <b>Phase 2</b>
+              <small>Target ${(calculatedLimits.startBal * 0.05).toLocaleString('en-US')}</small>
+            </div>
+          </div>
+        </section>
+
+        {/* Section 3: Personal Loss Limits (Cols 1-6) */}
+        <section className="tw-tile tw-limits" aria-label="Your loss limits">
+          <div className="tw-thead">
+            <span className="tw-lbl">Your loss limits</span>
+            <span className="tw-sub">{activeFirmTemplate ? 'Stricter than the firm is allowed' : 'Trader personal risk limits'}</span>
+          </div>
+
+          {/* Daily Loss Card */}
+          <div className="tw-lim">
+            <div className="tw-limhead">
+              <b>Daily loss limit</b>
+              <span className="loss font-mono">−${calculatedLimits.dailyLimitDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+            <div className="tw-limrow">
+              <div className="tw-field">
+                <span className="tw-lbl">Measured as</span>
+                <div className="tw-seg two" role="group" aria-label="Daily loss measured as">
+                  <button
+                    type="button"
+                    aria-pressed={dailyLossMode === 'pct_day_start'}
+                    onClick={() => setDailyLossMode('pct_day_start')}
+                  >
+                    % of day start
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={dailyLossMode === 'fixed_amount'}
+                    onClick={() => setDailyLossMode('fixed_amount')}
+                  >
+                    Fixed $
+                  </button>
+                </div>
+              </div>
+
+              <div className="tw-field">
+                <span className="tw-lbl">Limit</span>
+                <div className={`tw-input mono ${getFieldError('dailyLossValue') ? 'border-[var(--loss)]' : ''}`}>
+                  <input
+                    type="number"
+                    step={dailyLossMode === 'pct_day_start' ? '0.1' : '100'}
+                    value={dailyLossValue}
+                    onChange={(e) => setDailyLossValue(e.target.value)}
+                  />
+                  <span className="tw-chev">{dailyLossMode === 'pct_day_start' ? '%' : '$'}</span>
+                </div>
+              </div>
+
+              <div className="tw-field">
+                <span className="tw-lbl">Resets at</span>
+                <div className="tw-input mono">
+                  <select
+                    value={dailyResetTimezone}
+                    onChange={(e) => setDailyResetTimezone(e.target.value)}
+                    className="text-xs"
+                  >
+                    {COMMON_TIMEZONES.map((tz) => (
+                      <option key={tz.value} value={tz.value}>
+                        {dailyResetLocalTime} {tz.value.split('/')[1] || tz.value}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+            {getFieldError('dailyLossValue') && (
+              <div className="text-[11px] text-[var(--loss)] mt-1 font-mono">
+                {getFieldError('dailyLossValue')}
+              </div>
+            )}
+          </div>
+
+          {/* Total Loss Card */}
+          <div className="tw-lim">
+            <div className="tw-limhead">
+              <b>Total loss limit</b>
+              <span className="loss font-mono">Floor ${calculatedLimits.totalFloorDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+            <div className="tw-limrow">
+              <div className="tw-field">
+                <span className="tw-lbl">Counted from</span>
+                <div className="tw-seg two" role="group" aria-label="Total loss counted from">
+                  <button
+                    type="button"
+                    aria-pressed={totalLossMode === 'static_start'}
+                    onClick={() => setTotalLossMode('static_start')}
+                  >
+                    Start balance
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={totalLossMode === 'trailing_peak'}
+                    onClick={() => setTotalLossMode('trailing_peak')}
+                  >
+                    Peak equity
+                  </button>
+                </div>
+              </div>
+
+              <div className="tw-field">
+                <span className="tw-lbl">Limit</span>
+                <div className={`tw-input mono ${getFieldError('totalLossValue') ? 'border-[var(--loss)]' : ''}`}>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={totalLossValue}
+                    onChange={(e) => setTotalLossValue(e.target.value)}
+                  />
+                  <span className="tw-chev">%</span>
+                </div>
+              </div>
+
+              <div className="tw-field">
+                <span className="tw-lbl">Warn at</span>
+                <div className="tw-input mono">
+                  <input
+                    type="number"
+                    min="50"
+                    max="99"
+                    value={warnThresholdPct}
+                    onChange={(e) => setWarnThresholdPct(parseInt(e.target.value, 10) || 80)}
+                  />
+                  <span className="tw-chev">%</span>
+                </div>
+              </div>
+            </div>
+            {getFieldError('totalLossValue') && (
+              <div className="text-[11px] text-[var(--loss)] mt-1 font-mono">
+                {getFieldError('totalLossValue')}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Section 4: Gate Live Preview (Cols 7-12) */}
+        <section className="tw-tile tw-gate" aria-label="Trading gate preview">
+          <div className="tw-thead">
+            <span className="tw-lbl">Trading gate, live preview</span>
+            <span className="tw-sub">Updates as you edit limits</span>
+          </div>
+
+          <div className={`tw-gate-state ${previewGateState?.status || 'allowed'}`}>
+            <span className={`tw-gate-dot ${previewGateState?.status || 'allowed'}`} aria-hidden="true">
+              {previewGateState?.status === 'warning' ? (
+                <AlertTriangle size={20} />
+              ) : previewGateState?.status === 'blocked' ? (
+                <ShieldAlert size={20} />
+              ) : previewGateState?.status === 'locked' ? (
+                <Lock size={20} />
+              ) : (
+                <Check size={20} strokeWidth={3} />
+              )}
+            </span>
+            <div>
+              <b>
+                {previewGateState?.status === 'warning'
+                  ? 'Warning threshold'
+                  : previewGateState?.status === 'locked'
+                  ? 'Trading locked until reset'
+                  : previewGateState?.status === 'blocked'
+                  ? 'Trading blocked by rule'
+                  : 'Trading allowed'}
+              </b>
+              <small>
+                {previewGateState?.status === 'allowed'
+                  ? 'Nothing has been used yet. Blocks start at 100% of a limit.'
+                  : 'Server gate enforces write block on execution recording.'}
+              </small>
+            </div>
+          </div>
+
+          <div className="tw-gate-bars">
+            <div className="tw-gate-bar">
+              <span>Daily loss used</span>
+              <span className="mono font-mono">$0.00 of ${calculatedLimits.dailyLimitDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <div className="tw-gate-track">
+                <i style={{ width: '0%' }}></i>
+                <em style={{ left: `${warnThresholdPct}%` }}></em>
+              </div>
+            </div>
+
+            <div className="tw-gate-bar">
+              <span>Total loss used</span>
+              <span className="mono font-mono">$0.00 of ${calculatedLimits.totalLimitDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <div className="tw-gate-track">
+                <i style={{ width: '0%' }}></i>
+                <em style={{ left: `${warnThresholdPct}%` }}></em>
+              </div>
+            </div>
+
+            <div className="tw-gate-bar">
+              <span>Phase target progress</span>
+              <span className="mono font-mono">$0.00 of ${calculatedLimits.targetDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <div className="tw-gate-track">
+                <i style={{ width: '0%', background: 'var(--hero)' }}></i>
+              </div>
+            </div>
+          </div>
+
+          <div className="tw-enforce">
+            <p>When a limit is reached, new executions are blocked until the reset. Warn-only shows the state but lets you record.</p>
+            <div className="tw-seg two" role="group" aria-label="Enforcement">
+              <button
+                type="button"
+                aria-pressed={enforcement === 'enforce'}
+                onClick={() => setEnforcement('enforce')}
+              >
+                Enforce
+              </button>
+              <button
+                type="button"
+                aria-pressed={enforcement === 'warn_only'}
+                onClick={() => setEnforcement('warn_only')}
+              >
+                Warn only
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Section 5: Firm Rules (Cols 1-6) */}
+        <section className="tw-tile tw-firm" aria-label="Firm rules">
+          <div className="tw-thead">
+            <span className="tw-lbl">Firm rules, applied as published</span>
+            <span className="tw-sub">{activeFirmTemplate ? 'Editable only by the firm' : 'Custom desk rules'}</span>
+          </div>
+          <div className="tw-rules">
+            <div className="tw-rule">
+              <div>
+                <b>Profit target</b>
+                <small>{activeFirmTemplate ? `Phase ${phase || 1}` : 'Trader set'}</small>
+              </div>
+              <span className="mono">
+                {activeFirmTemplate?.profitTargetPct
+                  ? `${activeFirmTemplate.profitTargetPct.toFixed(1)}% · $${(calculatedLimits.startBal * (activeFirmTemplate.profitTargetPct / 100)).toLocaleString()}`
+                  : 'Trader target'}
+              </span>
+              <span></span>
+            </div>
+
+            <div className="tw-rule">
+              <div>
+                <b>Minimum trading days</b>
+                <small>{activeFirmTemplate ? `Phase ${phase || 1}` : 'Trader set'}</small>
+              </div>
+              <span className="mono">
+                {activeFirmTemplate?.minTradingDays ? `${activeFirmTemplate.minTradingDays} days` : 'No minimum'}
+              </span>
+              <span></span>
+            </div>
+
+            <div className="tw-rule">
+              <div>
+                <b>Max risk per trade</b>
+                <small>{activeFirmTemplate ? 'Firm cap' : 'Trader set'}</small>
+              </div>
+              <span className="mono">
+                {activeFirmTemplate?.maxRiskPerTradePct ? `${activeFirmTemplate.maxRiskPerTradePct.toFixed(1)}%` : 'No firm cap'}
+              </span>
+              <span></span>
+            </div>
+
+            <div className="tw-rule">
+              <div>
+                <b>Block trading near high-impact news</b>
+                <small>{activeFirmTemplate ? 'Firm rule, shown for awareness' : 'Personal rule toggle'}</small>
+              </div>
+              <span></span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!activeFirmTemplate) {
+                    setNewsRestricted(!newsRestricted);
+                  }
+                }}
+                className={`tw-tog ${newsRestricted ? 'on' : ''} ${activeFirmTemplate ? 'cursor-default' : 'cursor-pointer'}`}
+                aria-label="Toggle news trading restriction"
+              ></button>
+            </div>
+          </div>
+        </section>
+
+        {/* Section 6: Notes & Actions (Cols 7-12) */}
+        <section className="tw-tile tw-notes" aria-label="Account notes">
+          <div className="tw-thead">
+            <span className="tw-lbl">Strategy and rules notes</span>
+            <span className="tw-sub">Optional. Shown on the account card.</span>
+          </div>
+          <textarea
+            className="tw-area"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="e.g. Trailing drawdown from peak, scale down after 3 losing days, no trading during the first 15 minutes of London."
+          />
+          <div className="tw-actionbar">
+            <span>Limits are saved as your rules and sent to the server for enforcement.</span>
+            <div>
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="btn quiet hover:bg-[var(--pill)] px-4 py-2 rounded-full border border-[var(--line-strong)] text-[var(--ink-2)] text-xs sm:text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="btn dark px-5 py-2 rounded-full bg-[var(--ink)] text-[var(--tile)] font-semibold text-xs sm:text-sm hover:opacity-90 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+              >
+                {isSubmitting ? 'Saving...' : 'Create account'}
+              </button>
+            </div>
+          </div>
+        </section>
+
+      </form>
+    </div>
+  );
+};

@@ -105,6 +105,12 @@ export default function OverviewPage() {
     }).format(val);
   };
 
+  const formatInt = (val: number) => {
+    return new Intl.NumberFormat('en-US', {
+      maximumFractionDigits: 0,
+    }).format(Math.round(val));
+  };
+
   const formatWholeCents = (val: number) => {
     const formatted = formatCur(Math.abs(val));
     const sign = val >= 0 ? '+' : '−';
@@ -186,10 +192,10 @@ export default function OverviewPage() {
           </svg>
           <span className="tw-end" aria-hidden="true" />
           <span className="tw-tag start">
-            Start, ${Math.round(capitalStats.startingBal).toLocaleString()}
+            Start, ${formatInt(capitalStats.startingBal)}
           </span>
           <span className="tw-tag close">
-            Closing, ${Math.round(capitalStats.currentBal).toLocaleString()}
+            Closing, ${formatInt(capitalStats.currentBal)}
           </span>
           <span className="tw-tag x x1">18 Mar</span>
           <span className="tw-tag x x2">19 Mar</span>
@@ -204,8 +210,8 @@ export default function OverviewPage() {
         <div className="tw-lbl">Profit factor</div>
         <div className="tw-n">{capitalStats.profitFactor.toFixed(2)}</div>
         <div className="tw-sub">
-          Gross ${Math.round(capitalStats.grossProfit).toLocaleString()} over $
-          {Math.round(capitalStats.grossLoss).toLocaleString()} in losses
+          Gross ${formatInt(capitalStats.grossProfit)} over $
+          {formatInt(capitalStats.grossLoss)} in losses
         </div>
       </section>
 
@@ -412,7 +418,7 @@ export default function OverviewPage() {
           <div className="tw-row2">
             <span className="tw-sub">Average win</span>
             <span className="tw-pos" style={{ fontWeight: 600 }}>
-              +${Math.round(capitalStats.avgWin).toLocaleString()}
+              +${formatInt(capitalStats.avgWin)}
             </span>
           </div>
           <div className="tw-qbar">
@@ -423,7 +429,7 @@ export default function OverviewPage() {
           <div className="tw-row2">
             <span className="tw-sub">Average loss</span>
             <span className="tw-neg" style={{ fontWeight: 600 }}>
-              −${Math.round(capitalStats.avgLoss).toLocaleString()}
+              −${formatInt(capitalStats.avgLoss)}
             </span>
           </div>
           <div className="tw-qbar">

@@ -168,7 +168,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <div className="flex flex-col">
                         <span className="font-medium truncate max-w-[180px]">{acc.name}</span>
                         <span className="text-[11px] text-[#A9C1BD] font-mono">
-                          {acc.brokerOrFirm} · ${acc.currentBalance.toLocaleString()}
+                          {acc.brokerOrFirm} · ${acc.currentBalance.toLocaleString('en-US')}
                         </span>
                       </div>
                       {isSelected && <Check size={14} className="text-[#9BF3DF]" />}

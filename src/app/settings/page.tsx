@@ -375,7 +375,7 @@ export default function SettingsPage() {
                     <td className="p-2 font-bold text-white">{inst.symbol}</td>
                     <td className="p-2 text-edge-text-secondary">{inst.name}</td>
                     <td className="p-2 uppercase text-[10px] text-edge-accent">{inst.category}</td>
-                    <td className="p-2 tabular-nums">{inst.contractSize.toLocaleString()}</td>
+                    <td className="p-2 tabular-nums">{inst.contractSize.toLocaleString('en-US')}</td>
                     <td className="p-2 tabular-nums">{inst.tickSize}</td>
                     <td className="p-2 tabular-nums">${inst.tickValue}</td>
                     <td className="p-2 text-edge-text-muted">{inst.baseCurrency}/{inst.quoteCurrency}</td>

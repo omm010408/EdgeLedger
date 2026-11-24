@@ -809,13 +809,13 @@ export default function TradesPage() {
 
                 {/* Left Labels */}
                 <text className="tl-ladder lt" x="8" y="6">
-                  Stop {ladderStats.stop.toLocaleString()}
+                  Stop {ladderStats.stop.toLocaleString('en-US')}
                 </text>
                 <text className="tl-ladder lt" x="8" y="37">
-                  Entry {ladderStats.entry.toLocaleString()}
+                  Entry {ladderStats.entry.toLocaleString('en-US')}
                 </text>
                 <text className="tl-ladder lt" x="8" y="134">
-                  Target {ladderStats.target.toLocaleString()}
+                  Target {ladderStats.target.toLocaleString('en-US')}
                 </text>
 
                 {/* Right Labels (Distances in pts) */}

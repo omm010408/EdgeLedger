@@ -264,7 +264,7 @@ export default function CalendarPage() {
 
   const formatRoundCur = (val: number) => {
     const sign = val >= 0 ? '+' : '−';
-    return `${sign}$${Math.round(Math.abs(val)).toLocaleString()}`;
+    return `${sign}$${new Intl.NumberFormat('en-US').format(Math.round(Math.abs(val)))}`;
   };
 
   const activeDeskLabel =

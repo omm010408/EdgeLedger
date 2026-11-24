@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useTrading } from '../../context/TradingContext';
 import {
   FileText,
@@ -31,6 +31,11 @@ export default function ReportsPage() {
 
   const [reportType, setReportType] = useState<'EXECUTIVE' | 'PROP_EVAL' | 'STRATEGY' | 'RISK'>('EXECUTIVE');
   const [dateFilter, setDateFilter] = useState<'ALL' | '30D' | '7D'>('ALL');
+  const [reportTimestamp, setReportTimestamp] = useState<string>('2024-03-20 16:00:00 UTC');
+
+  useEffect(() => {
+    setReportTimestamp(new Date().toUTCString());
+  }, []);
 
   // CSV Import State
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -245,7 +250,7 @@ export default function ReportsPage() {
               </h2>
             </div>
             <p className="text-xs text-edge-text-muted mt-1 font-sans">
-              Generated: {new Date().toLocaleString()} • Scope: {selectedAccount ? selectedAccount.name : 'Consolidated Desk'}
+              Generated: {reportTimestamp} • Scope: {selectedAccount ? selectedAccount.name : 'Consolidated Desk'}
             </p>
           </div>
 

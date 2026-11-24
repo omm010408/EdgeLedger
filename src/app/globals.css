@@ -804,15 +804,16 @@ body {
 .tw-tag.x2 { left: 87.5%; }
 
 /* Profit Factor Arch */
+.tw-tile.tw-arch,
 .tw-arch {
   align-items: center;
   justify-content: flex-end;
   padding: 0 20px 24px;
   text-align: center;
-  border: 0;
+  border: 0 !important;
   border-radius: 999px 999px 32px 32px;
-  background: var(--tw-sun);
-  color: var(--tw-sun-ink);
+  background: var(--tw-sun) !important;
+  color: var(--tw-sun-ink) !important;
 }
 
 .tw-disc {
@@ -826,9 +827,9 @@ body {
   background: var(--tw-sun-disc);
 }
 
-.tw-arch .tw-lbl { position: relative; color: var(--tw-sun-ink); }
-.tw-arch .tw-n { position: relative; margin-top: 6px; font-size: clamp(36px, 4vw, 56px); line-height: 1; }
-.tw-arch .tw-sub { position: relative; margin-top: 8px; color: var(--tw-sun-ink); }
+.tw-arch .tw-lbl { position: relative; color: var(--tw-sun-ink) !important; }
+.tw-arch .tw-n { position: relative; margin-top: 6px; font-size: clamp(36px, 4vw, 56px); line-height: 1; color: var(--tw-sun-ink) !important; }
+.tw-arch .tw-sub { position: relative; margin-top: 8px; color: var(--tw-sun-ink) !important; opacity: 0.85; }
 
 /* Win Rate Ring */
 .tw-ring {
@@ -840,17 +841,19 @@ body {
 .tw-ring .tw-lbl { align-self: stretch; text-align: left; }
 
 /* Aqua Expectancy */
+.tw-tile.tw-aqua,
 .tw-aqua {
   justify-content: space-between;
-  background: var(--tw-aqua);
-  border-color: transparent;
-  color: var(--tw-aqua-ink);
+  background: var(--tw-aqua) !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  color: var(--tw-aqua-ink) !important;
 }
 
-.tw-aqua .tw-lbl { color: var(--tw-aqua-ink); }
-.tw-exp { font-size: clamp(30px, 3.5vw, 46px); line-height: 1.1; }
-.tw-aqua .tw-exp { color: var(--tw-aqua-num); }
-.tw-aqua .tw-pill { background: var(--tw-aqua-chip); color: var(--tw-aqua-ink); }
+.tw-aqua .tw-lbl { color: var(--tw-aqua-ink) !important; }
+.tw-exp { font-size: clamp(30px, 3.5vw, 46px); line-height: 1.1; color: var(--tw-aqua-num) !important; }
+.tw-aqua .tw-exp { color: var(--tw-aqua-num) !important; }
+.tw-aqua .tw-pill { background: var(--tw-aqua-chip) !important; color: var(--tw-aqua-ink) !important; }
 
 /* Week Bubbles */
 .tw-week {
@@ -1611,3 +1614,582 @@ body {
 .tl-alloc { margin-top: 10px; font-size: 12px; line-height: 16px; color: var(--ink-2); }
 .tl-scale { margin-top: 10px; padding: 10px 12px; border-radius: 14px; border: 1px dashed var(--line-strong); font-size: 12px; line-height: 16px; color: var(--ink-3); }
 .tl-dact { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; padding-top: 14px; }
+
+/* =========================================================================
+   TIDEWATER ADD ACCOUNT MODAL & FORM STYLES
+   ========================================================================= */
+.tw-add-account-board {
+  width: 100%;
+  max-width: 1440px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Instrument Sans', Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tw-titlerow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 10px;
+  flex: none;
+}
+.tw-titlerow h1 {
+  margin: 0;
+  font-size: 32px;
+  line-height: 38px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.tw-titlerow p {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 20px;
+}
+.tw-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.tw-steps {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--pill);
+}
+.tw-steps span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.tw-steps b {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--tile);
+  color: var(--ink-2);
+}
+.tw-steps span[aria-current="step"] {
+  background: var(--ink);
+  color: var(--tile);
+  font-weight: 600;
+}
+.tw-steps span[aria-current="step"] b {
+  background: var(--sun);
+  color: var(--sun-ink);
+}
+
+.tw-add-account-board .tw-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.tw-add-account-board .tw-tile {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px;
+  border-radius: 32px;
+  background: var(--tile);
+  border: 1px solid var(--line);
+}
+.tw-add-account-board .tw-lbl {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.tw-add-account-board .tw-sub {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.tw-thead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tw-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.tw-field > .tw-lbl {
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.tw-input {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: var(--pill);
+  border: 1px solid var(--line);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  min-width: 0;
+  color: var(--ink);
+}
+.tw-input input, .tw-input select {
+  background: transparent;
+  border: 0;
+  outline: none;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+}
+.tw-input.mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 600;
+}
+.tw-input.ph {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+.tw-chev {
+  color: var(--ink-3);
+  font-size: 11px;
+  pointer-events: none;
+}
+.tw-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.tw-seg {
+  display: grid;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--pill);
+  height: 42px;
+}
+.tw-seg.two {
+  grid-template-columns: 1fr 1fr;
+}
+.tw-seg button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0 8px;
+  transition: all 0.15s ease;
+}
+.tw-seg button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--tile);
+}
+
+/* Identity section */
+.tw-ident {
+  grid-column: span 7;
+}
+.tw-cats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 2px;
+}
+.tw-cat {
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--pill);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  transition: all 0.15s ease;
+}
+.tw-cat[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--sun) 18%, var(--tile));
+  border-color: var(--sun);
+  box-shadow: inset 0 0 0 1px var(--sun);
+}
+.tw-cat b {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.tw-cat small {
+  display: block;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--ink-3);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Capital and phase, sun */
+.tw-capital {
+  grid-column: span 5;
+  background: var(--sun);
+  border: 0;
+  color: var(--sun-ink);
+}
+.tw-capital .tw-lbl,
+.tw-capital .tw-sub,
+.tw-capital .tw-field > .tw-lbl {
+  color: var(--sun-ink);
+}
+.tw-capital .tw-input {
+  background: color-mix(in srgb, var(--sun-ink) 8%, transparent);
+  border-color: color-mix(in srgb, var(--sun-ink) 25%, transparent);
+  color: var(--sun-ink);
+}
+.tw-big {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 38px;
+  line-height: 42px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  margin-top: 6px;
+  white-space: nowrap;
+}
+.tw-big small {
+  font-size: 18px;
+  letter-spacing: 0;
+  font-weight: 600;
+  margin-left: 6px;
+}
+.tw-phases {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+.tw-ph {
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--sun-ink) 8%, transparent);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tw-ph[aria-current="step"] {
+  background: var(--sun-ink);
+  color: var(--sun);
+}
+.tw-ph b {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+.tw-ph small {
+  font-size: 11px;
+  opacity: .85;
+}
+
+/* Personal loss limits */
+.tw-limits {
+  grid-column: span 6;
+}
+.tw-lim {
+  padding: 10px 14px;
+  border-radius: 20px;
+  background: var(--pill);
+  border: 1px solid var(--line);
+}
+.tw-lim + .tw-lim {
+  margin-top: 8px;
+}
+.tw-limhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.tw-limhead b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.tw-limhead span {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+.tw-limrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+}
+.tw-limnote {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--ink-3);
+}
+
+/* Gate preview */
+.tw-gate {
+  grid-column: span 6;
+}
+.tw-gate-state {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--gain) 12%, transparent);
+  transition: background 0.2s ease;
+}
+.tw-gate-state.warning {
+  background: color-mix(in srgb, var(--warn) 15%, transparent);
+}
+.tw-gate-state.blocked, .tw-gate-state.locked {
+  background: color-mix(in srgb, var(--loss) 15%, transparent);
+}
+.tw-gate-dot {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--gain);
+  color: var(--tile);
+  flex: none;
+}
+.tw-gate-dot.warning {
+  background: var(--warn);
+}
+.tw-gate-dot.blocked, .tw-gate-dot.locked {
+  background: var(--loss);
+}
+.tw-gate-dot svg {
+  width: 20px;
+  height: 20px;
+}
+.tw-gate-state b {
+  display: block;
+  font-size: 18px;
+  line-height: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--gain);
+}
+.tw-gate-state.warning b {
+  color: var(--warn);
+}
+.tw-gate-state.blocked b, .tw-gate-state.locked b {
+  color: var(--loss);
+}
+.tw-gate-state small {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+}
+.tw-gate-bars {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+.tw-gate-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--ink-2);
+  position: static !important;
+}
+.tw-gate-track {
+  grid-column: 1 / 3;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--pill);
+  position: relative;
+  overflow: hidden;
+}
+.tw-gate-track i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 99px;
+  background: var(--gain);
+  transition: width 0.2s ease;
+}
+.tw-gate-track i.warning {
+  background: var(--warn);
+}
+.tw-gate-track i.breach {
+  background: var(--loss);
+}
+.tw-gate-track em {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--warn);
+  z-index: 2;
+}
+.tw-gate-bar .mono {
+  font-weight: 600;
+  color: var(--ink);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+.tw-enforce {
+  margin-top: auto;
+  padding-top: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.tw-enforce p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+}
+.tw-enforce .tw-seg {
+  width: 220px;
+  height: 36px;
+}
+
+/* Firm rules and notes */
+.tw-firm {
+  grid-column: span 6;
+}
+.tw-rules {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.tw-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--pill);
+  font-size: 13px;
+}
+.tw-rule small {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.tw-rule .mono {
+  font-weight: 600;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+.tw-tog {
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--line-strong);
+  position: relative;
+  display: inline-block;
+  cursor: default;
+}
+.tw-tog::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--tile);
+  transition: left 0.15s ease;
+}
+.tw-tog.on {
+  background: var(--hero);
+}
+.tw-tog.on::after {
+  left: 18px;
+}
+
+.tw-notes {
+  grid-column: span 6;
+}
+.tw-area {
+  flex: 1;
+  min-height: 80px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: var(--pill);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 20px;
+  resize: none;
+  outline: none;
+  width: 100%;
+}
+.tw-area::placeholder {
+  color: var(--ink-3);
+}
+.tw-actionbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.tw-actionbar span {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.tw-actionbar div {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 1024px) {
+  .tw-ident, .tw-capital, .tw-limits, .tw-gate, .tw-firm, .tw-notes {
+    grid-column: span 12;
+  }
+  .tw-cats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

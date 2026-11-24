@@ -354,7 +354,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({ isOpen, onClos
                     <div>
                       <div className="font-semibold truncate max-w-[140px]">{acc.name}</div>
                       <div className="text-[10px] text-edge-text-muted font-mono">
-                        Eq: ${acc.currentEquity.toLocaleString()}
+                        Eq: ${acc.currentEquity.toLocaleString('en-US')}
                       </div>
                     </div>
                     {isSelected ? (
@@ -382,12 +382,12 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({ isOpen, onClos
                 </div>
                 <div>
                   <span className="text-edge-text-muted mr-1.5">Monetary Risk:</span>
-                  <span className="text-edge-loss font-bold">-${calcPreview.potentialLoss.toLocaleString()}</span>
+                  <span className="text-edge-loss font-bold">-${calcPreview.potentialLoss.toLocaleString('en-US')}</span>
                 </div>
                 <div>
                   <span className="text-edge-text-muted mr-1.5">Potential Reward:</span>
                   <span className="text-edge-profit font-bold">
-                    +${(calcPreview.potentialProfit || 0).toLocaleString()}
+                    +${(calcPreview.potentialProfit || 0).toLocaleString('en-US')}
                   </span>
                 </div>
                 <div>

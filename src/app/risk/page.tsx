@@ -263,7 +263,7 @@ export default function RiskTerminalPage() {
                 />
                 <span>{acc.name}</span>
                 <span className="text-[10px] font-mono opacity-80">
-                  (${acc.currentEquity.toLocaleString()})
+                  (${acc.currentEquity.toLocaleString('en-US')})
                 </span>
               </button>
             );
@@ -315,7 +315,7 @@ export default function RiskTerminalPage() {
           </div>
           <div className="text-[11px] text-[var(--tw-hero-line)] flex items-center justify-between font-sans">
             <span>
-              Peak: ${activeAccount.highWaterMark.toLocaleString()}
+              Peak: ${activeAccount.highWaterMark.toLocaleString('en-US')}
             </span>
             <span className="text-[10px] text-[var(--tw-ink-3)] font-mono">
               Limit: {drawdownRule ? formatCurrency(drawdownRule.rule.thresholdValue) : '$5,000'}
@@ -566,7 +566,7 @@ export default function RiskTerminalPage() {
 
             <div>
               <label className="block text-[var(--tw-ink-3)] text-[10px] uppercase mb-1">
-                Risk % of Equity (Account: ${activeAccount.currentEquity.toLocaleString()})
+                Risk % of Equity (Account: ${activeAccount.currentEquity.toLocaleString('en-US')})
               </label>
               <input
                 type="number"
@@ -642,14 +642,14 @@ export default function RiskTerminalPage() {
                 <div>
                   <span className="text-[10px] text-[var(--tw-ink-3)] uppercase block">Monetary Risk</span>
                   <span className="text-xl font-bold text-[var(--tw-loss)] tabular-nums">
-                    -${calcResult.potentialLoss.toLocaleString()}
+                    -${calcResult.potentialLoss.toLocaleString('en-US')}
                   </span>
                 </div>
 
                 <div>
                   <span className="text-[10px] text-[var(--tw-ink-3)] uppercase block">Potential Gain</span>
                   <span className="text-base font-bold text-[var(--tw-gain)] tabular-nums">
-                    +${(calcResult.potentialProfit || 0).toLocaleString()}
+                    +${(calcResult.potentialProfit || 0).toLocaleString('en-US')}
                   </span>
                 </div>
 
