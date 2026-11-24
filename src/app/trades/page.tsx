@@ -266,12 +266,24 @@ export default function TradesPage() {
   // Ladder details for selected trade
   const ladderStats = useMemo(() => {
     if (!selectedTrade) return null;
+    const isBuy =
+      selectedTrade.direction.toUpperCase() === 'BUY' ||
+      selectedTrade.direction.toUpperCase() === 'LONG';
     const entry = selectedTrade.entryPrice;
     const stop = selectedTrade.stopLoss;
-    const target = selectedTrade.takeProfit || entry + (entry - stop) * 2;
+    const target =
+      selectedTrade.takeProfit ||
+      (isBuy
+        ? entry + Math.abs(entry - stop) * 3
+        : entry - Math.abs(entry - stop) * 3);
     const stopDist = Math.abs(entry - stop);
     const targetDist = Math.abs(target - entry);
     const rrRatio = stopDist > 0 ? (targetDist / stopDist).toFixed(1) : '1.0';
+
+    const totalDist = stopDist + targetDist;
+    const entryRatio =
+      totalDist > 0 ? (isBuy ? targetDist : stopDist) / totalDist : 0.5;
+    const entryY = Math.max(25, Math.min(125, 10 + entryRatio * 130));
 
     return {
       entry,
@@ -280,7 +292,8 @@ export default function TradesPage() {
       stopDist,
       targetDist,
       rrRatio,
-      isBuy: selectedTrade.direction === 'BUY',
+      isBuy,
+      entryY,
     };
   }, [selectedTrade]);
 
@@ -395,7 +408,7 @@ export default function TradesPage() {
           <div className="delta">
             <span className="pill tabular-nums">
               {totalNetPnl >= 0 ? '+' : '−'}
-              ${formatCur(totalNetPnl)}
+              {formatCur(totalNetPnl)}
             </span>
             <span>net P&amp;L after costs</span>
           </div>
@@ -636,7 +649,7 @@ export default function TradesPage() {
                     >
                       {group.openCount > 0 && group.closedCount === 0
                         ? 'Active'
-                        : `${group.dayPnl >= 0 ? '+' : '−'}$${formatCur(group.dayPnl)}`}
+                        : `${group.dayPnl >= 0 ? '+' : '−'}${formatCur(group.dayPnl)}`}
                     </span>
                   </div>
 
@@ -736,7 +749,7 @@ export default function TradesPage() {
                           }`}
                         >
                           {isClosed
-                            ? `${trade.netPnl >= 0 ? '+' : '−'}$${formatCur(trade.netPnl)}`
+                            ? `${trade.netPnl >= 0 ? '+' : '−'}${formatCur(trade.netPnl)}`
                             : 'Active'}
                         </span>
                       </div>
@@ -791,40 +804,114 @@ export default function TradesPage() {
                 </span>
               </div>
 
-              {/* Dynamic Price Ladder SVG */}
+              {/* Dynamic Price Ladder SVG (Correct Buy vs Sell Orientation) */}
               <svg
                 className="tl-ladder"
-                viewBox="0 -8 330 158"
+                viewBox="0 -8 330 166"
                 role="img"
-                aria-label={`Price ladder: stop ${ladderStats.stop}, entry ${ladderStats.entry}, target ${ladderStats.target}`}
+                aria-label={`Price ladder for ${ladderStats.isBuy ? 'BUY' : 'SELL'} execution: target ${ladderStats.target}, entry ${ladderStats.entry}, stop ${ladderStats.stop}`}
               >
-                {/* Red loss zone & Green gain zone */}
-                <rect className="zl" x="0" y="10" width="330" height="32.5" />
-                <rect className="zg" x="0" y="42.5" width="330" height="97.5" />
+                {ladderStats.isBuy ? (
+                  <>
+                    {/* BUY: Target (Gain) on TOP, Stop (Loss) on BOTTOM */}
+                    {/* Green gain zone (Top: y=10 down to entryY) */}
+                    <rect
+                      className="zg"
+                      x="0"
+                      y="10"
+                      width="330"
+                      height={ladderStats.entryY - 10}
+                    />
+                    {/* Red loss zone (Bottom: entryY down to y=140) */}
+                    <rect
+                      className="zl"
+                      x="0"
+                      y={ladderStats.entryY}
+                      width="330"
+                      height={140 - ladderStats.entryY}
+                    />
 
-                {/* Level Lines */}
-                <line className="lsl" x1="0" x2="330" y1="10" y2="10" />
-                <line className="lent" x1="0" x2="330" y1="42.5" y2="42.5" />
-                <line className="ltp" x1="0" x2="330" y1="140" y2="140" />
+                    {/* Level Lines */}
+                    <line className="ltp" x1="0" x2="330" y1="10" y2="10" />
+                    <line
+                      className="lent"
+                      x1="0"
+                      x2="330"
+                      y1={ladderStats.entryY}
+                      y2={ladderStats.entryY}
+                    />
+                    <line className="lsl" x1="0" x2="330" y1="140" y2="140" />
 
-                {/* Left Labels */}
-                <text className="tl-ladder lt" x="8" y="6">
-                  Stop {ladderStats.stop.toLocaleString('en-US')}
-                </text>
-                <text className="tl-ladder lt" x="8" y="37">
-                  Entry {ladderStats.entry.toLocaleString('en-US')}
-                </text>
-                <text className="tl-ladder lt" x="8" y="134">
-                  Target {ladderStats.target.toLocaleString('en-US')}
-                </text>
+                    {/* Left Labels */}
+                    <text className="tl-ladder lt" x="8" y="6">
+                      Target {ladderStats.target.toLocaleString('en-US')}
+                    </text>
+                    <text className="tl-ladder lt" x="8" y={ladderStats.entryY - 5}>
+                      Entry {ladderStats.entry.toLocaleString('en-US')}
+                    </text>
+                    <text className="tl-ladder lt" x="8" y="154">
+                      Stop {ladderStats.stop.toLocaleString('en-US')}
+                    </text>
 
-                {/* Right Labels (Distances in pts) */}
-                <text className="tl-ladder lt" x="322" y="37" textAnchor="end">
-                  {ladderStats.stopDist.toFixed(1)} pts
-                </text>
-                <text className="tl-ladder lt" x="322" y="134" textAnchor="end">
-                  {ladderStats.targetDist.toFixed(1)} pts
-                </text>
+                    {/* Right Labels (Distances in pts) */}
+                    <text className="tl-ladder lt" x="322" y="6" textAnchor="end">
+                      +{ladderStats.targetDist.toFixed(1)} pts
+                    </text>
+                    <text className="tl-ladder lt" x="322" y="154" textAnchor="end">
+                      -{ladderStats.stopDist.toFixed(1)} pts
+                    </text>
+                  </>
+                ) : (
+                  <>
+                    {/* SELL: Stop (Loss) on TOP, Target (Gain) on BOTTOM */}
+                    {/* Red loss zone (Top: y=10 down to entryY) */}
+                    <rect
+                      className="zl"
+                      x="0"
+                      y="10"
+                      width="330"
+                      height={ladderStats.entryY - 10}
+                    />
+                    {/* Green gain zone (Bottom: entryY down to y=140) */}
+                    <rect
+                      className="zg"
+                      x="0"
+                      y={ladderStats.entryY}
+                      width="330"
+                      height={140 - ladderStats.entryY}
+                    />
+
+                    {/* Level Lines */}
+                    <line className="lsl" x1="0" x2="330" y1="10" y2="10" />
+                    <line
+                      className="lent"
+                      x1="0"
+                      x2="330"
+                      y1={ladderStats.entryY}
+                      y2={ladderStats.entryY}
+                    />
+                    <line className="ltp" x1="0" x2="330" y1="140" y2="140" />
+
+                    {/* Left Labels */}
+                    <text className="tl-ladder lt" x="8" y="6">
+                      Stop {ladderStats.stop.toLocaleString('en-US')}
+                    </text>
+                    <text className="tl-ladder lt" x="8" y={ladderStats.entryY - 5}>
+                      Entry {ladderStats.entry.toLocaleString('en-US')}
+                    </text>
+                    <text className="tl-ladder lt" x="8" y="154">
+                      Target {ladderStats.target.toLocaleString('en-US')}
+                    </text>
+
+                    {/* Right Labels (Distances in pts) */}
+                    <text className="tl-ladder lt" x="322" y="6" textAnchor="end">
+                      -{ladderStats.stopDist.toFixed(1)} pts
+                    </text>
+                    <text className="tl-ladder lt" x="322" y="154" textAnchor="end">
+                      +{ladderStats.targetDist.toFixed(1)} pts
+                    </text>
+                  </>
+                )}
               </svg>
 
               {/* Key-Value Metrics Grid */}
@@ -870,7 +957,7 @@ export default function TradesPage() {
               {/* Scale-outs Notice */}
               <div className="tl-scale">
                 {selectedTrade.status === 'CLOSED'
-                  ? `Closed at ${selectedTrade.exitTime ? formatShortDate(selectedTrade.exitTime) : 'market'}. Net result: ${selectedTrade.netPnl >= 0 ? '+' : '−'}$${formatCur(selectedTrade.netPnl)}.`
+                  ? `Closed at ${selectedTrade.exitTime ? formatShortDate(selectedTrade.exitTime) : 'market'}. Net result: ${selectedTrade.netPnl >= 0 ? '+' : '−'}${formatCur(selectedTrade.netPnl)}.`
                   : 'Scale-outs: none logged. Log a partial exit to scale out and secure R.'}
               </div>
 
