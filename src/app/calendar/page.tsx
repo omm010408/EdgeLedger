@@ -273,14 +273,14 @@ export default function CalendarPage() {
       : selectedAccount?.name || `All accounts, ${accounts.length}`;
 
   return (
-    <div className="w-full max-w-[1440px] mx-auto">
+    <div className="w-full max-w-[1440px] mx-auto flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Title & Top Controls Bar */}
-      <div className="tw-titlerow">
+      <div className="tw-titlerow flex-none mt-1 sm:mt-2 mb-1">
         <div>
-          <h1>Trading calendar</h1>
-          <p>Net P&amp;L, trades and discipline for each day. Dates use the account ruleset timezone.</p>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--tw-ink)]">Trading calendar</h1>
+          <p className="text-xs text-[var(--tw-ink-2)] mt-0.5">Net P&amp;L, trades and discipline for each day. Dates use the account ruleset timezone.</p>
         </div>
-        <div className="tw-cal-controls">
+        <div className="tw-cal-controls flex items-center gap-2">
           {/* View Segmented Pill */}
           <div className="tw-seg" role="group" aria-label="View">
             {(['Monthly', 'Weekly', 'Daily'] as const).map((mode) => (
@@ -301,7 +301,7 @@ export default function CalendarPage() {
               type="button"
               onClick={handlePrevMonth}
               aria-label="Previous month"
-              className="p-1 hover:text-[var(--tw-ink)] text-[var(--tw-ink-2)] transition-colors rounded-full"
+              className="p-1 hover:text-[var(--tw-ink)] text-[var(--tw-ink-2)] transition-colors rounded-full cursor-pointer"
             >
               <ChevronLeft size={16} />
             </button>
@@ -312,26 +312,26 @@ export default function CalendarPage() {
               type="button"
               onClick={handleNextMonth}
               aria-label="Next month"
-              className="p-1 hover:text-[var(--tw-ink)] text-[var(--tw-ink-2)] transition-colors rounded-full"
+              className="p-1 hover:text-[var(--tw-ink)] text-[var(--tw-ink-2)] transition-colors rounded-full cursor-pointer"
             >
               <ChevronRight size={16} />
             </button>
           </div>
 
           {/* Account Selector Button */}
-          <button className="tw-btn" type="button">
+          <button className="tw-btn text-xs" type="button">
             <span>{activeDeskLabel}</span>
           </button>
 
           {/* Environment Filter Button */}
           <button
-            className="tw-btn quiet"
+            className="tw-btn quiet text-xs"
             type="button"
             onClick={() =>
               setEnvironmentFilter(environmentFilter === 'live' ? 'ALL' : 'live')
             }
           >
-            <span>{environmentFilter === 'live' ? 'Live only' : 'All environments'}</span>
+            <span>{environmentFilter === 'live' ? 'Live only' : 'All envs'}</span>
           </button>
         </div>
       </div>
@@ -518,9 +518,9 @@ export default function CalendarPage() {
           </div>
 
           {/* Trade Executions for Selected Day */}
-          <div className="my-2 space-y-0.5">
+          <div className="my-1 space-y-0.5 max-h-[64px] overflow-y-auto">
             {selectedDay.trades.length > 0 ? (
-              selectedDay.trades.map((t) => {
+              selectedDay.trades.slice(0, 2).map((t) => {
                 const pnl = getTradePnl(t);
                 const isWin = pnl >= 0;
                 return (
@@ -558,21 +558,21 @@ export default function CalendarPage() {
                 );
               })
             ) : (
-              <div className="py-3 text-xs text-[var(--tw-ink-3)] font-mono">
-                No market executions recorded on this calendar date.
+              <div className="py-1 text-xs text-[var(--tw-ink-3)] font-mono">
+                No executions recorded.
               </div>
             )}
           </div>
 
           {/* Discipline Scoring Rule Box */}
           <div className="tw-cal-disc">
-            <b>Discipline score: not scored.</b> No journal entry exists for this day. Scores are never estimated from P&amp;L.
+            <b>Discipline: not scored.</b> No journal entry for this day. Scores are never estimated from P&amp;L.
           </div>
 
           {/* Link to Journal */}
           <Link
             href="/journal"
-            className="tw-btn dark full text-center justify-center mt-3"
+            className="tw-btn dark full text-center justify-center mt-1.5 h-8 text-xs font-semibold rounded-full flex-none"
           >
             <span>Open journal for {selectedDay.dateNum} {monthName}</span>
           </Link>

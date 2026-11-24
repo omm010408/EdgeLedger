@@ -10,7 +10,7 @@ import { CommandPalette } from './CommandPalette';
 
 export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
   const pathname = usePathname();
-  const isOverview = pathname === '/';
+  const isStaticBoard = pathname === '/' || pathname === '/calendar';
 
   const [quickTradeOpen, setQuickTradeOpen] = useState(false);
   const [newAccountOpen, setNewAccountOpen] = useState(false);
@@ -51,9 +51,9 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
       data-theme={theme}
       className={`min-h-screen w-full bg-[var(--tw-bg)] text-[var(--tw-ink)] flex flex-col font-sans selection:bg-[#9BF3DF] selection:text-[#03211C] ${theme}`}
     >
-      {isOverview ? (
-        /* Overview Page: Exact Tidewater 1080p Board Canvas */
-        <div className="tw-board">
+      {isStaticBoard ? (
+        /* Full Tidewater Board Canvas (Overview and Calendar) */
+        <div className={`tw-board ${pathname === '/calendar' ? 'tw-board-static' : ''}`}>
           {/* Ambient Tidal Ripple in top-right */}
           <svg className="tw-ripple" viewBox="0 0 600 600" aria-hidden="true">
             <circle cx="300" cy="300" r="120" />

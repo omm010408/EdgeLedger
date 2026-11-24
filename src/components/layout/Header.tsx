@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTrading } from '../../context/TradingContext';
-import { ChevronDown, Check, Plus, ExternalLink, Sun, Moon } from 'lucide-react';
+import { ChevronDown, Check, Plus, ExternalLink, Sun, Moon, Fingerprint } from 'lucide-react';
 
 interface HeaderProps {
   onOpenQuickTrade: () => void;
@@ -41,7 +41,28 @@ export const Header: React.FC<HeaderProps> = ({
     selectedAccount,
     periodFilter,
     setPeriodFilter,
+    isPnlHidden,
+    setIsPnlHidden,
   } = useTrading();
+
+  const [isHeaderScanning, setIsHeaderScanning] = useState(false);
+
+  const handleHeaderFingerprintClick = () => {
+    if (!isPnlHidden) {
+      setIsPnlHidden(true);
+      return;
+    }
+    setIsHeaderScanning(true);
+    if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate([25, 40, 25]);
+      } catch {}
+    }
+    setTimeout(() => {
+      setIsHeaderScanning(false);
+      setIsPnlHidden(false);
+    }, 550);
+  };
 
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -168,7 +189,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <div className="flex flex-col">
                         <span className="font-medium truncate max-w-[180px]">{acc.name}</span>
                         <span className="text-[11px] text-[#A9C1BD] font-mono">
-                          {acc.brokerOrFirm} · ${acc.currentBalance.toLocaleString('en-US')}
+                          {acc.brokerOrFirm} · {isPnlHidden ? '$••••••' : `$${acc.currentBalance.toLocaleString('en-US')}`}
                         </span>
                       </div>
                       {isSelected && <Check size={14} className="text-[#9BF3DF]" />}
@@ -201,6 +222,26 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
+
+        {/* Biometric P&L Privacy Toggle */}
+        <button
+          className={`tw-btn quiet tw-fp-head ${isPnlHidden ? 'tw-fp-head-locked' : 'tw-fp-head-unlocked'}`}
+          type="button"
+          onClick={handleHeaderFingerprintClick}
+          title={isPnlHidden ? 'P&L is Hidden (Click fingerprint to verify & reveal)' : 'P&L is Visible (Click to lock & hide)'}
+          aria-label={isPnlHidden ? 'Unlock P&L with Fingerprint' : 'Hide P&L'}
+        >
+          <div className="relative flex items-center justify-center">
+            <Fingerprint
+              size={14}
+              className={isPnlHidden ? 'text-[#FFD56B]' : 'text-[#5BE6AE]'}
+            />
+            {isHeaderScanning && <span className="tw-fp-laser" />}
+          </div>
+          <span className="hidden sm:inline text-xs font-mono">
+            {isHeaderScanning ? 'Scanning...' : isPnlHidden ? 'P&L Hidden' : 'P&L Visible'}
+          </span>
+        </button>
 
         {/* Theme Toggle Button */}
         {onToggleTheme && (

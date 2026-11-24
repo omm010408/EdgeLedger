@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { Fingerprint } from 'lucide-react';
 import { useTrading } from '../context/TradingContext';
 
 export default function OverviewPage() {
@@ -13,7 +14,34 @@ export default function OverviewPage() {
     filteredTrades,
     portfolioMetrics,
     periodFilter,
+    isPnlHidden,
+    setIsPnlHidden,
   } = useTrading();
+
+  const [isScanning, setIsScanning] = useState(false);
+
+  const handleFingerprintClick = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    if (!isPnlHidden) {
+      // Re-lock
+      setIsPnlHidden(true);
+      return;
+    }
+
+    // Biometric scanning sequence
+    setIsScanning(true);
+    if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate([25, 40, 25]);
+      } catch {}
+    }
+
+    setTimeout(() => {
+      setIsScanning(false);
+      setIsPnlHidden(false);
+    }, 550);
+  };
 
   // Filter trades based on active period and selected account
   const activeTrades = useMemo(() => {
@@ -131,39 +159,84 @@ export default function OverviewPage() {
       {/* 1. HERO TILE: Net P&L Contour Wave (Cols 1-5, Rows 1-2)             */}
       {/* ------------------------------------------------------------------ */}
       <section className="tw-tile tw-hero" aria-label="Net P&L">
-        <div className="tw-lbl">
-          Net P&amp;L from closed trades,{' '}
-          {periodFilter === 'Week'
-            ? '16–22 Mar'
-            : periodFilter === 'Month'
-            ? '1–31 Mar'
-            : 'All Time'}
+        <div className="tw-hero-topline">
+          <div className="tw-lbl">
+            Net P&amp;L from closed trades,{' '}
+            {periodFilter === 'Week'
+              ? '16–22 Mar'
+              : periodFilter === 'Month'
+              ? '1–31 Mar'
+              : 'All Time'}
+          </div>
+          <button
+            type="button"
+            className={`tw-fp-btn ${isPnlHidden ? 'tw-fp-locked' : 'tw-fp-unlocked'} ${isScanning ? 'tw-fp-scanning' : ''}`}
+            onClick={handleFingerprintClick}
+            aria-label={isPnlHidden ? 'Unlock P&L with Fingerprint' : 'Hide P&L'}
+            title={isPnlHidden ? 'Click to verify fingerprint & unhide P&L' : 'Click to hide and lock P&L'}
+          >
+            <span className="tw-fp-icon-wrap">
+              <Fingerprint size={15} className="tw-fp-icon" />
+              {isScanning && <span className="tw-fp-laser" />}
+            </span>
+            <span>
+              {isScanning ? 'Verifying...' : isPnlHidden ? 'Touch ID / Fingerprint' : 'P&L Unhidden'}
+            </span>
+          </button>
         </div>
-        <div className="tw-big">
-          {capitalStats.netProfit >= 0 ? '+' : '−'}
-          {formatCur(Math.abs(capitalStats.netProfit)).replace('.00', '')}
-          <small>.00</small>
+
+        <div
+          className={`tw-big ${isPnlHidden ? 'tw-pnl-hidden group cursor-pointer' : ''}`}
+          onClick={isPnlHidden ? handleFingerprintClick : undefined}
+          title={isPnlHidden ? 'Click to verify fingerprint & reveal P&L' : undefined}
+          role={isPnlHidden ? 'button' : undefined}
+          tabIndex={isPnlHidden ? 0 : undefined}
+          onKeyDown={isPnlHidden ? (e) => { if (e.key === 'Enter' || e.key === ' ') handleFingerprintClick(); } : undefined}
+        >
+          {isPnlHidden ? (
+            <>
+              <span className="tw-masked-num">
+                <span className="tw-mask-sign">+</span>$••••••<small>.••</small>
+              </span>
+              <span className="tw-fp-hint">
+                <Fingerprint size={14} className="text-[#FFD56B]" />
+                <span>Tap to unlock with Touch ID</span>
+              </span>
+            </>
+          ) : (
+            <>
+              {capitalStats.netProfit >= 0 ? '+' : '−'}
+              {formatCur(Math.abs(capitalStats.netProfit)).replace('.00', '')}
+              <small>.00</small>
+            </>
+          )}
         </div>
+
         <div className="tw-delta">
           <span className="tw-pill">
-            {capitalStats.returnPct >= 0 ? '+' : ''}
-            {capitalStats.returnPct.toFixed(2)}%
+            {isPnlHidden ? '+•.••%' : `${capitalStats.returnPct >= 0 ? '+' : ''}${capitalStats.returnPct.toFixed(2)}%`}
           </span>
-          on a {formatCur(capitalStats.startingBal)} start
+          on a {isPnlHidden ? '$••••••.••' : formatCur(capitalStats.startingBal)} start
         </div>
 
         <dl className="tw-stats">
           <div>
             <dt>Balance</dt>
-            <dd>{formatCur(capitalStats.currentBal)}</dd>
+            <dd className={isPnlHidden ? 'tw-val-hidden' : ''}>
+              {isPnlHidden ? '$••••••••' : formatCur(capitalStats.currentBal)}
+            </dd>
           </div>
           <div>
             <dt>Gross profit</dt>
-            <dd>{formatCur(capitalStats.grossProfit)}</dd>
+            <dd className={isPnlHidden ? 'tw-val-hidden' : ''}>
+              {isPnlHidden ? '$••••••' : formatCur(capitalStats.grossProfit)}
+            </dd>
           </div>
           <div>
             <dt>Gross loss</dt>
-            <dd>−{formatCur(capitalStats.grossLoss)}</dd>
+            <dd className={isPnlHidden ? 'tw-val-hidden' : ''}>
+              {isPnlHidden ? '−$••••' : `−${formatCur(capitalStats.grossLoss)}`}
+            </dd>
           </div>
         </dl>
 
@@ -192,10 +265,10 @@ export default function OverviewPage() {
           </svg>
           <span className="tw-end" aria-hidden="true" />
           <span className="tw-tag start">
-            Start, ${formatInt(capitalStats.startingBal)}
+            Start, {isPnlHidden ? '$••••••' : `$${formatInt(capitalStats.startingBal)}`}
           </span>
           <span className="tw-tag close">
-            Closing, ${formatInt(capitalStats.currentBal)}
+            Closing, {isPnlHidden ? '$••••••' : `$${formatInt(capitalStats.currentBal)}`}
           </span>
           <span className="tw-tag x x1">18 Mar</span>
           <span className="tw-tag x x2">19 Mar</span>
@@ -210,8 +283,8 @@ export default function OverviewPage() {
         <div className="tw-lbl">Profit factor</div>
         <div className="tw-n">{capitalStats.profitFactor.toFixed(2)}</div>
         <div className="tw-sub">
-          Gross ${formatInt(capitalStats.grossProfit)} over $
-          {formatInt(capitalStats.grossLoss)} in losses
+          Gross {isPnlHidden ? '$••••' : `$${formatInt(capitalStats.grossProfit)}`} over{' '}
+          {isPnlHidden ? '$•••' : `$${formatInt(capitalStats.grossLoss)}`} in losses
         </div>
       </section>
 
@@ -296,8 +369,14 @@ export default function OverviewPage() {
       <section className="tw-tile tw-aqua" aria-label="Expectancy">
         <div className="tw-lbl">Expectancy per closed trade</div>
         <div className="tw-n tw-exp">
-          {capitalStats.expectancy >= 0 ? '+' : '−'}
-          {formatCur(Math.abs(capitalStats.expectancy))}
+          {isPnlHidden ? (
+            <span className="tw-val-hidden">+$••••.••</span>
+          ) : (
+            <>
+              {capitalStats.expectancy >= 0 ? '+' : '−'}
+              {formatCur(Math.abs(capitalStats.expectancy))}
+            </>
+          )}
         </div>
         <div>
           <span className="tw-pill">
@@ -352,10 +431,10 @@ export default function OverviewPage() {
             </div>
             <div className="tw-dl">
               <div className="tw-d">18</div>
-              <div className="tw-v">+$4,115</div>
+              <div className="tw-v">{isPnlHidden ? '+$••••' : '+$4,115'}</div>
             </div>
             <div className="tip">
-              <b>18 Mar, +$4,115.00</b>2 trades: XAUUSD and EURUSD, both won
+              <b>18 Mar, {isPnlHidden ? '+$••••.••' : '+$4,115.00'}</b>2 trades: XAUUSD and EURUSD, both won
             </div>
           </div>
           <div className="tw-day has-tip" role="listitem" tabIndex={0}>
@@ -364,10 +443,10 @@ export default function OverviewPage() {
             </div>
             <div className="tw-dl">
               <div className="tw-d">19</div>
-              <div className="tw-v">+$2,956</div>
+              <div className="tw-v">{isPnlHidden ? '+$••••' : '+$2,956'}</div>
             </div>
             <div className="tip">
-              <b>19 Mar, +$2,956.00</b>2 trades: BTCUSD win and loss
+              <b>19 Mar, {isPnlHidden ? '+$••••.••' : '+$2,956.00'}</b>2 trades: BTCUSD win and loss
             </div>
           </div>
           <div className="tw-day has-tip" role="listitem" tabIndex={0}>
@@ -418,7 +497,7 @@ export default function OverviewPage() {
           <div className="tw-row2">
             <span className="tw-sub">Average win</span>
             <span className="tw-pos" style={{ fontWeight: 600 }}>
-              +${formatInt(capitalStats.avgWin)}
+              {isPnlHidden ? '+$••••' : `+$${formatInt(capitalStats.avgWin)}`}
             </span>
           </div>
           <div className="tw-qbar">
@@ -429,7 +508,7 @@ export default function OverviewPage() {
           <div className="tw-row2">
             <span className="tw-sub">Average loss</span>
             <span className="tw-neg" style={{ fontWeight: 600 }}>
-              −${formatInt(capitalStats.avgLoss)}
+              {isPnlHidden ? '−$•••' : `−$${formatInt(capitalStats.avgLoss)}`}
             </span>
           </div>
           <div className="tw-qbar">
@@ -474,7 +553,7 @@ export default function OverviewPage() {
             <span>
               BTCUSD<span className="tw-sub"> 2 trades</span>
             </span>
-            <span style={{ fontWeight: 600 }}>+$2,956.00</span>
+            <span style={{ fontWeight: 600 }}>{isPnlHidden ? '+$••••.••' : '+$2,956.00'}</span>
             <span className="tw-sub" style={{ textAlign: 'right' }}>
               41.8%
             </span>
@@ -484,7 +563,7 @@ export default function OverviewPage() {
             <span>
               XAUUSD<span className="tw-sub"> 2 trades</span>
             </span>
-            <span style={{ fontWeight: 600 }}>+$2,480.00</span>
+            <span style={{ fontWeight: 600 }}>{isPnlHidden ? '+$••••.••' : '+$2,480.00'}</span>
             <span className="tw-sub" style={{ textAlign: 'right' }}>
               35.1%
             </span>
@@ -494,7 +573,7 @@ export default function OverviewPage() {
             <span>
               EURUSD<span className="tw-sub"> 1 trade</span>
             </span>
-            <span style={{ fontWeight: 600 }}>+$1,635.00</span>
+            <span style={{ fontWeight: 600 }}>{isPnlHidden ? '+$••••.••' : '+$1,635.00'}</span>
             <span className="tw-sub" style={{ textAlign: 'right' }}>
               23.1%
             </span>
@@ -638,7 +717,7 @@ export default function OverviewPage() {
                 <span className="tw-side sell">Sell</span>
               </td>
               <td>19 Mar</td>
-              <td className="r tw-neg">−$314.00</td>
+              <td className="r tw-neg">{isPnlHidden ? '••••••' : '−$314.00'}</td>
               <td className="r tw-neg">−0.29R</td>
             </tr>
             <tr>
@@ -647,7 +726,7 @@ export default function OverviewPage() {
                 <span className="tw-side buy">Buy</span>
               </td>
               <td>19 Mar</td>
-              <td className="r tw-pos">+$3,270.00</td>
+              <td className="r tw-pos">{isPnlHidden ? '••••••' : '+$3,270.00'}</td>
               <td className="r tw-pos">+2.97R</td>
             </tr>
             <tr>
@@ -656,7 +735,7 @@ export default function OverviewPage() {
                 <span className="tw-side buy">Buy</span>
               </td>
               <td>18 Mar</td>
-              <td className="r tw-pos">+$2,480.00</td>
+              <td className="r tw-pos">{isPnlHidden ? '••••••' : '+$2,480.00'}</td>
               <td className="r tw-pos">+2.48R</td>
             </tr>
             <tr>
@@ -665,7 +744,7 @@ export default function OverviewPage() {
                 <span className="tw-side buy">Buy</span>
               </td>
               <td>18 Mar</td>
-              <td className="r tw-pos">+$1,635.00</td>
+              <td className="r tw-pos">{isPnlHidden ? '••••••' : '+$1,635.00'}</td>
               <td className="r tw-pos">+1.64R</td>
             </tr>
           </tbody>
@@ -673,12 +752,12 @@ export default function OverviewPage() {
         <dl className="tw-facts tw-exfoot">
           <div>
             <dt>Best closed trade</dt>
-            <dd className="tw-pos">+$3,270.00</dd>
+            <dd className="tw-pos">{isPnlHidden ? '+$••••.••' : '+$3,270.00'}</dd>
             <small>BTCUSD, 19 Mar</small>
           </div>
           <div>
             <dt>Worst closed trade</dt>
-            <dd className="tw-neg">−$314.00</dd>
+            <dd className="tw-neg">{isPnlHidden ? '−$••••.••' : '−$314.00'}</dd>
             <small>BTCUSD, 19 Mar</small>
           </div>
         </dl>

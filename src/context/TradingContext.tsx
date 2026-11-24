@@ -46,6 +46,9 @@ interface TradingContextType {
   journalEntries: JournalEntry[];
   riskAlerts: RiskAlert[];
   isLoaded: boolean;
+  isPnlHidden: boolean;
+  setIsPnlHidden: (hidden: boolean) => void;
+  togglePnlPrivacy: () => void;
 
   // Actions
   addAccount: (accountData: Partial<TradingAccount>) => void;
@@ -120,6 +123,12 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [riskAlerts, setRiskAlerts] = useState<RiskAlert[]>(() =>
     appConfig.app.enableDemoData ? SEED_ALERTS : []
   );
+  // Privacy mode: By default hide PnL and sensitive figures until unlocked by fingerprint
+  const [isPnlHidden, setIsPnlHidden] = useState<boolean>(true);
+
+  const togglePnlPrivacy = () => {
+    setIsPnlHidden((prev) => !prev);
+  };
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
   // Load state from localStorage on mount
@@ -957,6 +966,9 @@ function generatePersonalizedRules(
         journalEntries,
         riskAlerts,
         isLoaded,
+        isPnlHidden,
+        setIsPnlHidden,
+        togglePnlPrivacy,
         addAccount,
         updateAccount,
         deleteAccount,

@@ -697,6 +697,157 @@ body {
   color: var(--tw-hero-2);
 }
 
+/* Hero Top Line with Fingerprint Button */
+.tw-hero-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.tw-fp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid rgba(255, 213, 107, 0.4);
+  background: rgba(255, 213, 107, 0.12);
+  color: var(--tw-sun);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.tw-fp-btn:hover {
+  background: rgba(255, 213, 107, 0.22);
+  border-color: rgba(255, 213, 107, 0.7);
+  transform: translateY(-1px);
+}
+
+.tw-fp-btn.tw-fp-unlocked {
+  border-color: rgba(91, 230, 174, 0.4);
+  background: rgba(91, 230, 174, 0.12);
+  color: var(--tw-gain);
+}
+
+.tw-fp-btn.tw-fp-unlocked:hover {
+  background: rgba(91, 230, 174, 0.22);
+  border-color: rgba(91, 230, 174, 0.7);
+}
+
+.tw-fp-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  overflow: hidden;
+}
+
+.tw-fp-icon {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.tw-fp-btn:hover .tw-fp-icon {
+  transform: scale(1.1);
+}
+
+.tw-fp-laser {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: #5BE6AE;
+  box-shadow: 0 0 6px #5BE6AE, 0 0 10px #5BE6AE;
+  border-radius: 2px;
+  animation: tw-laser-scan 0.5s ease-in-out infinite;
+}
+
+@keyframes tw-laser-scan {
+  0% { top: 0%; opacity: 0.8; }
+  50% { top: 85%; opacity: 1; }
+  100% { top: 0%; opacity: 0.8; }
+}
+
+.tw-fp-scanning {
+  animation: tw-fp-pulse-scan 0.55s ease-in-out infinite alternate !important;
+  border-color: #5BE6AE !important;
+  color: #5BE6AE !important;
+}
+
+@keyframes tw-fp-pulse-scan {
+  0% {
+    box-shadow: 0 0 0 0 rgba(91, 230, 174, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 12px 3px rgba(91, 230, 174, 0.6);
+  }
+}
+
+.tw-big.tw-pnl-hidden {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  transition: all 0.2s ease;
+}
+
+.tw-masked-num {
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.95;
+}
+
+.tw-masked-num .tw-mask-sign {
+  margin-right: 2px;
+}
+
+.tw-fp-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--tw-hero-2);
+  opacity: 0.85;
+  margin-top: 2px;
+  transition: opacity 0.2s ease;
+}
+
+.tw-big.tw-pnl-hidden:hover .tw-fp-hint {
+  opacity: 1;
+  color: var(--tw-sun);
+}
+
+.tw-val-hidden {
+  letter-spacing: 0.06em;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+.tw-fp-head {
+  gap: 6px !important;
+  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+}
+
+.tw-fp-head.tw-fp-head-locked {
+  border-color: rgba(255, 213, 107, 0.3) !important;
+}
+
+.tw-fp-head.tw-fp-head-unlocked {
+  border-color: rgba(91, 230, 174, 0.3) !important;
+}
+
 .tw-delta {
   display: flex;
   align-items: center;
@@ -1076,16 +1227,29 @@ body {
 
 /* ========================================================================= */
 /* Tidewater Calendar Responsive System                                      */
-/* ========================================================================= */
+/* =========================================================================
+   Trading Calendar (Single Page Fit, Static, Non-Scrollable on Desktop)
+   ========================================================================= */
+@media (min-width: 1024px) {
+  .tw-board.tw-board-static {
+    height: 100vh;
+    max-height: 1080px;
+    overflow: hidden;
+    padding: 0 28px 16px;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
 .tw-cal-grid {
   flex: 1;
   min-height: 0;
   display: grid;
-  gap: 16px;
-  margin-top: 20px;
+  gap: 12px;
+  margin-top: 10px;
 }
 
-@media (min-width: 1200px) {
+@media (min-width: 1024px) {
   .tw-cal-grid {
     grid-template-columns: repeat(12, minmax(0, 1fr));
     grid-template-rows: repeat(3, minmax(0, 1fr));
@@ -1097,7 +1261,7 @@ body {
   .tw-cal-mint { grid-column: 11 / 13; grid-row: 3; }
 }
 
-@media (min-width: 768px) and (max-width: 1199px) {
+@media (min-width: 768px) and (max-width: 1023px) {
   .tw-cal-grid {
     grid-template-columns: repeat(12, minmax(0, 1fr));
     grid-auto-rows: auto;
@@ -1123,50 +1287,58 @@ body {
   }
 }
 
+.tw-cal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px 20px 14px;
+  overflow: hidden;
+}
+
 .tw-calhead {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
+  gap: 12px;
+  flex: none;
 }
 
 .tw-calhead h2 {
   margin: 0;
-  font-size: clamp(20px, 2.5vw, 24px);
-  line-height: 28px;
+  font-size: clamp(18px, 2vw, 22px);
+  line-height: 24px;
   font-weight: 600;
   letter-spacing: -0.02em;
 }
 
 .tw-calhead p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  line-height: 18px;
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 16px;
   color: var(--tw-ink-3);
 }
 
 .tw-cal-legend {
   display: flex;
-  gap: 14px;
+  gap: 12px;
   align-items: center;
   flex-wrap: wrap;
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 11px;
+  line-height: 14px;
   color: var(--tw-ink-2);
 }
 
 .tw-cal-legend span {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .tw-sw {
   display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
   background: var(--tw-pill);
 }
 
@@ -1177,7 +1349,7 @@ body {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 6px;
-  margin-top: 18px;
+  margin-top: 8px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -1185,21 +1357,22 @@ body {
   color: var(--tw-ink-3);
   text-align: left;
   padding: 0 4px;
+  flex: none;
 }
 
 .tw-weeks {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   grid-template-rows: repeat(6, minmax(0, 1fr));
-  gap: 6px;
+  gap: 5px;
   flex: 1;
-  min-height: 380px;
-  margin-top: 8px;
+  min-height: 0;
+  margin-top: 6px;
 }
 
 @media (max-width: 640px) {
   .tw-weeks {
-    min-height: 440px;
+    min-height: 380px;
     gap: 4px;
   }
 }
@@ -1210,35 +1383,38 @@ body {
   flex-direction: column;
   justify-content: space-between;
   min-width: 0;
-  min-height: 48px;
-  padding: 8px 8px 6px;
-  border-radius: 14px;
+  min-height: 0;
+  padding: 4px 6px;
+  border-radius: 12px;
   border: 1px solid var(--tw-line);
   background: var(--tw-pill);
   cursor: pointer;
   transition: all 0.12s ease;
+  overflow: hidden;
 }
 
 .tw-cell .dn {
   font-size: 11px;
-  line-height: 14px;
+  line-height: 13px;
   font-weight: 600;
   color: var(--tw-ink-2);
 }
 
 .tw-cell .pl {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: clamp(11px, 1.2vw, 14px);
-  line-height: 16px;
+  font-size: clamp(10px, 1.1vw, 13px);
+  line-height: 15px;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .tw-cell .ct {
-  font-size: 10px;
-  line-height: 12px;
+  font-size: 9px;
+  line-height: 11px;
   color: var(--tw-ink-3);
-  white-space: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tw-cell.mu { opacity: 0.35; }
@@ -1268,21 +1444,27 @@ body {
 .tw-cell.sel .dn { color: var(--tw-ink); }
 
 .tw-cal-hero {
-  border-radius: 36px;
+  border-radius: 28px;
   background: var(--tw-hero);
   color: var(--tw-hero-ink);
-  padding: 22px 24px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tw-cal-detail {
-  padding: 20px 22px;
+  padding: 14px 18px;
   border-radius: 28px;
   background: var(--tw-tile);
   border: 1px solid var(--tw-line);
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tw-cal-sunt {
@@ -1290,38 +1472,43 @@ body {
   border: 0;
   border-radius: 28px;
   color: var(--tw-sun-ink);
-  padding: 20px 22px;
+  padding: 14px 18px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  min-height: 0;
+  overflow: hidden;
 }
-.tw-cal-sunt .lbl { color: var(--tw-sun-ink); font-weight: 600; }
-.tw-cal-sunt .n { font-size: 32px; font-weight: 700; color: var(--tw-sun-ink); font-family: 'JetBrains Mono', monospace; }
-.tw-cal-sunt .foot { color: var(--tw-sun-ink); opacity: 0.85; font-size: 12px; }
+.tw-cal-sunt .lbl { color: var(--tw-sun-ink); font-weight: 600; font-size: 11px; }
+.tw-cal-sunt .n { font-size: clamp(20px, 2vw, 26px); line-height: 28px; font-weight: 700; color: var(--tw-sun-ink); font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+.tw-cal-sunt .foot { color: var(--tw-sun-ink); opacity: 0.85; font-size: 11px; margin-top: auto; }
 
 .tw-cal-mint {
   background: var(--tw-aqua);
   border: 0;
   border-radius: 28px;
   color: var(--tw-aqua-ink);
-  padding: 20px 22px;
+  padding: 14px 18px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  min-height: 0;
+  overflow: hidden;
 }
-.tw-cal-mint .lbl { color: var(--tw-aqua-ink); font-weight: 600; }
-.tw-cal-mint .n { font-size: 32px; font-weight: 700; color: var(--tw-aqua-ink); font-family: 'JetBrains Mono', monospace; }
-.tw-cal-mint .foot { color: var(--tw-aqua-ink); opacity: 0.85; font-size: 12px; }
+.tw-cal-mint .lbl { color: var(--tw-aqua-ink); font-weight: 600; font-size: 11px; }
+.tw-cal-mint .n { font-size: clamp(20px, 2vw, 26px); line-height: 28px; font-weight: 700; color: var(--tw-aqua-ink); font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+.tw-cal-mint .foot { color: var(--tw-aqua-ink); opacity: 0.85; font-size: 11px; margin-top: auto; }
 
 .tw-cal-disc {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  margin-top: auto;
+  padding: 6px 10px;
+  border-radius: 12px;
   background: var(--tw-pill);
   border: 1px solid var(--tw-line);
-  font-size: 11px;
-  line-height: 15px;
+  font-size: 10px;
+  line-height: 14px;
   color: var(--tw-ink-3);
+  flex: none;
 }
 
 /* ------------------------------------------------------------------------- */
