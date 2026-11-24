@@ -36,6 +36,7 @@ export default function CalendarPage() {
     journalEntries,
     environmentFilter,
     setEnvironmentFilter,
+    isPnlHidden,
   } = useTrading();
 
   // Calendar View Mode: Monthly, Weekly, Daily
@@ -424,7 +425,11 @@ export default function CalendarPage() {
                   {cell.isCurrentMonth && cell.hasTrades && (
                     <>
                       <span className={`pl ${cell.isOpenTradeDay ? 'tw-warn' : ''}`}>
-                        {cell.isOpenTradeDay ? 'Open' : formatRoundCur(cell.netPnl)}
+                        {cell.isOpenTradeDay
+                          ? 'Open'
+                          : isPnlHidden
+                          ? '+$••••'
+                          : formatRoundCur(cell.netPnl)}
                       </span>
                       <span className="ct">
                         {cell.isOpenTradeDay
@@ -451,15 +456,17 @@ export default function CalendarPage() {
           <div className="lbl">Net P&amp;L, {monthName}, closed trades</div>
           <div className="big">
             {monthSummary.netPnl >= 0 ? '+' : '−'}
-            {formatCur(Math.abs(monthSummary.netPnl)).replace('.00', '')}
-            <small>.00</small>
+            {isPnlHidden
+              ? '••••••'
+              : formatCur(Math.abs(monthSummary.netPnl)).replace('.00', '')}
+            <small>{isPnlHidden ? '' : '.00'}</small>
           </div>
           <div className="delta">
             <span className="pill">
               {monthSummary.returnPct >= 0 ? '+' : ''}
               {monthSummary.returnPct.toFixed(2)}%
             </span>
-            on a {formatCur(startingBal)} start
+            on a {isPnlHidden ? '$••••••.••' : formatCur(startingBal)} start
           </div>
           <dl className="stats">
             <div>
@@ -513,7 +520,9 @@ export default function CalendarPage() {
             }`}
           >
             {selectedDay.hasTrades
-              ? formatRoundCur(selectedDay.netPnl) + '.00'
+              ? isPnlHidden
+                ? '+$••••.••'
+                : formatRoundCur(selectedDay.netPnl) + '.00'
               : '$0.00'}
           </div>
 
@@ -537,7 +546,11 @@ export default function CalendarPage() {
                           : 'tw-neg'
                       }`}
                     >
-                      {t.status === 'OPEN' ? 'Open' : formatRoundCur(pnl) + '.00'}
+                      {t.status === 'OPEN'
+                        ? 'Open'
+                        : isPnlHidden
+                        ? '••••••'
+                        : formatRoundCur(pnl) + '.00'}
                     </span>
                     <span
                       className={`num ${
@@ -584,7 +597,9 @@ export default function CalendarPage() {
         <section className="tw-tile tw-cal-sunt" aria-label="Best day">
           <div className="lbl">Best day</div>
           <div className="n">
-            {monthSummary.bestDay && monthSummary.bestDay.tradeCount > 0
+            {isPnlHidden
+              ? '+$••••'
+              : monthSummary.bestDay && monthSummary.bestDay.tradeCount > 0
               ? formatRoundCur(monthSummary.bestDay.netPnl)
               : '+$4,115'}
           </div>

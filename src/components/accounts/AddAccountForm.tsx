@@ -780,7 +780,7 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
               </div>
               <span className="mono">
                 {activeFirmTemplate?.profitTargetPct
-                  ? `${activeFirmTemplate.profitTargetPct.toFixed(1)}% · $${(calculatedLimits.startBal * (activeFirmTemplate.profitTargetPct / 100)).toLocaleString()}`
+                  ? `${activeFirmTemplate.profitTargetPct.toFixed(1)}% · $${(calculatedLimits.startBal * (activeFirmTemplate.profitTargetPct / 100)).toLocaleString('en-US')}`
                   : 'Trader target'}
               </span>
               <span></span>

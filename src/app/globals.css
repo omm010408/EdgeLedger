@@ -2838,17 +2838,202 @@ body {
 
 /* 14. Accounts Desk & Calendar Pages in Light Theme */
 [data-theme="light"] .tw-acct,
-.light .tw-acct,
-[data-theme="light"] .tw-cal-detail,
-.light .tw-cal-detail,
-[data-theme="light"] .tw-cell,
-.light .tw-cell {
+.light .tw-acct {
   background: #FFFFFF !important;
   border: 1px solid rgba(220, 231, 228, 0.95) !important;
   box-shadow: 
     0 1px 2px rgba(14, 27, 28, 0.03),
     0 4px 14px -2px rgba(14, 27, 28, 0.05),
     0 12px 28px -6px rgba(14, 27, 28, 0.04) !important;
+}
+
+/* Calendar Container & Weekdays in Light Theme */
+[data-theme="light"] .tw-cal,
+.light .tw-cal {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(220, 231, 228, 0.95) !important;
+  box-shadow: 
+    0 1px 2px rgba(14, 27, 28, 0.03),
+    0 4px 14px -2px rgba(14, 27, 28, 0.05),
+    0 12px 28px -6px rgba(14, 27, 28, 0.04) !important;
+}
+
+[data-theme="light"] .tw-calhead h2,
+.light .tw-calhead h2 {
+  color: #0E1B1C !important;
+}
+
+[data-theme="light"] .tw-calhead p,
+.light .tw-calhead p {
+  color: #566967 !important;
+}
+
+[data-theme="light"] .tw-cal-legend,
+.light .tw-cal-legend {
+  color: #3F5553 !important;
+}
+
+[data-theme="light"] .tw-weekdays,
+.light .tw-weekdays {
+  color: #566967 !important;
+}
+
+/* Default / Non-traded Day Cells in Light Theme */
+[data-theme="light"] .tw-cell,
+.light .tw-cell {
+  background: #E6EEEB !important;
+  border: 1px solid #DCE7E4 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="light"] .tw-cell .dn,
+.light .tw-cell .dn {
+  color: #3F5553 !important;
+}
+
+[data-theme="light"] .tw-cell .ct,
+.light .tw-cell .ct {
+  color: #566967 !important;
+}
+
+[data-theme="light"] .tw-cell.mu,
+.light .tw-cell.mu {
+  opacity: 0.45 !important;
+}
+
+[data-theme="light"] .tw-cell.mu .dn,
+.light .tw-cell.mu .dn {
+  color: #566967 !important;
+}
+
+/* Profit Day Cells in Light Theme (Signature Deep Forest Teal) */
+[data-theme="light"] .tw-cell.p,
+.light .tw-cell.p {
+  background: #0D4A4A !important;
+  border-color: #0D4A4A !important;
+  box-shadow: 0 2px 6px rgba(13, 74, 74, 0.25) !important;
+}
+
+[data-theme="light"] .tw-cell.p .dn,
+.light .tw-cell.p .dn,
+[data-theme="light"] .tw-cell.p .ct,
+.light .tw-cell.p .ct {
+  color: #CDEBE3 !important;
+}
+
+[data-theme="light"] .tw-cell.p .pl,
+.light .tw-cell.p .pl {
+  color: #FFFFFF !important;
+}
+
+/* Loss Day Cells in Light Theme (Soft Red with Crisp Dark Red Text) */
+[data-theme="light"] .tw-cell.l,
+.light .tw-cell.l {
+  background: rgba(179, 38, 62, 0.12) !important;
+  border-color: rgba(179, 38, 62, 0.35) !important;
+}
+
+[data-theme="light"] .tw-cell.l .dn,
+.light .tw-cell.l .dn,
+[data-theme="light"] .tw-cell.l .ct,
+.light .tw-cell.l .ct {
+  color: #566967 !important;
+}
+
+[data-theme="light"] .tw-cell.l .pl,
+.light .tw-cell.l .pl {
+  color: #B3263E !important;
+}
+
+/* Open Trade Day Cells in Light Theme (Dashed Amber Accent) */
+[data-theme="light"] .tw-cell.op,
+.light .tw-cell.op {
+  border: 1.5px dashed #C97210 !important;
+  background: rgba(201, 114, 16, 0.08) !important;
+}
+
+[data-theme="light"] .tw-cell.op .dn,
+.light .tw-cell.op .dn {
+  color: #3F5553 !important;
+}
+
+[data-theme="light"] .tw-cell.op .pl,
+.light .tw-cell.op .pl {
+  color: #8F4305 !important;
+}
+
+/* Selected Day Ring in Light Theme */
+[data-theme="light"] .tw-cell.sel,
+.light .tw-cell.sel {
+  box-shadow: 0 0 0 2px #F6C744 !important;
+}
+
+[data-theme="light"] .tw-cell.sel .dn,
+.light .tw-cell.sel .dn {
+  color: #0E1B1C !important;
+}
+
+/* Legend Swatches in Light Theme */
+[data-theme="light"] .tw-sw,
+.light .tw-sw {
+  background: #E6EEEB !important;
+  border: 1px solid #DCE7E4 !important;
+}
+
+[data-theme="light"] .tw-sw.p,
+.light .tw-sw.p {
+  background: #0D4A4A !important;
+  border: none !important;
+}
+
+[data-theme="light"] .tw-sw.op,
+.light .tw-sw.op {
+  background: transparent !important;
+  border: 1.5px dashed #C97210 !important;
+}
+
+/* Day Detail Card in Light Theme */
+[data-theme="light"] .tw-cal-detail,
+.light .tw-cal-detail {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(220, 231, 228, 0.95) !important;
+  box-shadow: 
+    0 1px 2px rgba(14, 27, 28, 0.03),
+    0 4px 14px -2px rgba(14, 27, 28, 0.05),
+    0 12px 28px -6px rgba(14, 27, 28, 0.04) !important;
+}
+
+[data-theme="light"] .tw-cal-dhead h3,
+.light .tw-cal-dhead h3 {
+  color: #0E1B1C !important;
+}
+
+[data-theme="light"] .tw-cal-dval,
+.light .tw-cal-dval {
+  color: #0E1B1C !important;
+}
+
+[data-theme="light"] .tw-cal-trow,
+.light .tw-cal-trow {
+  border-top: 1px solid #DCE7E4 !important;
+  color: #3F5553 !important;
+}
+
+[data-theme="light"] .tw-cal-trow b,
+.light .tw-cal-trow b {
+  color: #0E1B1C !important;
+}
+
+[data-theme="light"] .tw-cal-disc,
+.light .tw-cal-disc {
+  background: #E6EEEB !important;
+  border: 1px solid #DCE7E4 !important;
+  color: #3F5553 !important;
+}
+
+[data-theme="light"] .tw-cal-disc b,
+.light .tw-cal-disc b {
+  color: #0E1B1C !important;
 }
 
 [data-theme="light"] .tw-cal-hero,
@@ -2888,3 +3073,599 @@ body {
     0 4px 12px rgba(14, 27, 28, 0.08),
     0 16px 48px -4px rgba(14, 27, 28, 0.16) !important;
 }
+
+/* ========================================================================= */
+/* Tidewater Journal System                                                  */
+/* ========================================================================= */
+.tw-journal-board {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (max-width: 1023px) {
+  .tw-journal-board {
+    overflow-y: auto;
+    padding-bottom: 32px;
+  }
+}
+
+.tw-journal-titlerow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  margin-bottom: 14px;
+  flex: none;
+}
+.tw-journal-titlerow h1 {
+  margin: 0;
+  font-size: 30px;
+  line-height: 34px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--tw-ink);
+}
+.tw-journal-titlerow p {
+  margin: 4px 0 0;
+  color: var(--tw-ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tw-journal-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 1023px) {
+  .tw-journal-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    height: auto;
+    min-height: 0;
+  }
+}
+
+/* Sidebar: past sessions list & average discipline */
+.tw-journal-side {
+  grid-column: 1 / 5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+}
+
+.tw-journal-sess-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 2px;
+  flex: 0 1 auto;
+  max-height: 48%;
+}
+
+.tw-journal-sess-list::-webkit-scrollbar {
+  width: 4px;
+}
+.tw-journal-sess-list::-webkit-scrollbar-thumb {
+  background: var(--tw-line);
+  border-radius: 4px;
+}
+
+.tw-journal-sess {
+  padding: 14px 16px;
+  border-radius: 24px;
+  background: var(--tw-tile);
+  border: 1px solid var(--tw-line);
+  text-align: left;
+  cursor: pointer;
+  flex: none;
+  width: 100%;
+  box-shadow: var(--tw-shadow-tile);
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+.tw-journal-sess:hover {
+  border-color: var(--tw-line-strong);
+  box-shadow: var(--tw-shadow-tile-hover);
+}
+.tw-journal-sess[aria-current="true"] {
+  border-color: var(--tw-sun);
+  box-shadow: inset 0 0 0 1px var(--tw-sun), var(--tw-shadow-tile-hover);
+  background: color-mix(in srgb, var(--tw-sun) 10%, var(--tw-tile));
+}
+
+.tw-journal-sess .row1 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.tw-journal-sess .d {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tw-ink);
+}
+.tw-journal-sess p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--tw-ink-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tw-journal-sess .row2 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--tw-ink-3);
+}
+
+.tw-journal-flagp {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--tw-loss);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.tw-score-ok {
+  background: color-mix(in srgb, var(--tw-gain) 14%, transparent);
+  color: var(--tw-gain);
+}
+.tw-score-mid {
+  background: var(--tw-warn-bg);
+  color: var(--tw-warn);
+}
+.tw-score-low {
+  background: color-mix(in srgb, var(--tw-loss) 14%, transparent);
+  color: var(--tw-loss);
+}
+
+/* Average Discipline Tile (Mint / Aqua accent) */
+.tw-journal-trend {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 220px;
+  padding: 18px 20px;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--tw-aqua) 16%, var(--tw-tile));
+  border: 1px solid color-mix(in srgb, var(--tw-aqua) 45%, var(--tw-line));
+  color: var(--tw-ink);
+  box-shadow: var(--tw-shadow-aqua);
+  position: relative;
+  overflow: hidden;
+}
+
+.tw-journal-trend .lbl {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tw-ink);
+}
+.tw-journal-trend .avgrow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 4px;
+}
+.tw-journal-trend .avgv {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 42px;
+  line-height: 44px;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  color: var(--tw-ink);
+}
+.tw-journal-trend .avgof {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tw-ink-2);
+}
+
+.tw-journal-scale {
+  position: relative;
+  height: 10px;
+  margin: 12px 6px 0;
+}
+.tw-journal-bands {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 5fr 3fr 2fr;
+  gap: 3px;
+}
+.tw-journal-bands i {
+  display: block;
+  border-radius: 99px;
+}
+.tw-journal-bands .b-off {
+  background: color-mix(in srgb, var(--tw-loss) 45%, transparent);
+}
+.tw-journal-bands .b-mix {
+  background: color-mix(in srgb, var(--tw-warn) 45%, transparent);
+}
+.tw-journal-bands .b-on {
+  background: color-mix(in srgb, var(--tw-gain) 60%, transparent);
+}
+.tw-journal-scale .dot {
+  position: absolute;
+  top: -3px;
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  border-radius: 999px;
+  background: var(--tw-aqua);
+  border: 2.5px solid var(--tw-tile);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  transition: left 0.2s ease;
+}
+.tw-journal-scale .avgmark {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: var(--tw-ink);
+}
+.tw-journal-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 6px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  margin-top: 6px;
+  color: var(--tw-ink-3);
+}
+
+.tw-journal-chips {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+.tw-journal-ck {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tw-aqua) 14%, transparent);
+  color: var(--tw-ink);
+}
+.tw-journal-ck small {
+  font-size: 10px;
+  color: var(--tw-ink-2);
+}
+.tw-journal-ck b {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+.tw-journal-ck.low {
+  background: color-mix(in srgb, var(--tw-loss) 20%, transparent);
+  color: var(--tw-loss);
+}
+
+.tw-journal-stats3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--tw-line);
+}
+.tw-journal-stats3 small {
+  display: block;
+  font-size: 10px;
+  color: var(--tw-ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+.tw-journal-stats3 b {
+  display: block;
+  margin-top: 2px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tw-ink);
+  white-space: nowrap;
+}
+.tw-journal-legend {
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 10.5px;
+  line-height: 14px;
+  color: var(--tw-ink-2);
+  opacity: 0.85;
+}
+
+/* Detail Card */
+.tw-journal-detail {
+  grid-column: 5 / 13;
+  padding: 22px 24px;
+  border-radius: 32px;
+  background: var(--tw-tile);
+  border: 1px solid var(--tw-line);
+  box-shadow: var(--tw-shadow-tile);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.tw-journal-dhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex: none;
+}
+.tw-journal-dhead h2 {
+  margin: 2px 0 0;
+  font-size: 26px;
+  line-height: 30px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  color: var(--tw-ink);
+}
+.tw-journal-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.tw-journal-meta .mood {
+  background: var(--tw-pill);
+  color: var(--tw-ink);
+  font-size: 11px;
+  font-weight: 600;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--tw-line-strong);
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Score circular rings */
+.tw-journal-scores {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tw-journal-sc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 999px;
+  background: var(--tw-tile);
+  border: 1px solid var(--tw-line);
+  box-shadow: var(--tw-shadow-btn);
+}
+.tw-journal-sc.hi {
+  background: var(--tw-sun);
+  color: var(--tw-sun-ink);
+  border-color: var(--tw-sun);
+  box-shadow: var(--tw-shadow-arch);
+}
+.tw-journal-sc svg {
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
+.tw-journal-sc .ring-bg {
+  fill: none;
+  stroke: var(--tw-line-strong);
+  stroke-width: 4;
+}
+.tw-journal-sc.hi .ring-bg {
+  stroke: color-mix(in srgb, var(--tw-sun-ink) 20%, transparent);
+}
+.tw-journal-sc .ring {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dasharray 0.4s ease;
+}
+.tw-journal-sc.p .ring {
+  stroke: var(--tw-s1);
+}
+.tw-journal-sc.e .ring {
+  stroke: var(--tw-gain);
+}
+.tw-journal-sc.hi .ring {
+  stroke: var(--tw-sun-ink);
+}
+.tw-journal-sc .txt {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 15px;
+  color: var(--tw-ink);
+}
+.tw-journal-sc.hi .txt {
+  color: var(--tw-sun-ink);
+}
+.tw-journal-sc .txt small {
+  display: block;
+  font-family: 'Instrument Sans', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* Sections grid */
+.tw-journal-secs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+@media (max-width: 640px) {
+  .tw-journal-secs {
+    grid-template-columns: 1fr;
+  }
+}
+.tw-journal-sec {
+  padding: 12px 16px;
+  border-radius: 20px;
+  background: var(--tw-pill);
+  border: 1px solid var(--tw-line);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tw-journal-sec .eyebrow {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--tw-ink-3);
+}
+.tw-journal-sec p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--tw-ink);
+}
+.tw-journal-sec.wide {
+  grid-column: 1 / -1;
+}
+.tw-journal-sec.plan {
+  background: var(--tw-tile);
+  border-color: var(--tw-line-strong);
+}
+.tw-journal-sec.plan .eyebrow {
+  color: var(--tw-hero-line);
+}
+[data-theme="light"] .tw-journal-sec.plan .eyebrow,
+.light .tw-journal-sec.plan .eyebrow {
+  color: var(--tw-hero);
+}
+.tw-journal-sec.exec .eyebrow {
+  color: var(--tw-gain);
+}
+.tw-journal-sec.lesson {
+  background: color-mix(in srgb, var(--tw-sun) 14%, var(--tw-tile));
+  border-color: color-mix(in srgb, var(--tw-sun) 50%, transparent);
+  position: relative;
+}
+.tw-journal-sec.lesson .eyebrow {
+  color: var(--tw-sun);
+}
+[data-theme="light"] .tw-journal-sec.lesson .eyebrow,
+.light .tw-journal-sec.lesson .eyebrow {
+  color: #9A6700;
+}
+.tw-journal-sec.lesson::after {
+  content: "Rule reinforced";
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--tw-sun-ink);
+  color: var(--tw-sun);
+}
+[data-theme="light"] .tw-journal-sec.lesson::after,
+.light .tw-journal-sec.lesson::after {
+  background: #1A1400;
+  color: #F6C744;
+}
+
+.tw-journal-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--tw-ink-2);
+}
+
+/* Pitfalls tags */
+.tw-journal-pitfalls {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 20px;
+  border: 1px dashed var(--tw-line-strong);
+}
+.tw-journal-pitfalls .eyebrow {
+  width: 100%;
+  margin-bottom: 2px;
+}
+.tw-journal-pf {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--tw-tile);
+  border: 1px solid var(--tw-line);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--tw-ink-3);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+.tw-journal-pf:hover {
+  border-color: var(--tw-line-strong);
+  color: var(--tw-ink);
+}
+.tw-journal-pf i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--tw-line-strong);
+  transition: background 0.15s ease;
+}
+.tw-journal-pf.on {
+  color: var(--tw-loss);
+  border-color: color-mix(in srgb, var(--tw-loss) 45%, transparent);
+  background: color-mix(in srgb, var(--tw-loss) 10%, var(--tw-tile));
+}
+.tw-journal-pf.on i {
+  background: var(--tw-loss);
+}
+

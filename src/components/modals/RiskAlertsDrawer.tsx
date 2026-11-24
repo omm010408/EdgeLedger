@@ -86,7 +86,7 @@ export const RiskAlertsDrawer: React.FC<RiskAlertsDrawerProps> = ({ isOpen, onCl
 
                   <div className="flex items-center justify-between pt-1 border-t border-edge-border/40 text-[10px] text-edge-text-muted">
                     <span>{alert.accountName}</span>
-                    <span>{new Date(alert.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span>{new Date(alert.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                 </div>
               );
