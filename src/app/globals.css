@@ -140,6 +140,14 @@ body {
   --tw-wave: #0E1D1E;
   --tw-ripple: #17302D;
   --tw-focus: #9BF3DF;
+  --tw-shadow-tile: 0 4px 20px rgba(0, 0, 0, 0.35);
+  --tw-shadow-tile-hover: 0 8px 30px rgba(0, 0, 0, 0.5);
+  --tw-shadow-hero: 0 8px 32px rgba(10, 77, 76, 0.35);
+  --tw-shadow-arch: 0 8px 32px rgba(255, 213, 107, 0.25);
+  --tw-shadow-aqua: 0 8px 32px rgba(143, 235, 211, 0.25);
+  --tw-shadow-btn: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --tw-shadow-dropdown: 0 16px 48px rgba(0, 0, 0, 0.7);
+  --tw-shadow-bubble: 0 2px 8px rgba(91, 230, 174, 0.35);
 
   /* Aliases for direct Tidewater mockup compatibility */
   --bg: var(--tw-bg);
@@ -228,6 +236,14 @@ body {
   --tw-wave: #E8F2EF;
   --tw-ripple: #D0E2DE;
   --tw-focus: #0D4A4A;
+  --tw-shadow-tile: 0 1px 3px rgba(14, 27, 28, 0.04), 0 6px 18px -2px rgba(14, 27, 28, 0.06), 0 16px 32px -4px rgba(14, 27, 28, 0.04);
+  --tw-shadow-tile-hover: 0 2px 6px rgba(14, 27, 28, 0.06), 0 10px 26px -2px rgba(14, 27, 28, 0.08), 0 24px 44px -6px rgba(14, 27, 28, 0.07);
+  --tw-shadow-hero: 0 4px 18px -2px rgba(13, 74, 74, 0.25), 0 16px 40px -6px rgba(13, 74, 74, 0.28);
+  --tw-shadow-arch: 0 4px 18px -2px rgba(246, 199, 68, 0.38), 0 16px 36px -4px rgba(246, 199, 68, 0.28);
+  --tw-shadow-aqua: 0 4px 18px -2px rgba(91, 230, 174, 0.35), 0 16px 36px -4px rgba(91, 230, 174, 0.24);
+  --tw-shadow-btn: 0 1px 3px rgba(14, 27, 28, 0.06), 0 2px 6px rgba(14, 27, 28, 0.04);
+  --tw-shadow-dropdown: 0 12px 40px rgba(14, 27, 28, 0.14), 0 2px 10px rgba(14, 27, 28, 0.06);
+  --tw-shadow-bubble: 0 4px 12px rgba(31, 99, 184, 0.35), 0 1px 3px rgba(31, 99, 184, 0.2);
 
   /* Aliases for direct Tidewater mockup compatibility (Light) */
   --bg: var(--tw-bg);
@@ -577,6 +593,12 @@ body {
   border-radius: 32px;
   background: var(--tw-tile);
   border: 1px solid var(--tw-line);
+  box-shadow: var(--tw-shadow-tile);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+
+.tw-tile:hover {
+  box-shadow: var(--tw-shadow-tile-hover);
 }
 
 .tw-lbl {
@@ -677,6 +699,8 @@ body {
   background: var(--tw-hero);
   color: var(--tw-hero-ink);
   overflow: hidden;
+  box-shadow: var(--tw-shadow-hero);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .tw-hero .tw-lbl { color: var(--tw-hero-2); }
@@ -738,6 +762,18 @@ body {
 .tw-fp-btn.tw-fp-unlocked:hover {
   background: rgba(91, 230, 174, 0.22);
   border-color: rgba(91, 230, 174, 0.7);
+}
+
+.tw-hero .tw-fp-btn.tw-fp-unlocked {
+  background: rgba(155, 243, 223, 0.18) !important;
+  border-color: rgba(155, 243, 223, 0.5) !important;
+  color: #9BF3DF !important;
+}
+
+.tw-hero .tw-fp-btn.tw-fp-locked {
+  background: rgba(255, 213, 107, 0.18) !important;
+  border-color: rgba(255, 213, 107, 0.6) !important;
+  color: #FFD56B !important;
 }
 
 .tw-fp-icon-wrap {
@@ -965,6 +1001,8 @@ body {
   border-radius: 999px 999px 32px 32px;
   background: var(--tw-sun) !important;
   color: var(--tw-sun-ink) !important;
+  box-shadow: var(--tw-shadow-arch) !important;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .tw-disc {
@@ -999,6 +1037,8 @@ body {
   border: 0 !important;
   border-color: transparent !important;
   color: var(--tw-aqua-ink) !important;
+  box-shadow: var(--tw-shadow-aqua) !important;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .tw-aqua .tw-lbl { color: var(--tw-aqua-ink) !important; }
@@ -2379,4 +2419,472 @@ body {
   .tw-cats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* ========================================================================== */
+/* ADVANCED REFINED LIGHT THEME SYSTEM — PREMIUM SHADOW BOXES & ELEVATIONS    */
+/* ========================================================================== */
+
+[data-theme="light"],
+.light {
+  /* Ambient canvas background */
+  background-color: #EDF4F2 !important;
+}
+
+[data-theme="light"] body,
+.light body {
+  background-color: #EDF4F2 !important;
+  color: #0E1B1C !important;
+}
+
+/* 1. Bento Dashboard Canvas & Ambient Ripple */
+[data-theme="light"] .tw-board,
+.light .tw-board {
+  background: #EDF4F2;
+  color: #0E1B1C;
+}
+
+[data-theme="light"] .tw-ripple,
+.light .tw-ripple {
+  stroke: #D0E2DE;
+}
+
+/* 2. Standard Tiles — Multi-layered Apple/Vercel Studio Box Shadows */
+[data-theme="light"] .tw-tile,
+.light .tw-tile {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(220, 231, 228, 0.95) !important;
+  box-shadow: 
+    0 1px 2px rgba(14, 27, 28, 0.03),
+    0 4px 14px -2px rgba(14, 27, 28, 0.05),
+    0 12px 28px -6px rgba(14, 27, 28, 0.04) !important;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+
+[data-theme="light"] .tw-tile:hover,
+.light .tw-tile:hover {
+  border-color: rgba(185, 204, 200, 0.95) !important;
+  box-shadow: 
+    0 2px 4px rgba(14, 27, 28, 0.04),
+    0 8px 22px -3px rgba(14, 27, 28, 0.07),
+    0 20px 38px -6px rgba(14, 27, 28, 0.06) !important;
+}
+
+/* 3. Hero Net P&L Card — Rich Dark Forest Teal Elevation */
+[data-theme="light"] .tw-hero,
+.light .tw-hero {
+  background: #0D4A4A !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(143, 230, 207, 0.24) !important;
+  box-shadow: 
+    0 4px 18px -2px rgba(13, 74, 74, 0.28),
+    0 16px 42px -6px rgba(13, 74, 74, 0.26) !important;
+}
+
+[data-theme="light"] .tw-hero:hover,
+.light .tw-hero:hover {
+  box-shadow: 
+    0 6px 24px -2px rgba(13, 74, 74, 0.32),
+    0 22px 50px -6px rgba(13, 74, 74, 0.3) !important;
+}
+
+[data-theme="light"] .tw-hero .tw-lbl,
+.light .tw-hero .tw-lbl {
+  color: #CDEBE3 !important;
+}
+
+[data-theme="light"] .tw-hero .tw-big small,
+.light .tw-hero .tw-big small {
+  color: #CDEBE3 !important;
+}
+
+[data-theme="light"] .tw-hero .tw-delta,
+.light .tw-hero .tw-delta {
+  color: #CDEBE3 !important;
+}
+
+[data-theme="light"] .tw-hero .tw-stats dt,
+.light .tw-hero .tw-stats dt {
+  color: #CDEBE3 !important;
+}
+
+[data-theme="light"] .tw-hero .tw-stats dd,
+.light .tw-hero .tw-stats dd {
+  color: #FFFFFF !important;
+}
+
+[data-theme="light"] .tw-hero-line,
+.light .tw-hero-line {
+  stroke: #8FE6CF !important;
+}
+
+/* 4. Profit Factor Arch Card — Warm Golden Sun with Glowing Shadow Box */
+[data-theme="light"] .tw-tile.tw-arch,
+.light .tw-tile.tw-arch,
+[data-theme="light"] .tw-arch,
+.light .tw-arch {
+  background: #F6C744 !important;
+  color: #1A1400 !important;
+  border: 0 !important;
+  box-shadow: 
+    0 4px 18px -2px rgba(246, 199, 68, 0.4),
+    0 16px 36px -4px rgba(246, 199, 68, 0.28) !important;
+}
+
+[data-theme="light"] .tw-tile.tw-arch:hover,
+.light .tw-tile.tw-arch:hover,
+[data-theme="light"] .tw-arch:hover,
+.light .tw-arch:hover {
+  box-shadow: 
+    0 6px 24px -2px rgba(246, 199, 68, 0.48),
+    0 22px 46px -4px rgba(246, 199, 68, 0.32) !important;
+}
+
+[data-theme="light"] .tw-disc,
+.light .tw-disc {
+  background: #FBDB7A !important;
+}
+
+[data-theme="light"] .tw-arch .tw-lbl,
+.light .tw-arch .tw-lbl,
+[data-theme="light"] .tw-arch .tw-n,
+.light .tw-arch .tw-n,
+[data-theme="light"] .tw-arch .tw-sub,
+.light .tw-arch .tw-sub {
+  color: #1A1400 !important;
+}
+
+/* 5. Expectancy Card — Mint Aqua Shadow Box */
+[data-theme="light"] .tw-tile.tw-aqua,
+.light .tw-tile.tw-aqua,
+[data-theme="light"] .tw-aqua,
+.light .tw-aqua {
+  background: #D5F0E6 !important;
+  color: #0B2E2A !important;
+  border: 0 !important;
+  box-shadow: 
+    0 4px 18px -2px rgba(91, 230, 174, 0.35),
+    0 16px 36px -4px rgba(91, 230, 174, 0.24) !important;
+}
+
+[data-theme="light"] .tw-tile.tw-aqua:hover,
+.light .tw-tile.tw-aqua:hover,
+[data-theme="light"] .tw-aqua:hover,
+.light .tw-aqua:hover {
+  box-shadow: 
+    0 6px 24px -2px rgba(91, 230, 174, 0.45),
+    0 22px 46px -4px rgba(91, 230, 174, 0.3) !important;
+}
+
+[data-theme="light"] .tw-aqua .tw-lbl,
+.light .tw-aqua .tw-lbl {
+  color: #0B2E2A !important;
+}
+
+[data-theme="light"] .tw-aqua .tw-exp,
+.light .tw-aqua .tw-exp {
+  color: #0B6B47 !important;
+}
+
+[data-theme="light"] .tw-aqua .tw-pill,
+.light .tw-aqua .tw-pill {
+  background: #FFFFFF !important;
+  color: #0B2E2A !important;
+  box-shadow: 0 1px 3px rgba(11, 46, 42, 0.12) !important;
+}
+
+/* 6. Header Navigation & Tactical Toolbar */
+[data-theme="light"] .tw-brand,
+.light .tw-brand {
+  color: #0E1B1C !important;
+}
+
+[data-theme="light"] .tw-mark,
+.light .tw-mark {
+  background: #0D4A4A !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 2px 6px rgba(13, 74, 74, 0.25) !important;
+}
+
+[data-theme="light"] .tw-nav,
+.light .tw-nav {
+  background: #E6EEEB !important;
+  border: 1px solid rgba(220, 231, 228, 0.95) !important;
+  box-shadow: inset 0 1px 2px rgba(14, 27, 28, 0.05) !important;
+}
+
+[data-theme="light"] .tw-nav a,
+.light .tw-nav a {
+  color: #3F5553 !important;
+}
+
+[data-theme="light"] .tw-nav a:hover,
+.light .tw-nav a:hover {
+  color: #0E1B1C !important;
+}
+
+[data-theme="light"] .tw-nav a[aria-current="page"],
+.light .tw-nav a[aria-current="page"] {
+  background: #FFFFFF !important;
+  color: #0E1B1C !important;
+  font-weight: 600 !important;
+  border: 1px solid rgba(220, 231, 228, 0.95) !important;
+  box-shadow: 0 1px 3px rgba(14, 27, 28, 0.08), 0 2px 6px rgba(14, 27, 28, 0.04) !important;
+}
+
+[data-theme="light"] .tw-seg,
+.light .tw-seg {
+  background: #E6EEEB !important;
+  border: 1px solid rgba(220, 231, 228, 0.95) !important;
+  box-shadow: inset 0 1px 2px rgba(14, 27, 28, 0.05) !important;
+}
+
+[data-theme="light"] .tw-seg button,
+.light .tw-seg button {
+  color: #4B5857 !important;
+}
+
+[data-theme="light"] .tw-seg button:hover,
+.light .tw-seg button:hover {
+  color: #0F1B1C !important;
+}
+
+[data-theme="light"] .tw-seg button[aria-pressed="true"],
+.light .tw-seg button[aria-pressed="true"] {
+  background: #FFFFFF !important;
+  color: #0F1B1C !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 3px rgba(14, 27, 28, 0.08), 0 2px 6px rgba(14, 27, 28, 0.04) !important;
+}
+
+[data-theme="light"] .tw-btn,
+.light .tw-btn {
+  background: #FFFFFF !important;
+  border: 1px solid #DCE7E4 !important;
+  color: #0F1B1C !important;
+  box-shadow: 0 1px 3px rgba(14, 27, 28, 0.06), 0 2px 6px rgba(14, 27, 28, 0.03) !important;
+}
+
+[data-theme="light"] .tw-btn:hover,
+.light .tw-btn:hover {
+  border-color: #B9CCC8 !important;
+  color: #0F1B1C !important;
+  box-shadow: 0 2px 6px rgba(14, 27, 28, 0.08), 0 4px 12px rgba(14, 27, 28, 0.04) !important;
+}
+
+[data-theme="light"] .tw-btn.quiet,
+.light .tw-btn.quiet {
+  color: #3F5553 !important;
+}
+
+[data-theme="light"] .tw-btn.quiet:hover,
+.light .tw-btn.quiet:hover {
+  color: #0E1B1C !important;
+}
+
+[data-theme="light"] kbd,
+.light kbd {
+  background: #E6EEEB !important;
+  color: #3F5553 !important;
+  border: 1px solid #DCE7E4 !important;
+}
+
+/* 7. Fingerprint Privacy Controls in Light Theme */
+[data-theme="light"] .tw-fp-btn.tw-fp-locked,
+.light .tw-fp-btn.tw-fp-locked {
+  background: rgba(246, 199, 68, 0.22) !important;
+  border: 1px solid rgba(246, 199, 68, 0.65) !important;
+  color: #1A1400 !important;
+  box-shadow: 0 2px 8px rgba(246, 199, 68, 0.25) !important;
+}
+
+[data-theme="light"] .tw-fp-btn.tw-fp-unlocked,
+.light .tw-fp-btn.tw-fp-unlocked {
+  background: rgba(19, 120, 78, 0.14) !important;
+  border: 1px solid rgba(19, 120, 78, 0.45) !important;
+  color: #13784E !important;
+  box-shadow: 0 2px 8px rgba(19, 120, 78, 0.18) !important;
+}
+
+[data-theme="light"] .tw-fp-head,
+.light .tw-fp-head {
+  box-shadow: 0 1px 3px rgba(14, 27, 28, 0.06) !important;
+}
+
+[data-theme="light"] .tw-fp-head.tw-fp-head-locked,
+.light .tw-fp-head.tw-fp-head-locked {
+  border-color: rgba(246, 199, 68, 0.6) !important;
+}
+
+[data-theme="light"] .tw-fp-head.tw-fp-head-unlocked,
+.light .tw-fp-head.tw-fp-head-unlocked {
+  border-color: rgba(19, 120, 78, 0.4) !important;
+}
+
+/* 8. 7-Day Bubble Calendar in Light Theme */
+[data-theme="light"] .tw-bub.strong,
+.light .tw-bub.strong {
+  background: #199760 !important;
+  box-shadow: 0 4px 12px rgba(25, 151, 96, 0.35), 0 2px 4px rgba(25, 151, 96, 0.2) !important;
+}
+
+[data-theme="light"] .tw-bub.mid,
+.light .tw-bub.mid {
+  background: #5BE6AE !important;
+  box-shadow: 0 3px 10px rgba(91, 230, 174, 0.3), 0 1px 3px rgba(19, 120, 78, 0.15) !important;
+}
+
+[data-theme="light"] .tw-bub.empty,
+.light .tw-bub.empty {
+  border-color: #B8C7C4 !important;
+}
+
+[data-theme="light"] .tw-bub.open,
+.light .tw-bub.open {
+  border-color: #C97210 !important;
+}
+
+/* 9. Trade Quality & Payoff Badge in Light Theme */
+[data-theme="light"] .tw-qual .tw-pill,
+.light .tw-qual .tw-pill {
+  background: #F6C744 !important;
+  color: #1A1400 !important;
+  box-shadow: 0 2px 6px rgba(246, 199, 68, 0.3) !important;
+}
+
+[data-theme="light"] .tw-qbar,
+.light .tw-qbar {
+  background: #E6EDEB !important;
+}
+
+/* 10. Instrument Share Split Bar in Light Theme */
+[data-theme="light"] .tw-split,
+.light .tw-split {
+  box-shadow: 0 1px 3px rgba(14, 27, 28, 0.08) !important;
+}
+
+[data-theme="light"] .tw-legend li,
+.light .tw-legend li {
+  border-top: 1px solid #DCE7E4 !important;
+}
+
+/* 11. Recent Executions Table & Badges in Light Theme */
+[data-theme="light"] .tw-tbl,
+.light .tw-tbl {
+  color: #3F5553 !important;
+}
+
+[data-theme="light"] .tw-tbl th,
+.light .tw-tbl th {
+  color: #566967 !important;
+  font-weight: 600 !important;
+  border-bottom: 1.5px solid #DCE7E4 !important;
+}
+
+[data-theme="light"] .tw-tbl td,
+.light .tw-tbl td {
+  border-top: 1px solid #E6EDEB !important;
+  color: #3F5553 !important;
+}
+
+[data-theme="light"] .tw-tbl td.s,
+.light .tw-tbl td.s {
+  color: #0E1B1C !important;
+  font-weight: 600 !important;
+}
+
+[data-theme="light"] .tw-tbl tr:hover td,
+.light .tw-tbl tr:hover td {
+  background: rgba(230, 238, 235, 0.45) !important;
+}
+
+[data-theme="light"] .tw-side.buy,
+.light .tw-side.buy {
+  background: #E1EBFB !important;
+  color: #1F4F95 !important;
+  box-shadow: 0 1px 2px rgba(31, 79, 149, 0.12) !important;
+}
+
+[data-theme="light"] .tw-side.sell,
+.light .tw-side.sell {
+  background: #E6EEEB !important;
+  color: #3F5553 !important;
+  box-shadow: 0 1px 2px rgba(63, 85, 83, 0.08) !important;
+}
+
+/* 12. R Ladder in Light Theme */
+[data-theme="light"] .tw-track,
+.light .tw-track {
+  background: #E4EDEA !important;
+}
+
+[data-theme="light"] .tw-rrow + .tw-rrow,
+.light .tw-rrow + .tw-rrow {
+  border-top: 1px solid #DCE7E4 !important;
+}
+
+/* 13. Open Position Card in Light Theme */
+[data-theme="light"] .tw-ticket,
+.light .tw-ticket {
+  color: #0E1B1C !important;
+}
+
+[data-theme="light"] .tw-riskpill,
+.light .tw-riskpill {
+  background: rgba(201, 114, 16, 0.12) !important;
+  color: #C97210 !important;
+  box-shadow: inset 0 0 0 1px rgba(201, 114, 16, 0.4) !important;
+}
+
+/* 14. Accounts Desk & Calendar Pages in Light Theme */
+[data-theme="light"] .tw-acct,
+.light .tw-acct,
+[data-theme="light"] .tw-cal-detail,
+.light .tw-cal-detail,
+[data-theme="light"] .tw-cell,
+.light .tw-cell {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(220, 231, 228, 0.95) !important;
+  box-shadow: 
+    0 1px 2px rgba(14, 27, 28, 0.03),
+    0 4px 14px -2px rgba(14, 27, 28, 0.05),
+    0 12px 28px -6px rgba(14, 27, 28, 0.04) !important;
+}
+
+[data-theme="light"] .tw-cal-hero,
+.light .tw-cal-hero {
+  background: #0D4A4A !important;
+  box-shadow: 
+    0 4px 18px -2px rgba(13, 74, 74, 0.28),
+    0 16px 42px -6px rgba(13, 74, 74, 0.26) !important;
+}
+
+[data-theme="light"] .tw-cal-sunt,
+.light .tw-cal-sunt {
+  background: #F6C744 !important;
+  color: #1A1400 !important;
+  box-shadow: 
+    0 4px 18px -2px rgba(246, 199, 68, 0.4),
+    0 16px 36px -4px rgba(246, 199, 68, 0.28) !important;
+}
+
+[data-theme="light"] .tw-cal-mint,
+.light .tw-cal-mint {
+  background: #D5F0E6 !important;
+  color: #0B2E2A !important;
+  box-shadow: 
+    0 4px 18px -2px rgba(91, 230, 174, 0.35),
+    0 16px 36px -4px rgba(91, 230, 174, 0.24) !important;
+}
+
+/* 15. Dropdowns & Modals in Light Theme */
+[data-theme="light"] [role="listbox"],
+.light [role="listbox"],
+[data-theme="light"] .tw-dropdown,
+.light .tw-dropdown {
+  background: #FFFFFF !important;
+  border: 1px solid #DCE7E4 !important;
+  box-shadow: 
+    0 4px 12px rgba(14, 27, 28, 0.08),
+    0 16px 48px -4px rgba(14, 27, 28, 0.16) !important;
 }
