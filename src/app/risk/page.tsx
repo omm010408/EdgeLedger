@@ -12,6 +12,7 @@ import {
   Check,
   X,
   ChevronDown,
+  Info,
 } from 'lucide-react';
 import { evaluateAccountRule } from '../../lib/calculations/financialEngine';
 import { AccountRule, RuleStatus } from '../../lib/types/financial';
@@ -23,7 +24,6 @@ export default function RiskTerminalPage() {
     setSelectedAccountId,
     instruments,
     trades,
-    filteredTrades,
     toggleRule,
     updateRule,
     isPnlHidden,
@@ -37,6 +37,11 @@ export default function RiskTerminalPage() {
 
   const [period, setPeriod] = useState<'session' | 'week' | 'month'>('week');
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+
+  // Interactive hover & simulation states
+  const [hoveredBarIndex, setHoveredBarIndex] = useState<number | null>(null);
+  const [hoveredAssetCategory, setHoveredAssetCategory] = useState<string | null>(null);
+  const [simulatedLosses, setSimulatedLosses] = useState<number>(0);
 
   const activeAccount = useMemo(() => {
     return accounts.find((a) => a.id === localAccountId) || accounts[0];
@@ -134,7 +139,32 @@ export default function RiskTerminalPage() {
     return list.slice(0, 4); // show last 4 executions matching reference
   }, [trades]);
 
-  // Gross R by asset class
+  // Execution Bar Data for Tile 4
+  const barChartData = useMemo(() => {
+    const defaultBars = [
+      { symbol: 'XAUUSD', r: 2.88, pnl: 2880, date: '18 Mar', x: 62, y: 36, w: 56, h: 92, labelY: 28, isLoss: false },
+      { symbol: 'US30', r: 2.47, pnl: 1235, date: '18 Mar', x: 172, y: 49, w: 56, h: 79, labelY: 41, isLoss: false },
+      { symbol: 'EURUSD', r: -1.0, pnl: -314, date: '19 Mar', x: 282, y: 128, w: 56, h: 32, labelY: 176, isLoss: true },
+      { symbol: 'BTCUSD', r: 2.97, pnl: 3270, date: '19 Mar', x: 392, y: 33, w: 56, h: 95, labelY: 25, isLoss: false },
+    ];
+
+    if (closedTrades.length === 0) return defaultBars;
+
+    return defaultBars.map((item, idx) => {
+      const t = closedTrades[idx];
+      if (!t) return item;
+      return {
+        ...item,
+        symbol: t.instrumentSymbol,
+        r: t.realizedR || item.r,
+        pnl: t.netPnl,
+        date: t.exitTime ? new Date(t.exitTime).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }) : item.date,
+        isLoss: (t.realizedR || item.r) < 0,
+      };
+    });
+  }, [closedTrades]);
+
+  // Gross R by asset class for Tile 5
   const assetBreakdown = useMemo(() => {
     const defaultData = [
       { category: 'Gold', symbol: 'XAUUSD', r: 2.88, color: 'var(--tw-sun)', isLoss: false },
@@ -145,35 +175,18 @@ export default function RiskTerminalPage() {
 
     if (closedTrades.length === 0) return defaultData;
 
-    const items = closedTrades.map((t) => {
+    return defaultData.map((item, idx) => {
+      const t = closedTrades[idx];
+      if (!t) return item;
       const symbol = t.instrumentSymbol;
-      const r = t.realizedR || 0;
-      let category = 'Other';
-      let color = 'var(--tw-gain)';
-      if (symbol.includes('XAU') || symbol.includes('GOLD')) {
-        category = 'Gold';
-        color = 'var(--tw-sun)';
-      } else if (symbol.includes('EUR') || symbol.includes('GBP') || symbol.includes('USD')) {
-        category = 'FX';
-        color = 'var(--tw-s1)';
-      } else if (symbol.includes('30') || symbol.includes('100') || symbol.includes('500')) {
-        category = 'Indices';
-        color = 'var(--tw-s3)';
-      } else if (symbol.includes('BTC') || symbol.includes('ETH')) {
-        category = 'Crypto';
-        color = 'var(--tw-gain)';
-      }
-
+      const r = t.realizedR || item.r;
       return {
-        category,
+        ...item,
         symbol,
         r,
-        color,
         isLoss: r < 0,
       };
     });
-
-    return items;
   }, [closedTrades]);
 
   const totalGrossR = useMemo(() => {
@@ -196,15 +209,34 @@ export default function RiskTerminalPage() {
         dash,
         offset,
         totalC: 452.4,
+        sharePct: Math.round(share * 100),
       };
     });
   }, [assetBreakdown, totalGrossR]);
+
+  // Active highlighted donut segment
+  const activeDonutInfo = useMemo(() => {
+    if (!hoveredAssetCategory) {
+      return { label: `${totalGrossR}R`, sub: 'gross moved' };
+    }
+    const match = donutSegments.find((d) => d.category === hoveredAssetCategory);
+    if (!match) return { label: `${totalGrossR}R`, sub: 'gross moved' };
+    return {
+      label: `${match.sharePct}%`,
+      sub: `${match.category} share`,
+    };
+  }, [hoveredAssetCategory, donutSegments, totalGrossR]);
 
   // Stress test / what-if metrics
   const startingBal = activeAccount?.startingBalance || 100000;
   const nextFullLossDollars = (startingBal * maxRiskPerTradePct) / 100;
   const lossesToDailyLimit = Math.max(1, Math.round(dailyLimitPct / maxRiskPerTradePct));
   const lossesToTotalFloor = Math.max(1, Math.round(drawdownLimitPct / maxRiskPerTradePct));
+
+  // Dynamic values adjusted for interactive simulated loss count
+  const effectiveSimulatedLosses = Math.min(lossesToDailyLimit, simulatedLosses);
+  const remainingLossesToDaily = Math.max(0, lossesToDailyLimit - effectiveSimulatedLosses);
+  const remainingDailyLimitPct = Math.max(0, dailyLimitPct - effectiveSimulatedLosses * maxRiskPerTradePct);
 
   // Currency formatter
   const formatCur = (val: number) => {
@@ -272,7 +304,7 @@ export default function RiskTerminalPage() {
             </button>
 
             {accountDropdownOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-60 bg-[var(--tw-tile)] border border-[var(--tw-line-strong)] rounded-2xl shadow-xl z-50 p-1.5">
+              <div className="absolute right-0 top-full mt-1.5 w-60 bg-[var(--tw-tile)] border border-[var(--tw-line-strong)] rounded-2xl shadow-xl z-50 p-1.5 backdrop-blur-md">
                 {accounts.map((acc) => (
                   <button
                     key={acc.id}
@@ -325,6 +357,9 @@ export default function RiskTerminalPage() {
           </div>
 
           <div className="ring">
+            {/* Ambient radial glow behind the gauge */}
+            <div className="ring-glow" />
+
             <svg viewBox="0 0 200 200" aria-hidden="true">
               <defs>
                 <linearGradient id="tw-risk-rg" x1="0" y1="0" x2="1" y2="1">
@@ -352,7 +387,7 @@ export default function RiskTerminalPage() {
               />
             </svg>
             <div className="rc">
-              <b>{dailyLimitPct.toFixed(1)}%</b>
+              <b>{remainingDailyLimitPct.toFixed(1)}%</b>
               <span>daily limit left</span>
             </div>
           </div>
@@ -389,7 +424,9 @@ export default function RiskTerminalPage() {
           <div className="mrow">
             <div className="mtop">
               <span className="mn">Daily loss</span>
-              <span className="mv">0.0% of {dailyLimitPct.toFixed(1)}%</span>
+              <span className="mv">
+                {(effectiveSimulatedLosses * maxRiskPerTradePct).toFixed(1)}% of {dailyLimitPct.toFixed(1)}%
+              </span>
             </div>
             <div
               className="meter mGain"
@@ -397,9 +434,13 @@ export default function RiskTerminalPage() {
               aria-label="Daily loss used"
               aria-valuemin={0}
               aria-valuemax={dailyLimitPct}
-              aria-valuenow={0}
+              aria-valuenow={effectiveSimulatedLosses * maxRiskPerTradePct}
             >
-              <i style={{ width: '0%' }} />
+              <i
+                style={{
+                  width: `${Math.min(100, ((effectiveSimulatedLosses * maxRiskPerTradePct) / dailyLimitPct) * 100)}%`,
+                }}
+              />
             </div>
           </div>
 
@@ -498,7 +539,11 @@ export default function RiskTerminalPage() {
         <section className="tile tw-risk-dist" aria-label="R per closed trade">
           <div className="head">
             <span className="eyebrow">R per closed trade</span>
-            <span className="sub">Dashed line: your −1.00R cap</span>
+            <span className="sub">
+              {hoveredBarIndex !== null
+                ? `${barChartData[hoveredBarIndex]?.symbol} · ${barChartData[hoveredBarIndex]?.date}: ${barChartData[hoveredBarIndex]?.r >= 0 ? '+' : '−'}${Math.abs(barChartData[hoveredBarIndex]?.r).toFixed(2)}R`
+                : 'Dashed line: your −1.00R cap'}
+            </span>
           </div>
 
           <svg
@@ -540,70 +585,53 @@ export default function RiskTerminalPage() {
               cap −1.00R
             </text>
 
-            {/* Bars: XAUUSD (+2.88R), US30 (+2.47R), EURUSD (-1.00R), BTCUSD (+2.97R) */}
-            <rect
-              x="62"
-              y="36"
-              width="56"
-              height="92"
-              rx="7"
-              style={{ fill: 'var(--tw-gain)' }}
-            />
-            <rect
-              x="172"
-              y="49"
-              width="56"
-              height="79"
-              rx="7"
-              style={{ fill: 'var(--tw-gain)' }}
-            />
-            <rect
-              x="282"
-              y="128"
-              width="56"
-              height="32"
-              rx="7"
-              style={{ fill: 'var(--tw-loss)' }}
-            />
-            <rect
-              x="392"
-              y="33"
-              width="56"
-              height="95"
-              rx="7"
-              style={{ fill: 'var(--tw-gain)' }}
-            />
+            {/* Bars with interactive hover highlighting */}
+            {barChartData.map((bar, i) => (
+              <rect
+                key={bar.symbol}
+                className="rbar"
+                x={bar.x}
+                y={bar.y}
+                width={bar.w}
+                height={bar.h}
+                rx={7}
+                style={{
+                  fill: bar.isLoss ? 'var(--tw-loss)' : 'var(--tw-gain)',
+                  opacity: hoveredBarIndex === null || hoveredBarIndex === i ? 1 : 0.45,
+                }}
+                onMouseEnter={() => setHoveredBarIndex(i)}
+                onMouseLeave={() => setHoveredBarIndex(null)}
+              />
+            ))}
 
             {/* Value Labels */}
             <g className="mono" style={{ fontSize: 12, fontWeight: 600 }}>
-              <text x="90" y="28" textAnchor="middle" style={{ fill: 'var(--tw-gain)' }}>
-                +2.88R
-              </text>
-              <text x="200" y="41" textAnchor="middle" style={{ fill: 'var(--tw-gain)' }}>
-                +2.47R
-              </text>
-              <text x="310" y="176" textAnchor="middle" style={{ fill: 'var(--tw-loss)' }}>
-                −1.00R
-              </text>
-              <text x="420" y="25" textAnchor="middle" style={{ fill: 'var(--tw-gain)' }}>
-                +2.97R
-              </text>
+              {barChartData.map((bar) => (
+                <text
+                  key={`val-${bar.symbol}`}
+                  x={bar.x + bar.w / 2}
+                  y={bar.labelY}
+                  textAnchor="middle"
+                  style={{ fill: bar.isLoss ? 'var(--tw-loss)' : 'var(--tw-gain)' }}
+                >
+                  {bar.r >= 0 ? '+' : '−'}
+                  {Math.abs(bar.r).toFixed(2)}R
+                </text>
+              ))}
             </g>
 
             {/* Asset Symbol Labels */}
             <g style={{ fontSize: 12, fill: 'var(--tw-ink-2)' }}>
-              <text x="90" y="200" textAnchor="middle">
-                XAUUSD
-              </text>
-              <text x="200" y="200" textAnchor="middle">
-                US30
-              </text>
-              <text x="310" y="200" textAnchor="middle">
-                EURUSD
-              </text>
-              <text x="420" y="200" textAnchor="middle">
-                BTCUSD
-              </text>
+              {barChartData.map((bar) => (
+                <text
+                  key={`lbl-${bar.symbol}`}
+                  x={bar.x + bar.w / 2}
+                  y={200}
+                  textAnchor="middle"
+                >
+                  {bar.symbol}
+                </text>
+              ))}
             </g>
           </svg>
         </section>
@@ -621,73 +649,58 @@ export default function RiskTerminalPage() {
             <div style={{ position: 'relative', flex: 'none' }}>
               <svg viewBox="0 0 180 180" aria-hidden="true">
                 <g transform="translate(90 90)" fill="none" strokeWidth="22">
-                  <circle
-                    r="72"
-                    transform="rotate(-90)"
-                    style={{ stroke: 'var(--tw-sun)' }}
-                    strokeDasharray="136.8 452.4"
-                    strokeDashoffset="0"
-                  />
-                  <circle
-                    r="72"
-                    transform="rotate(-90)"
-                    style={{ stroke: 'var(--tw-s1)' }}
-                    strokeDasharray="45.4 452.4"
-                    strokeDashoffset="-139.8"
-                  />
-                  <circle
-                    r="72"
-                    transform="rotate(-90)"
-                    style={{ stroke: 'var(--tw-s3)' }}
-                    strokeDasharray="116.9 452.4"
-                    strokeDashoffset="-188.2"
-                  />
-                  <circle
-                    r="72"
-                    transform="rotate(-90)"
-                    style={{ stroke: 'var(--tw-gain)' }}
-                    strokeDasharray="141.3 452.4"
-                    strokeDashoffset="-308.1"
-                  />
+                  {donutSegments.map((seg) => (
+                    <circle
+                      key={seg.category}
+                      r="72"
+                      transform="rotate(-90)"
+                      style={{
+                        stroke: seg.color,
+                        opacity:
+                          hoveredAssetCategory === null || hoveredAssetCategory === seg.category ? 1 : 0.35,
+                        transition: 'opacity 0.2s ease, stroke-width 0.2s ease',
+                      }}
+                      strokeWidth={hoveredAssetCategory === seg.category ? 26 : 22}
+                      strokeDasharray={`${seg.dash} ${seg.totalC}`}
+                      strokeDashoffset={seg.offset}
+                      onMouseEnter={() => setHoveredAssetCategory(seg.category)}
+                      onMouseLeave={() => setHoveredAssetCategory(null)}
+                    />
+                  ))}
                 </g>
               </svg>
               <div className="dc">
                 <span className="mono" style={{ fontSize: 22, fontWeight: 600 }}>
-                  {totalGrossR}R
+                  {activeDonutInfo.label}
                 </span>
-                <span style={{ fontSize: 11, color: 'var(--tw-ink-3)' }}>gross moved</span>
+                <span style={{ fontSize: 11, color: 'var(--tw-ink-3)' }}>
+                  {activeDonutInfo.sub}
+                </span>
               </div>
             </div>
 
             <div className="dleg">
-              <div className="dl">
-                <i style={{ background: 'var(--tw-sun)' }} />
-                <span>
-                  <b>Gold</b> XAUUSD
-                </span>
-                <em>+2.88R</em>
-              </div>
-              <div className="dl">
-                <i style={{ background: 'var(--tw-s1)' }} />
-                <span>
-                  <b>FX</b> EURUSD
-                </span>
-                <em className="loss">−1.00R</em>
-              </div>
-              <div className="dl">
-                <i style={{ background: 'var(--tw-s3)' }} />
-                <span>
-                  <b>Indices</b> US30
-                </span>
-                <em>+2.47R</em>
-              </div>
-              <div className="dl">
-                <i style={{ background: 'var(--tw-gain)' }} />
-                <span>
-                  <b>Crypto</b> BTCUSD
-                </span>
-                <em>+2.97R</em>
-              </div>
+              {donutSegments.map((item) => (
+                <div
+                  key={item.category}
+                  className="dl"
+                  style={{
+                    opacity:
+                      hoveredAssetCategory === null || hoveredAssetCategory === item.category ? 1 : 0.45,
+                  }}
+                  onMouseEnter={() => setHoveredAssetCategory(item.category)}
+                  onMouseLeave={() => setHoveredAssetCategory(null)}
+                >
+                  <i style={{ background: item.color }} />
+                  <span>
+                    <b>{item.category}</b> {item.symbol}
+                  </span>
+                  <em className={item.isLoss ? 'loss' : ''}>
+                    {item.r >= 0 ? '+' : '−'}
+                    {Math.abs(item.r).toFixed(2)}R
+                  </em>
+                </div>
+              ))}
             </div>
           </div>
         </section>
@@ -698,10 +711,17 @@ export default function RiskTerminalPage() {
         <section className="tile tw-risk-rules" aria-label="Rule checks">
           <div className="head">
             <span className="eyebrow">Rule checks</span>
-            <span className="sub">4 on track · 2 to watch</span>
+            <span className="sub">4 on track · 2 to watch (click to configure)</span>
           </div>
 
-          <div className="rrow">
+          <div
+            className="rrow"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              if (dailyLossRule) openEditModal(dailyLossRule.rule);
+            }}
+          >
             <span className="rn">Daily loss limit</span>
             <span className="rv">0.0% of {dailyLimitPct.toFixed(1)}%</span>
             <span className="pill ok">
@@ -710,7 +730,14 @@ export default function RiskTerminalPage() {
             </span>
           </div>
 
-          <div className="rrow">
+          <div
+            className="rrow"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              if (drawdownRule) openEditModal(drawdownRule.rule);
+            }}
+          >
             <span className="rn">Max drawdown from peak</span>
             <span className="rv">0.0% of {drawdownLimitPct.toFixed(1)}%</span>
             <span className="pill ok">
@@ -719,7 +746,14 @@ export default function RiskTerminalPage() {
             </span>
           </div>
 
-          <div className="rrow">
+          <div
+            className="rrow"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              if (tradeRiskRule) openEditModal(tradeRiskRule.rule);
+            }}
+          >
             <span className="rn">Risk per trade</span>
             <span className="rv">
               {maxRiskPerTradePct.toFixed(1)}% of {maxRiskPerTradePct.toFixed(1)}%
@@ -730,7 +764,15 @@ export default function RiskTerminalPage() {
             </span>
           </div>
 
-          <div className="rrow">
+          <div
+            className="rrow"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              const r = evaluatedRules.find((x) => x.rule.ruleType === 'max_open_risk_pct');
+              if (r) openEditModal(r.rule);
+            }}
+          >
             <span className="rn">Open risk</span>
             <span className="rv">
               {openRiskPct.toFixed(1)}% of {(openRiskPct * 2).toFixed(1)}%
@@ -741,7 +783,15 @@ export default function RiskTerminalPage() {
             </span>
           </div>
 
-          <div className="rrow">
+          <div
+            className="rrow"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              const r = evaluatedRules.find((x) => x.rule.ruleType === 'max_consecutive_losses');
+              if (r) openEditModal(r.rule);
+            }}
+          >
             <span className="rn">Losing streak</span>
             <span className="rv">1 of 3 allowed</span>
             <span className="pill ok">
@@ -750,7 +800,15 @@ export default function RiskTerminalPage() {
             </span>
           </div>
 
-          <div className="rrow">
+          <div
+            className="rrow"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              const r = evaluatedRules.find((x) => x.rule.ruleType === 'min_trading_days');
+              if (r) openEditModal(r.rule);
+            }}
+          >
             <span className="rn">Minimum trading days</span>
             <span className="rv">2 of 4</span>
             <span className="pill w">
@@ -781,118 +839,191 @@ export default function RiskTerminalPage() {
             </div>
             <div className="c2">
               <span>Losses to daily limit</span>
-              <b>{lossesToDailyLimit}</b>
+              <b>{remainingLossesToDaily}</b>
               <small>
-                {lossesToDailyLimit} × {maxRiskPerTradePct.toFixed(1)}% = {dailyLimitPct.toFixed(1)}%
+                {remainingLossesToDaily} × {maxRiskPerTradePct.toFixed(1)}% = {remainingDailyLimitPct.toFixed(1)}%
               </small>
             </div>
             <div className="c3">
               <span>Losses to total floor</span>
-              <b>{lossesToTotalFloor}</b>
+              <b>{Math.max(0, lossesToTotalFloor - effectiveSimulatedLosses)}</b>
               <small>
                 {lossesToTotalFloor} × {maxRiskPerTradePct.toFixed(1)}% = {drawdownLimitPct.toFixed(1)}%
               </small>
             </div>
           </div>
 
-          {/* Segmented Daily Limit Indicator (5 blocks) */}
+          {/* Segmented Daily Limit Indicator (Interactive click simulation) */}
           <div className="bl">
             <div className="bh">
-              <span>Daily limit</span>
-              <span>0 of {lossesToDailyLimit} full losses used</span>
+              <span>Daily limit allowance</span>
+              <span>
+                {effectiveSimulatedLosses} of {lossesToDailyLimit} full losses simulated
+              </span>
             </div>
-            <div className="blocks" aria-hidden="true">
-              {Array.from({ length: lossesToDailyLimit }).map((_, i) => (
-                <i key={i} className="blk" />
-              ))}
+            <div className="blocks" aria-label="Simulate consecutive losses">
+              {Array.from({ length: lossesToDailyLimit }).map((_, i) => {
+                const isSimulated = i < effectiveSimulatedLosses;
+                return (
+                  <i
+                    key={i}
+                    className="blk"
+                    style={{
+                      background: isSimulated
+                        ? 'color-mix(in srgb, var(--tw-loss) 80%, var(--tw-tile))'
+                        : undefined,
+                      boxShadow: isSimulated ? '0 0 8px var(--tw-loss)' : undefined,
+                    }}
+                    onClick={() => {
+                      setSimulatedLosses((prev) => (prev === i + 1 ? 0 : i + 1));
+                    }}
+                    title={`Click to simulate ${i + 1} loss${i > 0 ? 'es' : ''}`}
+                  />
+                );
+              })}
             </div>
           </div>
 
           {/* Segmented Total Floor Indicator (10 blocks) */}
           <div className="bl">
             <div className="bh">
-              <span>Total floor</span>
-              <span>0 of {lossesToTotalFloor} full losses used</span>
+              <span>Total floor buffer</span>
+              <span>
+                {effectiveSimulatedLosses} of {lossesToTotalFloor} full losses used
+              </span>
             </div>
             <div className="blocks thin" aria-hidden="true">
-              {Array.from({ length: lossesToTotalFloor }).map((_, i) => (
-                <i key={i} className="blk" />
-              ))}
+              {Array.from({ length: lossesToTotalFloor }).map((_, i) => {
+                const isSimulated = i < effectiveSimulatedLosses;
+                return (
+                  <i
+                    key={i}
+                    className="blk"
+                    style={{
+                      background: isSimulated
+                        ? 'color-mix(in srgb, var(--tw-s3) 80%, var(--tw-tile))'
+                        : undefined,
+                      boxShadow: isSimulated ? '0 0 6px var(--tw-s3)' : undefined,
+                    }}
+                  />
+                );
+              })}
             </div>
           </div>
         </section>
       </main>
 
       {/* ================================================================ */}
-      {/* EDIT LIMITS MODAL                                                */}
+      {/* ADVANCED EDIT LIMITS & GOVERNANCE MODAL                          */}
       {/* ================================================================ */}
-      {isEditModalOpen && editingRule && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-[var(--tw-tile)] border border-[var(--tw-line-strong)] rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4">
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[var(--tw-tile)] border border-[var(--tw-line-strong)] rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--tw-line)]">
-              <h3 className="font-semibold text-lg text-[var(--tw-ink)]">
-                Configure Rule Threshold
-              </h3>
+              <div>
+                <h3 className="font-semibold text-lg text-[var(--tw-ink)]">
+                  Configure Risk Governance Limits
+                </h3>
+                <p className="text-xs text-[var(--tw-ink-2)] mt-0.5">
+                  Calibrate thresholds for {activeAccount.name}
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(false)}
-                className="text-[var(--tw-ink-3)] hover:text-[var(--tw-ink)] p-1 rounded-lg"
+                className="text-[var(--tw-ink-3)] hover:text-[var(--tw-ink)] p-1.5 rounded-lg transition-colors hover:bg-white/5"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="space-y-3 text-sm">
-              <div>
-                <label className="block text-xs font-medium text-[var(--tw-ink-2)] mb-1">
-                  Active Rule
-                </label>
-                <div className="p-2.5 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] font-mono text-xs text-[var(--tw-ink)]">
-                  {editingRule.ruleType.replace(/_/g, ' ').toUpperCase()}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-[var(--tw-ink-2)] mb-1">
-                  Maximum Threshold Limit ({editingRule.ruleType.includes('pct') ? '%' : '$'})
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={editThreshold}
-                  onChange={(e) => setEditThreshold(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] font-mono text-sm focus:outline-none focus:border-[var(--tw-hero-line)]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-[var(--tw-ink-2)] mb-1">
-                  Warning Alert Threshold (% of limit)
-                </label>
-                <input
-                  type="number"
-                  step="5"
-                  min="10"
-                  max="99"
-                  value={editWarningPct}
-                  onChange={(e) => setEditWarningPct(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] font-mono text-sm focus:outline-none focus:border-[var(--tw-hero-line)]"
-                />
-              </div>
+            {/* Quick Rule Selector Tabs */}
+            <div className="flex flex-wrap gap-1.5 p-1 rounded-2xl bg-[var(--tw-pill)] border border-[var(--tw-line)]">
+              {activeAccount.rules?.map((rule) => {
+                const isSelected = editingRule?.id === rule.id;
+                return (
+                  <button
+                    key={rule.id}
+                    type="button"
+                    onClick={() => openEditModal(rule)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                      isSelected
+                        ? 'bg-[var(--tw-tile)] text-[var(--tw-ink)] shadow-sm font-semibold'
+                        : 'text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)]'
+                    }`}
+                  >
+                    {rule.ruleType.replace(/_/g, ' ')}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--tw-line)]">
+            {editingRule && (
+              <div className="space-y-4 text-sm pt-1">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-[var(--tw-ink)]">
+                      Maximum Threshold Limit ({editingRule.ruleType.includes('pct') ? '%' : '$'})
+                    </label>
+                    <span className="text-xs font-mono text-[var(--tw-hero-line)]">
+                      Current: {editingRule.thresholdValue}
+                      {editingRule.ruleType.includes('pct') ? '%' : ''}
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={editThreshold}
+                    onChange={(e) => setEditThreshold(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] font-mono text-sm focus:outline-none focus:border-[var(--tw-hero-line)] focus:ring-1 focus:ring-[var(--tw-hero-line)]"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-[var(--tw-ink)]">
+                      Warning Alert Threshold ({editWarningPct}% of limit)
+                    </label>
+                    <span className="text-xs font-mono text-[var(--tw-warn)]">
+                      Triggers at{' '}
+                      {(
+                        (parseFloat(editThreshold || '0') * parseFloat(editWarningPct || '80')) /
+                        100
+                      ).toFixed(1)}
+                      {editingRule.ruleType.includes('pct') ? '%' : ''}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="20"
+                    max="95"
+                    step="5"
+                    value={editWarningPct}
+                    onChange={(e) => setEditWarningPct(e.target.value)}
+                    className="w-full accent-[var(--tw-hero-line)]"
+                  />
+                  <div className="flex justify-between text-[10px] text-[var(--tw-ink-3)] font-mono mt-1">
+                    <span>20% (Early Notice)</span>
+                    <span>50%</span>
+                    <span>80% (Recommended)</span>
+                    <span>95% (Critical Only)</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2.5 pt-3 border-t border-[var(--tw-line)]">
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(false)}
-                className="px-4 py-2 rounded-full text-xs font-medium text-[var(--tw-ink-2)] hover:bg-white/5"
+                className="px-4 py-2 rounded-full text-xs font-medium text-[var(--tw-ink-2)] hover:bg-white/5 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleSaveRule}
-                className="px-5 py-2 rounded-full text-xs font-semibold bg-[var(--tw-hero-line)] text-[var(--tw-hero)] hover:opacity-90"
+                className="px-5 py-2 rounded-full text-xs font-semibold bg-[var(--tw-hero-line)] text-[var(--tw-hero)] hover:opacity-90 shadow-md transition-all"
               >
                 Save Limits
               </button>

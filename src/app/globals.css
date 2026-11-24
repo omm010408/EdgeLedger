@@ -4290,6 +4290,35 @@ body {
   margin-top: 18px;
 }
 
+.tw-risk-grid .tile {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px;
+  border-radius: 32px;
+  background: var(--tw-tile);
+  border: 1px solid var(--tw-line);
+  overflow: hidden;
+  box-shadow: var(--tw-shadow-tile);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+
+.tw-risk-grid .tile:hover {
+  border-color: var(--tw-line-strong);
+  box-shadow: var(--tw-shadow-tile-hover);
+}
+
+[data-theme="light"] .tw-risk-grid .tile {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03), 0 8px 24px -4px rgba(0, 0, 0, 0.06), inset 0 1px 0 #FFFFFF;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .tw-risk-grid .tile:hover {
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05), 0 16px 36px -6px rgba(0, 0, 0, 0.09), inset 0 1px 0 #FFFFFF;
+}
+
 @media (max-width: 1024px) {
   .tw-risk-grid {
     display: flex;
@@ -4320,7 +4349,20 @@ body {
   border: 0 !important;
   border-radius: 44px !important;
   padding: 24px 26px 20px !important;
-  box-shadow: var(--tw-shadow-hero, 0 16px 36px -12px rgba(10, 77, 76, 0.45));
+  box-shadow: var(--tw-shadow-hero, 0 20px 40px -12px rgba(10, 77, 76, 0.5)), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  position: relative;
+  overflow: hidden;
+}
+.tw-risk-hero::before {
+  content: '';
+  position: absolute;
+  top: -40px;
+  left: -40px;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(155, 243, 223, 0.12) 0%, transparent 70%);
+  pointer-events: none;
 }
 .tw-risk-hero .eyebrow {
   color: var(--tw-hero-2) !important;
@@ -4329,6 +4371,10 @@ body {
   background: var(--tw-hero-line) !important;
   color: var(--tw-hero) !important;
   font-weight: 700;
+  box-shadow: 0 2px 8px rgba(155, 243, 223, 0.35);
+}
+.tw-risk-hero .pill .d {
+  box-shadow: 0 0 6px currentColor;
 }
 
 .tw-risk-hero .ring {
@@ -4340,11 +4386,21 @@ body {
   justify-content: center;
   margin-top: 8px;
 }
+.tw-risk-hero .ring-glow {
+  position: absolute;
+  width: 170px;
+  height: 170px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(155, 243, 223, 0.18) 0%, rgba(255, 213, 107, 0.08) 50%, transparent 70%);
+  filter: blur(14px);
+  pointer-events: none;
+}
 .tw-risk-hero .ring svg {
   width: min(230px, 100%);
   height: auto;
   aspect-ratio: 1;
   display: block;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.25));
 }
 .tw-risk-hero .rc {
   position: absolute;
@@ -4360,6 +4416,7 @@ body {
   line-height: 46px;
   font-weight: 600;
   letter-spacing: -0.03em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 .tw-risk-hero .rc span {
   margin-top: 4px;
@@ -4380,11 +4437,21 @@ body {
   padding-top: 14px;
   border-top: 1px solid var(--tw-hero-rule, rgba(255, 255, 255, 0.24));
 }
+.tw-risk-hero .rstats > div {
+  padding: 4px 6px;
+  border-radius: 12px;
+  transition: background 0.15s ease;
+}
+.tw-risk-hero .rstats > div:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
 .tw-risk-hero .rstats span {
   display: block;
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 11px;
+  line-height: 15px;
   color: var(--tw-hero-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .tw-risk-hero .rstats b {
   display: block;
@@ -4403,10 +4470,16 @@ body {
   padding: 18px 22px !important;
 }
 .tw-risk-meters .mrow {
-  margin-top: 12px;
+  margin-top: 10px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  transition: background 0.15s ease;
+}
+.tw-risk-meters .mrow:hover {
+  background: color-mix(in srgb, var(--tw-pill) 50%, transparent);
 }
 .tw-risk-meters .mrow + .mrow {
-  margin-top: 14px;
+  margin-top: 12px;
 }
 .tw-risk-meters .mtop {
   display: flex;
@@ -4433,31 +4506,36 @@ body {
   border-radius: 999px;
   background: var(--tw-track);
   overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 .tw-risk-meters .meter i {
   display: block;
   height: 100%;
   border-radius: 999px;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .tw-risk-meters .mGain i {
   background: linear-gradient(90deg, var(--tw-gain), color-mix(in srgb, var(--tw-gain) 60%, var(--tw-hero-line)));
+  box-shadow: 0 0 8px rgba(91, 230, 174, 0.35);
 }
 .tw-risk-meters .mCap i {
   background: linear-gradient(90deg, var(--tw-sun), var(--tw-s2));
+  box-shadow: 0 0 8px rgba(255, 213, 107, 0.4);
 }
 .tw-risk-meters .mOpen i {
   background: linear-gradient(90deg, var(--tw-s3), color-mix(in srgb, var(--tw-s3) 55%, var(--tw-s1)));
+  box-shadow: 0 0 8px rgba(144, 133, 233, 0.35);
 }
 
 /* Alerts (sun) */
 .tw-risk-alerts {
   grid-column: 10 / 13;
   grid-row: 1;
-  background: var(--tw-sun) !important;
+  background: linear-gradient(135deg, var(--tw-sun) 0%, color-mix(in srgb, var(--tw-sun) 88%, #F7C33D) 100%) !important;
   border: 0 !important;
   color: var(--tw-sun-ink) !important;
   padding: 18px 20px !important;
-  box-shadow: var(--tw-shadow-sun, 0 12px 28px -10px rgba(255, 213, 107, 0.45));
+  box-shadow: 0 16px 36px -10px rgba(255, 213, 107, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
 }
 .tw-risk-alerts .eyebrow {
   color: var(--tw-sun-ink) !important;
@@ -4479,6 +4557,10 @@ body {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid color-mix(in srgb, var(--tw-sun-ink) 18%, transparent);
+  transition: transform 0.15s ease;
+}
+.tw-risk-alerts .al:hover {
+  transform: translateX(2px);
 }
 .tw-risk-alerts .ai {
   display: grid;
@@ -4492,6 +4574,7 @@ body {
   font-size: 13px;
   font-weight: 700;
   line-height: 1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 .tw-risk-alerts .al b {
   display: block;
@@ -4520,6 +4603,13 @@ body {
   margin-top: 6px;
   display: block;
 }
+.tw-risk-dist .rbar {
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+.tw-risk-dist .rbar:hover {
+  filter: brightness(1.2) drop-shadow(0 0 6px currentColor);
+  cursor: pointer;
+}
 
 /* Asset donut */
 .tw-risk-assets {
@@ -4539,6 +4629,7 @@ body {
   width: 136px;
   height: 136px;
   flex: none;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.2));
 }
 .tw-risk-assets .dc {
   position: absolute;
@@ -4563,11 +4654,20 @@ body {
   font-size: 12px;
   line-height: 16px;
   color: var(--tw-ink-2);
+  padding: 3px 6px;
+  border-radius: 8px;
+  transition: background 0.15s ease, transform 0.15s ease;
+  cursor: pointer;
+}
+.tw-risk-assets .dl:hover {
+  background: color-mix(in srgb, var(--tw-pill) 60%, transparent);
+  transform: translateX(3px);
 }
 .tw-risk-assets .dl i {
   width: 9px;
   height: 9px;
   border-radius: 3px;
+  box-shadow: 0 0 6px currentColor;
 }
 .tw-risk-assets .dl b {
   color: var(--tw-ink);
@@ -4594,6 +4694,13 @@ body {
   align-items: center;
   height: 34px;
   border-top: 1px solid var(--tw-line);
+  padding: 0 8px;
+  border-radius: 10px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  cursor: pointer;
+}
+.tw-risk-rules .rrow:hover {
+  background: color-mix(in srgb, var(--tw-pill) 60%, transparent);
 }
 .tw-risk-rules .rrow:first-of-type {
   border-top: 0;
@@ -4613,6 +4720,12 @@ body {
   color: var(--tw-ink-2);
   white-space: nowrap;
 }
+.tw-risk-rules .pill.ok {
+  box-shadow: 0 1px 4px rgba(91, 230, 174, 0.2);
+}
+.tw-risk-rules .pill.w {
+  box-shadow: 0 1px 4px rgba(255, 184, 107, 0.25);
+}
 
 /* What-if */
 .tw-risk-stress {
@@ -4631,6 +4744,13 @@ body {
   border-radius: 20px;
   background: var(--tw-pill);
   border: 1px solid var(--tw-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.tw-risk-stress .sx div:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--tw-shadow-tile-hover);
+  border-color: var(--tw-line-strong);
 }
 .tw-risk-stress .sx span {
   display: block;
@@ -4687,6 +4807,12 @@ body {
   border-radius: 6px;
   background: color-mix(in srgb, var(--tw-sun) 14%, var(--tw-tile));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tw-sun) 60%, var(--tw-tile));
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+}
+.tw-risk-stress .blk:hover {
+  transform: scaleY(1.2);
+  box-shadow: 0 0 10px var(--tw-sun);
 }
 .tw-risk-stress .blocks.thin .blk {
   height: 10px;
@@ -4694,5 +4820,9 @@ body {
   background: color-mix(in srgb, var(--tw-s3) 14%, var(--tw-tile));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tw-s3) 55%, var(--tw-tile));
 }
+.tw-risk-stress .blocks.thin .blk:hover {
+  box-shadow: 0 0 10px var(--tw-s3);
+}
+
 
 
