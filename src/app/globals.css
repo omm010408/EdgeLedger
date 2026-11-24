@@ -730,6 +730,234 @@ body {
   width: 100%;
 }
 
+/* Hero Body with Frosted Blur Transition */
+.tw-hero-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  transition: filter 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
+}
+
+.tw-hero-body.tw-blurred {
+  filter: blur(14px);
+  opacity: 0.38;
+  pointer-events: none;
+  user-select: none;
+}
+
+.tw-hero-body.tw-unblurred {
+  filter: blur(0px);
+  opacity: 1;
+}
+
+.tw-pnl-blur {
+  filter: blur(5px);
+  opacity: 0.6;
+  transition: filter 0.25s ease, opacity 0.25s ease;
+  user-select: none;
+}
+
+/* Center Blur Privacy Overlay */
+.tw-privacy-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 25;
+  background: rgba(3, 33, 28, 0.42);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 18px;
+}
+
+[data-theme="light"] .tw-privacy-overlay,
+.light .tw-privacy-overlay {
+  background: rgba(230, 238, 235, 0.52);
+}
+
+/* Glass Privacy Card in Center */
+.tw-privacy-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 22px 28px;
+  border-radius: 24px;
+  background: rgba(14, 27, 28, 0.88);
+  border: 1px solid rgba(155, 243, 223, 0.3);
+  box-shadow: 0 16px 36px -4px rgba(3, 33, 28, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 320px;
+  user-select: none;
+}
+
+[data-theme="light"] .tw-privacy-card,
+.light .tw-privacy-card {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(220, 231, 228, 0.95);
+  box-shadow: 0 16px 36px -4px rgba(14, 27, 28, 0.14), 0 2px 8px rgba(14, 27, 28, 0.06), inset 0 1px 0 #FFFFFF;
+}
+
+.tw-privacy-overlay:hover .tw-privacy-card {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 20px 42px -4px rgba(3, 33, 28, 0.7), 0 0 24px rgba(155, 243, 223, 0.25);
+}
+
+[data-theme="light"] .tw-privacy-overlay:hover .tw-privacy-card,
+.light .tw-privacy-overlay:hover .tw-privacy-card {
+  box-shadow: 0 20px 42px -4px rgba(14, 27, 28, 0.18), 0 4px 18px rgba(13, 74, 74, 0.15);
+}
+
+/* Closed Eye Badge */
+.tw-privacy-eye-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(255, 213, 107, 0.14);
+  border: 1px solid rgba(255, 213, 107, 0.35);
+  color: #FFD56B;
+}
+
+[data-theme="light"] .tw-privacy-eye-badge,
+.light .tw-privacy-eye-badge {
+  background: rgba(201, 114, 16, 0.1);
+  border: 1px solid rgba(201, 114, 16, 0.3);
+  color: #8F4305;
+}
+
+.tw-privacy-eye-icon {
+  flex-shrink: 0;
+}
+
+/* Biometric Touch ID Sensor Core */
+.tw-privacy-sensor {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 0;
+}
+
+.tw-privacy-sensor-inner {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, rgba(155, 243, 223, 0.22) 0%, rgba(3, 33, 28, 0.4) 100%);
+  border: 2px solid rgba(155, 243, 223, 0.55);
+  color: #9BF3DF;
+  box-shadow: 0 0 18px rgba(155, 243, 223, 0.25);
+  overflow: hidden;
+  transition: all 0.25s ease;
+}
+
+[data-theme="light"] .tw-privacy-sensor-inner,
+.light .tw-privacy-sensor-inner {
+  background: radial-gradient(circle, rgba(13, 74, 74, 0.12) 0%, rgba(230, 238, 235, 0.6) 100%);
+  border: 2px solid #0D4A4A;
+  color: #0D4A4A;
+  box-shadow: 0 0 16px rgba(13, 74, 74, 0.18);
+}
+
+.tw-privacy-overlay:hover .tw-privacy-sensor-inner {
+  border-color: #5BE6AE;
+  color: #5BE6AE;
+  transform: scale(1.06);
+  box-shadow: 0 0 24px rgba(91, 230, 174, 0.45);
+}
+
+[data-theme="light"] .tw-privacy-overlay:hover .tw-privacy-sensor-inner,
+.light .tw-privacy-overlay:hover .tw-privacy-sensor-inner {
+  border-color: #083333;
+  color: #083333;
+  box-shadow: 0 0 20px rgba(13, 74, 74, 0.3);
+}
+
+.tw-privacy-sensor-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px dashed rgba(155, 243, 223, 0.35);
+  animation: tw-spin-slow 16s linear infinite;
+  pointer-events: none;
+}
+
+[data-theme="light"] .tw-privacy-sensor-glow,
+.light .tw-privacy-sensor-glow {
+  border-color: rgba(13, 74, 74, 0.3);
+}
+
+/* Laser Scan Sweep */
+.tw-fp-laser-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  background: #5BE6AE;
+  box-shadow: 0 0 8px #5BE6AE, 0 0 16px #5BE6AE;
+  animation: tw-laser-sweep 0.5s ease-in-out infinite;
+}
+
+[data-theme="light"] .tw-fp-laser-bar,
+.light .tw-fp-laser-bar {
+  background: #0D4A4A;
+  box-shadow: 0 0 8px #0D4A4A, 0 0 14px #5BE6AE;
+}
+
+/* Scanning Pulse on Core */
+.tw-privacy-overlay.is-scanning .tw-privacy-sensor-inner {
+  animation: tw-pulse-core 0.5s ease-in-out infinite alternate;
+}
+
+/* Text Meta */
+.tw-privacy-text-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tw-privacy-title {
+  font-family: 'Newsreader', serif;
+  font-size: 16px;
+  font-weight: 500;
+  color: #FFFFFF;
+}
+
+[data-theme="light"] .tw-privacy-title,
+.light .tw-privacy-title {
+  color: #0D4A4A;
+}
+
+.tw-privacy-sub {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: #9BF3DF;
+  opacity: 0.9;
+}
+
+[data-theme="light"] .tw-privacy-sub,
+.light .tw-privacy-sub {
+  color: #34544F;
+}
+
 .tw-fp-btn {
   display: inline-flex;
   align-items: center;
@@ -2021,31 +2249,50 @@ body {
 }
 
 .tw-seg {
-  display: grid;
-  gap: 3px;
-  padding: 3px;
-  border-radius: 999px;
-  background: var(--pill);
-  height: 42px;
-}
-.tw-seg.two {
-  grid-template-columns: 1fr 1fr;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 2px !important;
+  padding: 3px 4px !important;
+  border-radius: 999px !important;
+  background: var(--tw-pill) !important;
+  height: 36px !important;
+  width: auto !important;
 }
 .tw-seg button {
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink-2);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  padding: 0 8px;
-  transition: all 0.15s ease;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 28px !important;
+  padding: 0 14px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: var(--tw-ink-2) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  transition: all 0.15s ease !important;
 }
 .tw-seg button[aria-pressed="true"] {
-  background: var(--ink);
-  color: var(--tile);
+  background: var(--tw-ink) !important;
+  color: var(--tw-tile) !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+.tw-seg.two {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  width: 100% !important;
+  height: 42px !important;
+  padding: 3px !important;
+}
+.tw-seg.two button {
+  height: 100% !important;
+  padding: 0 8px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
 }
 
 /* Identity section */

@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Fingerprint } from 'lucide-react';
+import { Fingerprint, Eye, EyeOff } from 'lucide-react';
 import { useTrading } from '../context/TradingContext';
 
 export default function OverviewPage() {
@@ -158,7 +158,7 @@ export default function OverviewPage() {
       {/* ------------------------------------------------------------------ */}
       {/* 1. HERO TILE: Net P&L Contour Wave (Cols 1-5, Rows 1-2)             */}
       {/* ------------------------------------------------------------------ */}
-      <section className="tw-tile tw-hero" aria-label="Net P&L">
+      <section className={`tw-tile tw-hero ${isPnlHidden ? 'tw-hero-locked' : 'tw-hero-unlocked'}`} aria-label="Net P&L">
         <div className="tw-hero-topline">
           <div className="tw-lbl">
             Net P&amp;L from closed trades,{' '}
@@ -176,103 +176,124 @@ export default function OverviewPage() {
             title={isPnlHidden ? 'Click to verify fingerprint & unhide P&L' : 'Click to hide and lock P&L'}
           >
             <span className="tw-fp-icon-wrap">
-              <Fingerprint size={15} className="tw-fp-icon" />
+              {isPnlHidden ? (
+                <EyeOff size={14} className="tw-fp-icon text-[#FFD56B]" />
+              ) : (
+                <Eye size={14} className="tw-fp-icon text-[#5BE6AE]" />
+              )}
               {isScanning && <span className="tw-fp-laser" />}
             </span>
             <span>
-              {isScanning ? 'Verifying...' : isPnlHidden ? 'Touch ID / Fingerprint' : 'P&L Unhidden'}
+              {isScanning ? 'Verifying...' : isPnlHidden ? 'Touch ID to Open' : 'Hide P&L'}
             </span>
           </button>
         </div>
 
-        <div
-          className={`tw-big ${isPnlHidden ? 'tw-pnl-hidden group cursor-pointer' : ''}`}
-          onClick={isPnlHidden ? handleFingerprintClick : undefined}
-          title={isPnlHidden ? 'Click to verify fingerprint & reveal P&L' : undefined}
-          role={isPnlHidden ? 'button' : undefined}
-          tabIndex={isPnlHidden ? 0 : undefined}
-          onKeyDown={isPnlHidden ? (e) => { if (e.key === 'Enter' || e.key === ' ') handleFingerprintClick(); } : undefined}
-        >
-          {isPnlHidden ? (
-            <>
-              <span className="tw-masked-num">
-                <span className="tw-mask-sign">+</span>$••••••<small>.••</small>
-              </span>
-              <span className="tw-fp-hint">
-                <Fingerprint size={14} className="text-[#FFD56B]" />
-                <span>Tap to unlock with Touch ID</span>
-              </span>
-            </>
-          ) : (
-            <>
-              {capitalStats.netProfit >= 0 ? '+' : '−'}
-              {formatCur(Math.abs(capitalStats.netProfit)).replace('.00', '')}
-              <small>.00</small>
-            </>
-          )}
+        {/* Blurred Content Container */}
+        <div className={`tw-hero-body ${isPnlHidden ? 'tw-blurred' : 'tw-unblurred'}`}>
+          <div className="tw-big">
+            {capitalStats.netProfit >= 0 ? '+' : '−'}
+            {formatCur(Math.abs(capitalStats.netProfit)).replace('.00', '')}
+            <small>.00</small>
+          </div>
+
+          <div className="tw-delta">
+            <span className="tw-pill">
+              {capitalStats.returnPct >= 0 ? '+' : ''}{capitalStats.returnPct.toFixed(2)}%
+            </span>
+            on a {formatCur(capitalStats.startingBal)} start
+          </div>
+
+          <dl className="tw-stats">
+            <div>
+              <dt>Balance</dt>
+              <dd>{formatCur(capitalStats.currentBal)}</dd>
+            </div>
+            <div>
+              <dt>Gross profit</dt>
+              <dd>{formatCur(capitalStats.grossProfit)}</dd>
+            </div>
+            <div>
+              <dt>Gross loss</dt>
+              <dd>−{formatCur(capitalStats.grossLoss)}</dd>
+            </div>
+          </dl>
+
+          <div className="tw-chart">
+            <svg
+              viewBox="0 0 540 220"
+              preserveAspectRatio="none"
+              role="img"
+              aria-label={`Balance rises from ${formatCur(capitalStats.startingBal)} to ${formatCur(capitalStats.currentBal)} across ${capitalStats.totalClosed} closed trades`}
+            >
+              <defs>
+                <path
+                  id="tw-line"
+                  d="M0 162.2C45 147.5 90 130.3 135 118.1C180 105.9 225 103.6 270 89.1C315 74.6 360 30.9 405 30.9C450 30.9 495 34.6 540 36.5"
+                />
+              </defs>
+              <g transform="translate(0 40)">
+                <path
+                  className="tw-area"
+                  d="M0 162.2C45 147.5 90 130.3 135 118.1C180 105.9 225 103.6 270 89.1C315 74.6 360 30.9 405 30.9C450 30.9 495 34.6 540 36.5V180H0Z"
+                />
+                <use className="tw-contour c3" href="#tw-line" transform="translate(0 24)" />
+                <use className="tw-contour c2" href="#tw-line" transform="translate(0 12)" />
+                <use className="tw-curve" href="#tw-line" />
+              </g>
+            </svg>
+            <span className="tw-end" aria-hidden="true" />
+            <span className="tw-tag start">
+              Start, ${formatInt(capitalStats.startingBal)}
+            </span>
+            <span className="tw-tag close">
+              Closing, ${formatInt(capitalStats.currentBal)}
+            </span>
+            <span className="tw-tag x x1">18 Mar</span>
+            <span className="tw-tag x x2">19 Mar</span>
+          </div>
         </div>
 
-        <div className="tw-delta">
-          <span className="tw-pill">
-            {isPnlHidden ? '+•.••%' : `${capitalStats.returnPct >= 0 ? '+' : ''}${capitalStats.returnPct.toFixed(2)}%`}
-          </span>
-          on a {isPnlHidden ? '$••••••.••' : formatCur(capitalStats.startingBal)} start
-        </div>
-
-        <dl className="tw-stats">
-          <div>
-            <dt>Balance</dt>
-            <dd className={isPnlHidden ? 'tw-val-hidden' : ''}>
-              {isPnlHidden ? '$••••••••' : formatCur(capitalStats.currentBal)}
-            </dd>
-          </div>
-          <div>
-            <dt>Gross profit</dt>
-            <dd className={isPnlHidden ? 'tw-val-hidden' : ''}>
-              {isPnlHidden ? '$••••••' : formatCur(capitalStats.grossProfit)}
-            </dd>
-          </div>
-          <div>
-            <dt>Gross loss</dt>
-            <dd className={isPnlHidden ? 'tw-val-hidden' : ''}>
-              {isPnlHidden ? '−$••••' : `−${formatCur(capitalStats.grossLoss)}`}
-            </dd>
-          </div>
-        </dl>
-
-        <div className="tw-chart">
-          <svg
-            viewBox="0 0 540 220"
-            preserveAspectRatio="none"
-            role="img"
-            aria-label={`Balance rises from ${formatCur(capitalStats.startingBal)} to ${formatCur(capitalStats.currentBal)} across ${capitalStats.totalClosed} closed trades`}
+        {/* Center Blur Privacy Overlay with Closed Eye and Touch ID / Fingerprint */}
+        {isPnlHidden && (
+          <div
+            className={`tw-privacy-overlay ${isScanning ? 'is-scanning' : ''}`}
+            onClick={handleFingerprintClick}
+            role="button"
+            tabIndex={0}
+            aria-label="Unlock P&L with Fingerprint"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') handleFingerprintClick();
+            }}
           >
-            <defs>
-              <path
-                id="tw-line"
-                d="M0 162.2C45 147.5 90 130.3 135 118.1C180 105.9 225 103.6 270 89.1C315 74.6 360 30.9 405 30.9C450 30.9 495 34.6 540 36.5"
-              />
-            </defs>
-            <g transform="translate(0 40)">
-              <path
-                className="tw-area"
-                d="M0 162.2C45 147.5 90 130.3 135 118.1C180 105.9 225 103.6 270 89.1C315 74.6 360 30.9 405 30.9C450 30.9 495 34.6 540 36.5V180H0Z"
-              />
-              <use className="tw-contour c3" href="#tw-line" transform="translate(0 24)" />
-              <use className="tw-contour c2" href="#tw-line" transform="translate(0 12)" />
-              <use className="tw-curve" href="#tw-line" />
-            </g>
-          </svg>
-          <span className="tw-end" aria-hidden="true" />
-          <span className="tw-tag start">
-            Start, {isPnlHidden ? '$••••••' : `$${formatInt(capitalStats.startingBal)}`}
-          </span>
-          <span className="tw-tag close">
-            Closing, {isPnlHidden ? '$••••••' : `$${formatInt(capitalStats.currentBal)}`}
-          </span>
-          <span className="tw-tag x x1">18 Mar</span>
-          <span className="tw-tag x x2">19 Mar</span>
-        </div>
+            <div className="tw-privacy-card">
+              {/* Closed Eye Sign in middle */}
+              <div className="tw-privacy-eye-badge">
+                <EyeOff size={15} className="tw-privacy-eye-icon" />
+                <span>P&amp;L Confidential</span>
+              </div>
+
+              {/* Central Interactive Biometric Touch ID Sensor */}
+              <div className="tw-privacy-sensor">
+                <div className="tw-privacy-sensor-inner">
+                  <Fingerprint size={38} className="tw-privacy-fp-icon" />
+                  {isScanning && <div className="tw-fp-laser-bar" />}
+                </div>
+                <div className="tw-privacy-sensor-glow" />
+              </div>
+
+              {/* Text Feedback */}
+              <div className="tw-privacy-text-group">
+                <div className="tw-privacy-title">
+                  {isScanning ? 'Scanning Touch ID...' : 'Touch ID / Fingerprint'}
+                </div>
+                <div className="tw-privacy-sub">
+                  {isScanning ? 'Verifying biometric signature' : 'Click sensor to open dashboard P&L'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ------------------------------------------------------------------ */}
@@ -282,7 +303,7 @@ export default function OverviewPage() {
         <span className="tw-disc" aria-hidden="true" />
         <div className="tw-lbl">Profit factor</div>
         <div className="tw-n">{capitalStats.profitFactor.toFixed(2)}</div>
-        <div className="tw-sub">
+        <div className={`tw-sub ${isPnlHidden ? 'tw-pnl-blur' : ''}`}>
           Gross {isPnlHidden ? '$••••' : `$${formatInt(capitalStats.grossProfit)}`} over{' '}
           {isPnlHidden ? '$•••' : `$${formatInt(capitalStats.grossLoss)}`} in losses
         </div>
@@ -496,7 +517,7 @@ export default function OverviewPage() {
         <div>
           <div className="tw-row2">
             <span className="tw-sub">Average win</span>
-            <span className="tw-pos" style={{ fontWeight: 600 }}>
+            <span className={`tw-pos ${isPnlHidden ? 'tw-pnl-blur' : ''}`} style={{ fontWeight: 600 }}>
               {isPnlHidden ? '+$••••' : `+$${formatInt(capitalStats.avgWin)}`}
             </span>
           </div>
@@ -507,7 +528,7 @@ export default function OverviewPage() {
         <div>
           <div className="tw-row2">
             <span className="tw-sub">Average loss</span>
-            <span className="tw-neg" style={{ fontWeight: 600 }}>
+            <span className={`tw-neg ${isPnlHidden ? 'tw-pnl-blur' : ''}`} style={{ fontWeight: 600 }}>
               {isPnlHidden ? '−$•••' : `−$${formatInt(capitalStats.avgLoss)}`}
             </span>
           </div>

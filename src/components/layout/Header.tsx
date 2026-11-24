@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTrading } from '../../context/TradingContext';
-import { ChevronDown, Check, Plus, ExternalLink, Sun, Moon, Fingerprint } from 'lucide-react';
+import { ChevronDown, Check, Plus, ExternalLink, Sun, Moon, Fingerprint, Eye, EyeOff } from 'lucide-react';
 
 interface HeaderProps {
   onOpenQuickTrade: () => void;
@@ -232,10 +232,17 @@ export const Header: React.FC<HeaderProps> = ({
           aria-label={isPnlHidden ? 'Unlock P&L with Fingerprint' : 'Hide P&L'}
         >
           <div className="relative flex items-center justify-center">
-            <Fingerprint
-              size={14}
-              className={isPnlHidden ? 'text-[#FFD56B]' : 'text-[#5BE6AE]'}
-            />
+            {isPnlHidden ? (
+              <EyeOff
+                size={14}
+                className="text-[#FFD56B]"
+              />
+            ) : (
+              <Eye
+                size={14}
+                className="text-[#5BE6AE]"
+              />
+            )}
             {isHeaderScanning && <span className="tw-fp-laser" />}
           </div>
           <span className="hidden sm:inline text-xs font-mono">
