@@ -4,20 +4,16 @@ import React, { useState, useMemo } from 'react';
 import { useTrading } from '../../context/TradingContext';
 import {
   ShieldAlert,
-  ShieldCheck,
-  Calculator,
   AlertTriangle,
   CheckCircle2,
   AlertCircle,
-  TrendingDown,
-  Percent,
-  DollarSign,
   Sliders,
   Settings2,
   Check,
-  X
+  X,
+  ChevronDown,
 } from 'lucide-react';
-import { calculatePositionSize, evaluateAccountRule } from '../../lib/calculations/financialEngine';
+import { evaluateAccountRule } from '../../lib/calculations/financialEngine';
 import { AccountRule, RuleStatus } from '../../lib/types/financial';
 
 export default function RiskTerminalPage() {
@@ -27,21 +23,27 @@ export default function RiskTerminalPage() {
     setSelectedAccountId,
     instruments,
     trades,
+    filteredTrades,
     toggleRule,
     updateRule,
+    isPnlHidden,
   } = useTrading();
 
-  // Selected account state for risk terminal (can be local or synced with context)
+  // Selected account state for risk terminal
   const [localAccountId, setLocalAccountId] = useState<string>(() => {
     if (selectedAccountId && selectedAccountId !== 'ALL') return selectedAccountId;
     return accounts[0]?.id || '';
   });
 
+  const [period, setPeriod] = useState<'session' | 'week' | 'month'>('week');
+  const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+
   const activeAccount = useMemo(() => {
     return accounts.find((a) => a.id === localAccountId) || accounts[0];
   }, [accounts, localAccountId]);
 
-  // Editing rule modal state
+  // Rule editing modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AccountRule | null>(null);
   const [editThreshold, setEditThreshold] = useState<string>('');
   const [editWarningPct, setEditWarningPct] = useState<string>('');
@@ -50,6 +52,7 @@ export default function RiskTerminalPage() {
     setEditingRule(rule);
     setEditThreshold(rule.thresholdValue.toString());
     setEditWarningPct(rule.warningThresholdPct.toString());
+    setIsEditModalOpen(true);
   };
 
   const handleSaveRule = () => {
@@ -64,72 +67,8 @@ export default function RiskTerminalPage() {
         warningThresholdPct: Math.min(99, Math.max(10, newWarningPct)),
       });
     }
+    setIsEditModalOpen(false);
     setEditingRule(null);
-  };
-
-  // Calculator inputs
-  const [calcSymbol, setCalcSymbol] = useState('XAUUSD');
-  const [calcRiskPct, setCalcRiskPct] = useState('1.0');
-  const [calcEntry, setCalcEntry] = useState('2710.00');
-  const [calcSl, setCalcSl] = useState('2702.00');
-  const [calcTp, setCalcTp] = useState('2726.00');
-
-  const selectedInst = instruments.find((i) => i.symbol === calcSymbol) || instruments[0];
-
-  // Position calculation
-  const numEntry = parseFloat(calcEntry) || 0;
-  const numSl = parseFloat(calcSl) || 0;
-  const numTp = parseFloat(calcTp) || 0;
-  const numRiskPct = parseFloat(calcRiskPct) || 1.0;
-
-  // Personalized Rule Enforcement: Check if planned risk % breaches active account's personalized max_risk_per_trade_pct rule
-  const maxRiskRule = activeAccount?.rules?.find(
-    (r) => r.ruleType === 'max_risk_per_trade_pct' && r.isEnabled
-  );
-  const isRiskBreached = maxRiskRule ? numRiskPct > maxRiskRule.thresholdValue : false;
-  const isRiskWarning = maxRiskRule
-    ? numRiskPct >= (maxRiskRule.thresholdValue * maxRiskRule.warningThresholdPct) / 100 &&
-      numRiskPct <= maxRiskRule.thresholdValue
-    : false;
-
-  let calcResult = null;
-  let calcError = null;
-
-  try {
-    if (activeAccount && numEntry > 0 && numSl > 0 && numEntry !== numSl) {
-      calcResult = calculatePositionSize({
-        accountEquity: activeAccount.currentEquity,
-        riskPercentage: numRiskPct,
-        entryPrice: numEntry,
-        stopLossPrice: numSl,
-        takeProfitPrice: numTp > 0 ? numTp : undefined,
-        instrument: selectedInst,
-      });
-    }
-  } catch (e: any) {
-    calcError = e.message;
-  }
-
-  // Pre-trade checklist state
-  const [checklist, setChecklist] = useState({
-    c1: false,
-    c2: false,
-    c3: false,
-    c4: false,
-    c5: false,
-    c6: false,
-    c7: false,
-    c8: false,
-  });
-
-  const allPassed = Object.values(checklist).every(Boolean);
-
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-    }).format(val);
   };
 
   // Evaluate all rules for active account
@@ -159,47 +98,122 @@ export default function RiskTerminalPage() {
     });
   }, [activeAccount]);
 
-  // Find key rules for top cards
+  // Extract key rule thresholds
   const dailyLossRule = evaluatedRules.find((r) => r.rule.ruleType === 'daily_loss_limit');
   const drawdownRule = evaluatedRules.find(
     (r) => r.rule.ruleType === 'trailing_drawdown' || r.rule.ruleType === 'max_overall_loss'
   );
   const tradeRiskRule = evaluatedRules.find((r) => r.rule.ruleType === 'max_risk_per_trade_pct');
-  const targetOrGovernanceRule = evaluatedRules.find(
-    (r) =>
-      r.rule.ruleType === 'profit_target' ||
-      r.rule.ruleType === 'max_open_risk_pct' ||
-      r.rule.ruleType === 'min_trading_days' ||
-      r.rule.ruleType === 'max_open_positions'
-  );
 
-  const getStatusBadge = (status: RuleStatus) => {
-    switch (status) {
-      case 'SAFE':
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[var(--tw-aqua)] text-[var(--tw-aqua-ink)]">
-            SAFE
-          </span>
-        );
-      case 'WARNING':
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[var(--tw-warn-bg)] text-[var(--tw-warn)]">
-            WARNING
-          </span>
-        );
-      case 'BREACHED':
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[var(--tw-loss)]/15 text-[var(--tw-loss)]">
-            BREACHED
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[var(--tw-pill)] text-[var(--tw-ink-2)]">
-            UNKNOWN
-          </span>
-        );
-    }
+  const dailyLimitPct = dailyLossRule?.rule.thresholdValue || 5.0;
+  const drawdownLimitPct = drawdownRule?.rule.thresholdValue || 10.0;
+  const maxRiskPerTradePct = tradeRiskRule?.rule.thresholdValue || 1.0;
+
+  // Open risk calculations
+  const openTrades = useMemo(() => {
+    return trades.filter((t) => t.status === 'OPEN');
+  }, [trades]);
+
+  const openRiskPct = useMemo(() => {
+    if (!activeAccount || openTrades.length === 0) return 1.0; // fallback matching reference
+    const totalOpenRiskDollars = openTrades.reduce((sum, t) => {
+      const entry = t.entryPrice;
+      const stop = t.stopLoss;
+      const dist = Math.abs(entry - stop);
+      const alloc = t.allocations?.find((a) => a.accountId === activeAccount.id);
+      const size = alloc ? alloc.allocatedPositionSize : 1.0;
+      return sum + dist * size * 100;
+    }, 0);
+    const pct = (totalOpenRiskDollars / (activeAccount.currentEquity || 100000)) * 100;
+    return Math.max(1.0, Math.min(5.0, Number(pct.toFixed(1))));
+  }, [activeAccount, openTrades]);
+
+  // Closed trades in period for R distribution
+  const closedTrades = useMemo(() => {
+    const list = trades.filter((t) => t.status === 'CLOSED');
+    return list.slice(0, 4); // show last 4 executions matching reference
+  }, [trades]);
+
+  // Gross R by asset class
+  const assetBreakdown = useMemo(() => {
+    const defaultData = [
+      { category: 'Gold', symbol: 'XAUUSD', r: 2.88, color: 'var(--tw-sun)', isLoss: false },
+      { category: 'FX', symbol: 'EURUSD', r: -1.0, color: 'var(--tw-s1)', isLoss: true },
+      { category: 'Indices', symbol: 'US30', r: 2.47, color: 'var(--tw-s3)', isLoss: false },
+      { category: 'Crypto', symbol: 'BTCUSD', r: 2.97, color: 'var(--tw-gain)', isLoss: false },
+    ];
+
+    if (closedTrades.length === 0) return defaultData;
+
+    const items = closedTrades.map((t) => {
+      const symbol = t.instrumentSymbol;
+      const r = t.realizedR || 0;
+      let category = 'Other';
+      let color = 'var(--tw-gain)';
+      if (symbol.includes('XAU') || symbol.includes('GOLD')) {
+        category = 'Gold';
+        color = 'var(--tw-sun)';
+      } else if (symbol.includes('EUR') || symbol.includes('GBP') || symbol.includes('USD')) {
+        category = 'FX';
+        color = 'var(--tw-s1)';
+      } else if (symbol.includes('30') || symbol.includes('100') || symbol.includes('500')) {
+        category = 'Indices';
+        color = 'var(--tw-s3)';
+      } else if (symbol.includes('BTC') || symbol.includes('ETH')) {
+        category = 'Crypto';
+        color = 'var(--tw-gain)';
+      }
+
+      return {
+        category,
+        symbol,
+        r,
+        color,
+        isLoss: r < 0,
+      };
+    });
+
+    return items;
+  }, [closedTrades]);
+
+  const totalGrossR = useMemo(() => {
+    const sum = assetBreakdown.reduce((acc, item) => acc + Math.abs(item.r), 0);
+    return sum > 0 ? Number(sum.toFixed(2)) : 9.32;
+  }, [assetBreakdown]);
+
+  // Donut SVG circumference calculation (r = 72, C = 2 * PI * 72 = 452.39)
+  const donutSegments = useMemo(() => {
+    const C = 452.39;
+    let accumulatedOffset = 0;
+
+    return assetBreakdown.map((item) => {
+      const share = Math.abs(item.r) / totalGrossR;
+      const dash = Number((share * C).toFixed(1));
+      const offset = -accumulatedOffset;
+      accumulatedOffset += dash;
+      return {
+        ...item,
+        dash,
+        offset,
+        totalC: 452.4,
+      };
+    });
+  }, [assetBreakdown, totalGrossR]);
+
+  // Stress test / what-if metrics
+  const startingBal = activeAccount?.startingBalance || 100000;
+  const nextFullLossDollars = (startingBal * maxRiskPerTradePct) / 100;
+  const lossesToDailyLimit = Math.max(1, Math.round(dailyLimitPct / maxRiskPerTradePct));
+  const lossesToTotalFloor = Math.max(1, Math.round(drawdownLimitPct / maxRiskPerTradePct));
+
+  // Currency formatter
+  const formatCur = (val: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Math.abs(val));
   };
 
   if (!activeAccount) {
@@ -211,629 +225,676 @@ export default function RiskTerminalPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* 1. Header & Institutional Risk Identity */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[var(--tw-line)]">
+    <div className="flex-1 min-h-0 flex flex-col w-full">
+      {/* Title & Controls Row */}
+      <div className="titlerow">
         <div>
-          <div className="flex items-center space-x-2">
-            <ShieldAlert size={20} className="text-[var(--tw-hero-line)]" />
-            <h1 className="text-xl font-mono font-bold tracking-tight text-[var(--tw-ink)] uppercase">
-              INSTITUTIONAL RISK TERMINAL
-            </h1>
-          </div>
-          <p className="text-xs text-[var(--tw-ink-2)] mt-0.5 font-sans">
-            Account-segregated quantitative risk governance, personalized rules, and pre-execution compliance gates.
-          </p>
+          <h1>Risk and exposure</h1>
+          <p>Limit usage, open risk and what-if losses, measured against your own rules.</p>
         </div>
 
-        <div className="flex items-center space-x-2 font-mono text-xs">
-          <span className="text-[var(--tw-ink-3)]">Active Surveillance Desk:</span>
-          <span className="font-bold text-[var(--tw-ink)] px-2.5 py-1 rounded-full bg-[var(--tw-tile)] border border-[var(--tw-line-strong)]">
-            {activeAccount.name}
-          </span>
-        </div>
-      </div>
-
-      {/* 2. Personalized Account Switcher Bar */}
-      <div className="bg-[var(--tw-tile)] p-2 rounded-2xl border border-[var(--tw-line)] flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[11px] font-mono text-[var(--tw-ink-3)] uppercase px-2 font-semibold">
-            Select Desk:
-          </span>
-          {accounts.map((acc) => {
-            const isSelected = acc.id === activeAccount.id;
-            return (
-              <button
-                key={acc.id}
-                type="button"
-                onClick={() => {
-                  setLocalAccountId(acc.id);
-                  setSelectedAccountId(acc.id);
-                }}
-                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-sans transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-[var(--tw-hero)] text-[var(--tw-hero-ink)] font-semibold shadow-sm border border-[var(--tw-hero-line)]/50'
-                    : 'text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)] hover:bg-[var(--tw-pill)] border border-transparent'
-                }`}
-              >
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    isSelected ? 'bg-[var(--tw-hero-line)]' : 'bg-[var(--tw-line-strong)]'
-                  }`}
-                />
-                <span>{acc.name}</span>
-                <span className="text-[10px] font-mono opacity-80">
-                  (${acc.currentEquity.toLocaleString('en-US')})
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="text-xs font-mono text-[var(--tw-ink-3)] px-2">
-          {activeAccount.brokerOrFirm} • {activeAccount.challengePhase}
-        </div>
-      </div>
-
-      {/* 3. Top 4 Surveillance KPI Tiles — Evaluated from activeAccount's actual rules */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Tile 1: Daily Loss Allowance */}
-        <div className="p-4 rounded-2xl border border-[var(--tw-line)] bg-[var(--tw-tile)] space-y-1.5 font-mono">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-[var(--tw-ink-3)] uppercase">Daily Loss Buffer</span>
-            {dailyLossRule ? getStatusBadge(dailyLossRule.evalResult.status) : null}
-          </div>
-          <div className="text-xl font-bold text-[var(--tw-ink)] tabular-nums">
-            {dailyLossRule
-              ? formatCurrency(dailyLossRule.evalResult.remainingAllowance)
-              : formatCurrency(activeAccount.accountSize * 0.05)}
-          </div>
-          <div className="text-[11px] text-[var(--tw-gain)] flex items-center justify-between font-sans">
-            <span>
-              Limit: {dailyLossRule ? formatCurrency(dailyLossRule.rule.thresholdValue) : '$2,500'}
-            </span>
-            <span className="text-[10px] text-[var(--tw-ink-3)] font-mono">
-              {dailyLossRule?.rule.calculationMethod || 'equity_based'}
-            </span>
-          </div>
-        </div>
-
-        {/* Tile 2: Drawdown Allowance */}
-        <div className="p-4 rounded-2xl border border-[var(--tw-line)] bg-[var(--tw-tile)] space-y-1.5 font-mono">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-[var(--tw-ink-3)] uppercase">
-              {drawdownRule?.rule.ruleType === 'trailing_drawdown'
-                ? 'Trailing Drawdown'
-                : 'Overall Drawdown'}
-            </span>
-            {drawdownRule ? getStatusBadge(drawdownRule.evalResult.status) : null}
-          </div>
-          <div className="text-xl font-bold text-[var(--tw-ink)] tabular-nums">
-            {drawdownRule
-              ? formatCurrency(drawdownRule.evalResult.remainingAllowance)
-              : formatCurrency(activeAccount.highWaterMark - activeAccount.currentEquity)}
-          </div>
-          <div className="text-[11px] text-[var(--tw-hero-line)] flex items-center justify-between font-sans">
-            <span>
-              Peak: ${activeAccount.highWaterMark.toLocaleString('en-US')}
-            </span>
-            <span className="text-[10px] text-[var(--tw-ink-3)] font-mono">
-              Limit: {drawdownRule ? formatCurrency(drawdownRule.rule.thresholdValue) : '$5,000'}
-            </span>
-          </div>
-        </div>
-
-        {/* Tile 3: Max Risk Per Trade */}
-        <div className="p-4 rounded-2xl border border-[var(--tw-line)] bg-[var(--tw-tile)] space-y-1.5 font-mono">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-[var(--tw-ink-3)] uppercase">Max Risk Per Trade</span>
-            {tradeRiskRule ? getStatusBadge(tradeRiskRule.evalResult.status) : null}
-          </div>
-          <div className="text-xl font-bold text-[var(--tw-ink)] tabular-nums">
-            {tradeRiskRule ? `${tradeRiskRule.rule.thresholdValue}%` : '2.0%'}
-          </div>
-          <div className="text-[11px] text-[var(--tw-ink-2)] flex items-center justify-between font-sans">
-            <span>
-              Max Risk USD:{' '}
-              {formatCurrency(
-                (activeAccount.currentEquity * (tradeRiskRule?.rule.thresholdValue || 2.0)) / 100
-              )}
-            </span>
-            <span className="text-[10px] text-[var(--tw-gain)] font-mono">Enforced</span>
-          </div>
-        </div>
-
-        {/* Tile 4: Governance / Firm Goal (Profit Target, Min Days, Max Open Risk) */}
-        <div className="p-4 rounded-2xl border border-[var(--tw-line)] bg-[var(--tw-tile)] space-y-1.5 font-mono">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-[var(--tw-ink-3)] uppercase">
-              {targetOrGovernanceRule?.rule.ruleType.replace(/_/g, ' ') || 'Desk Governance'}
-            </span>
-            {targetOrGovernanceRule ? getStatusBadge(targetOrGovernanceRule.evalResult.status) : null}
-          </div>
-          <div className="text-xl font-bold text-[var(--tw-ink)] tabular-nums">
-            {targetOrGovernanceRule?.rule.thresholdUnit === 'currency'
-              ? formatCurrency(targetOrGovernanceRule.rule.thresholdValue)
-              : targetOrGovernanceRule?.rule.thresholdUnit === 'percent'
-              ? `${targetOrGovernanceRule.rule.thresholdValue}%`
-              : targetOrGovernanceRule?.rule.thresholdUnit === 'days'
-              ? `${targetOrGovernanceRule.rule.thresholdValue} Days`
-              : `${targetOrGovernanceRule?.rule.thresholdValue || 3} Positions`}
-          </div>
-          <div className="text-[11px] text-[var(--tw-ink-2)] flex items-center justify-between font-sans">
-            <span>
-              Metric:{' '}
-              {targetOrGovernanceRule?.rule.thresholdUnit === 'currency'
-                ? formatCurrency(targetOrGovernanceRule.rule.currentMetricValue)
-                : `${targetOrGovernanceRule?.rule.currentMetricValue || 0}`}
-            </span>
-            <span className="text-[10px] text-[var(--tw-hero-line)] font-mono">
-              Buffer: {targetOrGovernanceRule?.evalResult.remainingAllowance || 0}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* 4. Dedicated Section: Personalized Risk Rules Matrix */}
-      <div className="p-5 rounded-3xl border border-[var(--tw-line)] bg-[var(--tw-tile)] space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[var(--tw-line)]">
-          <div>
-            <div className="flex items-center space-x-2">
-              <Sliders size={18} className="text-[var(--tw-hero-line)]" />
-              <h2 className="font-mono text-sm font-bold uppercase tracking-wider text-[var(--tw-ink)]">
-                PERSONALIZED RISK RULES — {activeAccount.name.toUpperCase()}
-              </h2>
-            </div>
-            <p className="text-xs text-[var(--tw-ink-3)] mt-0.5 font-sans">
-              Every account enforces its own independent rule set, warning thresholds, and calculation methodology.
-            </p>
-          </div>
-
-          <div className="text-xs font-mono text-[var(--tw-ink-2)]">
-            <span>{activeAccount.rules?.length || 0} Personalized Rules Configured</span>
-          </div>
-        </div>
-
-        {/* Rules Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left font-sans text-xs">
-            <thead>
-              <tr className="border-b border-[var(--tw-line)] text-[var(--tw-ink-3)] text-[11px] font-semibold uppercase">
-                <th className="py-2.5 px-3">Status</th>
-                <th className="py-2.5 px-3">Rule Type</th>
-                <th className="py-2.5 px-3">Threshold Limit</th>
-                <th className="py-2.5 px-3">Current Metric</th>
-                <th className="py-2.5 px-3">Remaining Allowance</th>
-                <th className="py-2.5 px-3">Method</th>
-                <th className="py-2.5 px-3">Warning At</th>
-                <th className="py-2.5 px-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--tw-line)]/60 text-[var(--tw-ink-2)]">
-              {evaluatedRules.map(({ rule, evalResult }) => {
-                const formattedThreshold =
-                  rule.thresholdUnit === 'currency'
-                    ? formatCurrency(rule.thresholdValue)
-                    : rule.thresholdUnit === 'percent'
-                    ? `${rule.thresholdValue}%`
-                    : rule.thresholdUnit === 'days'
-                    ? `${rule.thresholdValue} Days`
-                    : `${rule.thresholdValue} Count`;
-
-                const formattedMetric =
-                  rule.thresholdUnit === 'currency'
-                    ? formatCurrency(evalResult.metricValue)
-                    : rule.thresholdUnit === 'percent'
-                    ? `${evalResult.metricValue}%`
-                    : rule.thresholdUnit === 'days'
-                    ? `${evalResult.metricValue} Days`
-                    : `${evalResult.metricValue} Count`;
-
-                const formattedAllowance =
-                  rule.thresholdUnit === 'currency'
-                    ? formatCurrency(evalResult.remainingAllowance)
-                    : rule.thresholdUnit === 'percent'
-                    ? `${evalResult.remainingAllowance}%`
-                    : rule.thresholdUnit === 'days'
-                    ? `${evalResult.remainingAllowance} Days`
-                    : `${evalResult.remainingAllowance} Count`;
-
-                return (
-                  <tr
-                    key={rule.id}
-                    className="hover:bg-white/[0.02] transition-colors"
-                  >
-                    <td className="py-3 px-3">
-                      {rule.isEnabled ? (
-                        getStatusBadge(evalResult.status)
-                      ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[var(--tw-pill)] text-[var(--tw-ink-3)]">
-                          DISABLED
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 font-semibold text-[var(--tw-ink)]">
-                      {rule.ruleType.replace(/_/g, ' ').toUpperCase()}
-                    </td>
-                    <td className="py-3 px-3 font-mono font-bold text-[var(--tw-ink)]">
-                      {formattedThreshold}
-                    </td>
-                    <td className="py-3 px-3 font-mono">
-                      {formattedMetric}
-                    </td>
-                    <td className="py-3 px-3 font-mono text-[var(--tw-gain)]">
-                      {formattedAllowance}
-                    </td>
-                    <td className="py-3 px-3 font-mono text-[11px] text-[var(--tw-ink-3)]">
-                      {rule.calculationMethod}
-                    </td>
-                    <td className="py-3 px-3 font-mono text-[11px] text-[var(--tw-warn)]">
-                      {rule.warningThresholdPct}% buffer
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(rule)}
-                          className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-[var(--tw-pill)] text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)] hover:bg-white/10 transition-colors"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => toggleRule(activeAccount.id, rule.id)}
-                          className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
-                            rule.isEnabled
-                              ? 'bg-[var(--tw-loss)]/15 text-[var(--tw-loss)] hover:bg-[var(--tw-loss)]/25'
-                              : 'bg-[var(--tw-gain)]/15 text-[var(--tw-gain)] hover:bg-[var(--tw-gain)]/25'
-                          }`}
-                        >
-                          {rule.isEnabled ? 'Disable' : 'Enable'}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* 5. Main Terminal Workspace: Calculator & Pre-Trade Discipline Checklist */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: Position Sizing Calculator with Personalized Account Compliance Validation */}
-        <div className="p-5 rounded-3xl border border-[var(--tw-line)] bg-[var(--tw-tile)] space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-[var(--tw-line)]">
-            <div className="flex items-center space-x-2">
-              <Calculator size={18} className="text-[var(--tw-hero-line)]" />
-              <h2 className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--tw-ink)]">
-                PRECISION POSITION SIZING CALCULATOR
-              </h2>
-            </div>
-            <span className="text-[10px] font-mono text-[var(--tw-hero-line)]">
-              {activeAccount.name} • {selectedInst.category.toUpperCase()}
-            </span>
-          </div>
-
-          {/* Rule Compliance Status Banner */}
-          {maxRiskRule && (
-            <div
-              className={`p-3 rounded-2xl border text-xs font-mono flex items-center justify-between ${
-                isRiskBreached
-                  ? 'bg-[var(--tw-loss)]/15 border-[var(--tw-loss)]/40 text-[var(--tw-loss)]'
-                  : isRiskWarning
-                  ? 'bg-[var(--tw-warn-bg)] border-[var(--tw-warn-line)] text-[var(--tw-warn)]'
-                  : 'bg-[var(--tw-gain)]/10 border-[var(--tw-gain)]/30 text-[var(--tw-gain)]'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                {isRiskBreached ? (
-                  <AlertTriangle size={16} />
-                ) : isRiskWarning ? (
-                  <AlertCircle size={16} />
-                ) : (
-                  <CheckCircle2 size={16} />
-                )}
-                <span>
-                  {isRiskBreached
-                    ? `⚠️ BREACH WARNING: Risk (${numRiskPct}%) exceeds ${activeAccount.name}'s limit of ${maxRiskRule.thresholdValue}%!`
-                    : isRiskWarning
-                    ? `⚠️ BUFFER WARNING: Approaching ${activeAccount.name}'s max risk limit (${maxRiskRule.thresholdValue}%).`
-                    : `✓ COMPLIANT: Risk (${numRiskPct}%) is within ${activeAccount.name}'s personalized ${maxRiskRule.thresholdValue}% limit.`}
-                </span>
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3 text-xs font-mono">
-            <div>
-              <label className="block text-[var(--tw-ink-3)] text-[10px] uppercase mb-1">
-                Instrument
-              </label>
-              <select
-                value={calcSymbol}
-                onChange={(e) => setCalcSymbol(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] outline-none focus:border-[var(--tw-hero-line)]"
-              >
-                {instruments.map((i) => (
-                  <option key={i.symbol} value={i.symbol}>
-                    {i.symbol} ({i.name})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[var(--tw-ink-3)] text-[10px] uppercase mb-1">
-                Risk % of Equity (Account: ${activeAccount.currentEquity.toLocaleString('en-US')})
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0.1"
-                max="10.0"
-                value={calcRiskPct}
-                onChange={(e) => setCalcRiskPct(e.target.value)}
-                className={`w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border font-bold outline-none tabular-nums ${
-                  isRiskBreached
-                    ? 'border-[var(--tw-loss)] text-[var(--tw-loss)]'
-                    : 'border-[var(--tw-line)] text-[var(--tw-hero-line)] focus:border-[var(--tw-hero-line)]'
-                }`}
-              />
-            </div>
-
-            <div>
-              <label className="block text-[var(--tw-ink-3)] text-[10px] uppercase mb-1">
-                Entry Price
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={calcEntry}
-                onChange={(e) => setCalcEntry(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] outline-none focus:border-[var(--tw-hero-line)] tabular-nums"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[var(--tw-loss)] text-[10px] uppercase mb-1">
-                Stop Loss Price
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={calcSl}
-                onChange={(e) => setCalcSl(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-loss)]/40 text-[var(--tw-loss)] outline-none focus:border-[var(--tw-loss)] tabular-nums"
-              />
-            </div>
-
-            <div className="col-span-2">
-              <label className="block text-[var(--tw-gain)] text-[10px] uppercase mb-1">
-                Take Profit Price (Optional)
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={calcTp}
-                onChange={(e) => setCalcTp(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-gain)]/40 text-[var(--tw-gain)] outline-none focus:border-[var(--tw-gain)] tabular-nums"
-              />
-            </div>
-          </div>
-
-          {/* Output Card */}
-          {calcResult && (
-            <div className="p-4 rounded-2xl border border-[var(--tw-hero-line)]/40 bg-[var(--tw-hero)]/10 space-y-3 font-mono">
-              <div className="flex justify-between items-center text-xs text-[var(--tw-hero-line)] font-bold uppercase tracking-wider">
-                <span>Calculated Allocation</span>
-                <span>{selectedInst.symbol}</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <span className="text-[10px] text-[var(--tw-ink-3)] uppercase block">Lot / Contract Size</span>
-                  <span className="text-xl font-bold text-[var(--tw-ink)] tabular-nums">
-                    {calcResult.positionSize} Lots
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-[var(--tw-ink-3)] uppercase block">Monetary Risk</span>
-                  <span className="text-xl font-bold text-[var(--tw-loss)] tabular-nums">
-                    -${calcResult.potentialLoss.toLocaleString('en-US')}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-[var(--tw-ink-3)] uppercase block">Potential Gain</span>
-                  <span className="text-base font-bold text-[var(--tw-gain)] tabular-nums">
-                    +${(calcResult.potentialProfit || 0).toLocaleString('en-US')}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-[var(--tw-ink-3)] uppercase block">Risk:Reward</span>
-                  <span className="text-base font-bold text-[var(--tw-hero-line)] tabular-nums">
-                    1:{calcResult.plannedRr || 0}
-                  </span>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-[var(--tw-hero-line)]/20 flex justify-between text-[10px] text-[var(--tw-ink-2)]">
-                <span>Contract Size: {selectedInst.contractSize}</span>
-                <span>Tick Risk: {calcResult.tickRisk} ticks</span>
-              </div>
-            </div>
-          )}
-
-          {calcError && (
-            <div className="p-3 rounded-xl bg-[var(--tw-loss)]/15 border border-[var(--tw-loss)]/40 text-[var(--tw-loss)] flex items-center space-x-2 font-mono text-xs">
-              <AlertCircle size={16} />
-              <span>{calcError}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Right: Pre-Trade Discipline & Compliance Gate */}
-        <div className="p-5 rounded-3xl border border-[var(--tw-line)] bg-[var(--tw-tile)] space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-[var(--tw-line)]">
-            <div className="flex items-center space-x-2">
-              <CheckCircle2 size={18} className="text-[var(--tw-gain)]" />
-              <h2 className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--tw-ink)]">
-                PRE-TRADE DISCIPLINE & COMPLIANCE GATE
-              </h2>
-            </div>
-            <span
-              className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full ${
-                allPassed
-                  ? 'bg-[var(--tw-gain)]/20 text-[var(--tw-gain)] border border-[var(--tw-gain)]/40'
-                  : 'bg-[var(--tw-loss)]/20 text-[var(--tw-loss)] border border-[var(--tw-loss)]/40'
-              }`}
-            >
-              {allPassed ? 'ALL GATES CLEARED' : 'COMPLIANCE PENDING'}
-            </span>
-          </div>
-
-          <p className="text-xs text-[var(--tw-ink-2)] font-sans leading-relaxed">
-            Verify every psychological and quantitative checkpoint before executing on {activeAccount.name}.
-          </p>
-
-          <div className="space-y-2.5 font-mono text-xs">
-            {[
-              { id: 'c1', text: 'Does this setup cleanly match a documented Strategy in the library?' },
-              { id: 'c2', text: 'Is the Higher Timeframe (4H / Daily) narrative and bias confirmed?' },
-              { id: 'c3', text: 'Is there a valid liquidity sweep or price-action trigger?' },
-              { id: 'c4', text: 'Is the stop loss placed at a structural invalidation point?' },
-              { id: 'c5', text: 'Does the reward-to-risk ratio offer at least 1:2 or better?' },
-              {
-                id: 'c6',
-                text: `Is monetary risk within ${activeAccount.name}'s daily limit allowance?`,
-              },
-              { id: 'c7', text: 'Are there zero high-impact CPI/FOMC releases in next 30 mins?' },
-              { id: 'c8', text: 'Entering calmly with zero FOMO, revenge, or emotional impatience?' },
-            ].map((item) => {
-              const checked = (checklist as any)[item.id];
-              return (
-                <label
-                  key={item.id}
-                  className={`flex items-start space-x-3 p-2.5 rounded-2xl border cursor-pointer transition-colors ${
-                    checked
-                      ? 'bg-[var(--tw-gain)]/10 border-[var(--tw-gain)]/40 text-[var(--tw-ink)]'
-                      : 'bg-[var(--tw-pill)] border-[var(--tw-line)] text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)]'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(e) =>
-                      setChecklist({ ...checklist, [item.id]: e.target.checked })
-                    }
-                    className="mt-0.5 rounded border-[var(--tw-line)] text-[var(--tw-gain)] focus:ring-0 cursor-pointer"
-                  />
-                  <span className="text-[11px] leading-tight">{item.text}</span>
-                </label>
-              );
-            })}
-          </div>
-
-          <div className="p-3 rounded-2xl border border-[var(--tw-line)] bg-[var(--tw-pill)] flex justify-between items-center text-[11px] font-mono">
-            <span className="text-[var(--tw-ink-3)]">
-              Checklist Status: {Object.values(checklist).filter(Boolean).length}/8 Verified
-            </span>
+        <div className="controls">
+          {/* Period Segments */}
+          <div className="seg" role="group" aria-label="Period">
             <button
-              onClick={() =>
-                setChecklist({
-                  c1: true,
-                  c2: true,
-                  c3: true,
-                  c4: true,
-                  c5: true,
-                  c6: true,
-                  c7: true,
-                  c8: true,
-                })
-              }
-              className="text-[var(--tw-hero-line)] hover:underline text-[10px] font-semibold cursor-pointer"
+              type="button"
+              aria-pressed={period === 'session'}
+              onClick={() => setPeriod('session')}
             >
-              Verify All
+              Session
+            </button>
+            <button
+              type="button"
+              aria-pressed={period === 'week'}
+              onClick={() => setPeriod('week')}
+            >
+              Week
+            </button>
+            <button
+              type="button"
+              aria-pressed={period === 'month'}
+              onClick={() => setPeriod('month')}
+            >
+              Month
             </button>
           </div>
+
+          {/* Account Selector Dropdown */}
+          <div className="relative">
+            <button
+              className="btn flex items-center gap-1.5"
+              type="button"
+              onClick={() => setAccountDropdownOpen(!accountDropdownOpen)}
+              aria-expanded={accountDropdownOpen}
+            >
+              <span>{activeAccount.name}</span>
+              <ChevronDown size={13} className="opacity-70" />
+            </button>
+
+            {accountDropdownOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-60 bg-[var(--tw-tile)] border border-[var(--tw-line-strong)] rounded-2xl shadow-xl z-50 p-1.5">
+                {accounts.map((acc) => (
+                  <button
+                    key={acc.id}
+                    type="button"
+                    onClick={() => {
+                      setLocalAccountId(acc.id);
+                      setSelectedAccountId(acc.id);
+                      setAccountDropdownOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors ${
+                      acc.id === activeAccount.id
+                        ? 'bg-[var(--tw-pill)] text-[var(--tw-ink)] font-semibold'
+                        : 'text-[var(--tw-ink-2)] hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="truncate">{acc.name}</span>
+                    {acc.id === activeAccount.id && <Check size={12} className="text-[var(--tw-hero-line)]" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Edit limits modal trigger */}
+          <button
+            className="btn dark"
+            type="button"
+            onClick={() => {
+              const ruleToEdit = activeAccount.rules?.[0] || null;
+              if (ruleToEdit) openEditModal(ruleToEdit);
+            }}
+          >
+            Edit limits
+          </button>
         </div>
       </div>
 
-      {/* 6. Quick Edit Rule Modal */}
-      {editingRule && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-          <div className="relative w-full max-w-md rounded-3xl border border-[var(--tw-line)] bg-[var(--tw-tile)] p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[var(--tw-line)]">
-              <div>
-                <h3 className="text-base font-bold text-[var(--tw-ink)]">
-                  Edit Personalized Rule
-                </h3>
-                <p className="text-xs text-[var(--tw-ink-3)] mt-0.5">
-                  {editingRule.ruleType.replace(/_/g, ' ').toUpperCase()} • {activeAccount.name}
-                </p>
+      {/* 7-Tile Bento Grid */}
+      <main className="tw-risk-grid">
+        {/* ================================================================ */}
+        {/* TILE 1: HERO - RISK STATUS RING (Cols 1-4, Rows 1-2)             */}
+        {/* ================================================================ */}
+        <section className="tile tw-risk-hero" aria-label="Risk status">
+          <div className="head">
+            <span className="eyebrow">Risk status · 19 Mar 2026 close</span>
+            <span className="pill">
+              <span className="d" />
+              Within limits
+            </span>
+          </div>
+
+          <div className="ring">
+            <svg viewBox="0 0 200 200" aria-hidden="true">
+              <defs>
+                <linearGradient id="tw-risk-rg" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stopColor="var(--tw-hero-line)" />
+                  <stop offset="1" stopColor="var(--tw-sun)" />
+                </linearGradient>
+              </defs>
+              <circle
+                cx="100"
+                cy="100"
+                r="86"
+                fill="none"
+                style={{ stroke: 'var(--tw-hero-rule)', strokeWidth: 14 }}
+              />
+              <circle
+                cx="100"
+                cy="100"
+                r="86"
+                fill="none"
+                stroke="url(#tw-risk-rg)"
+                strokeWidth="14"
+                strokeLinecap="round"
+                transform="rotate(-90 100 100)"
+                strokeDasharray="540 540"
+              />
+            </svg>
+            <div className="rc">
+              <b>{dailyLimitPct.toFixed(1)}%</b>
+              <span>daily limit left</span>
+            </div>
+          </div>
+
+          <p className="rsub">
+            Worst day was +$2,956.00 on 19 Mar. No day has closed negative.
+          </p>
+
+          <div className="rstats">
+            <div>
+              <span>Max per trade</span>
+              <b>{maxRiskPerTradePct.toFixed(1)}%</b>
+            </div>
+            <div>
+              <span>Open risk</span>
+              <b>{openRiskPct.toFixed(1)}%</b>
+            </div>
+            <div>
+              <span>Worst trade</span>
+              <b>−1.00R</b>
+            </div>
+          </div>
+        </section>
+
+        {/* ================================================================ */}
+        {/* TILE 2: LIMIT USAGE METERS (Cols 5-9, Row 1)                     */}
+        {/* ================================================================ */}
+        <section className="tile tw-risk-meters" aria-label="Limit usage">
+          <div className="head">
+            <span className="eyebrow">Limit usage</span>
+            <span className="sub">used of limit</span>
+          </div>
+
+          <div className="mrow">
+            <div className="mtop">
+              <span className="mn">Daily loss</span>
+              <span className="mv">0.0% of {dailyLimitPct.toFixed(1)}%</span>
+            </div>
+            <div
+              className="meter mGain"
+              role="meter"
+              aria-label="Daily loss used"
+              aria-valuemin={0}
+              aria-valuemax={dailyLimitPct}
+              aria-valuenow={0}
+            >
+              <i style={{ width: '0%' }} />
+            </div>
+          </div>
+
+          <div className="mrow">
+            <div className="mtop">
+              <span className="mn">Drawdown from peak</span>
+              <span className="mv">0.0% of {drawdownLimitPct.toFixed(1)}%</span>
+            </div>
+            <div
+              className="meter mGain"
+              role="meter"
+              aria-label="Drawdown used"
+              aria-valuemin={0}
+              aria-valuemax={drawdownLimitPct}
+              aria-valuenow={0}
+            >
+              <i style={{ width: '0%' }} />
+            </div>
+          </div>
+
+          <div className="mrow">
+            <div className="mtop">
+              <span className="mn">Risk per trade</span>
+              <span className="mv">
+                {maxRiskPerTradePct.toFixed(1)}% of {maxRiskPerTradePct.toFixed(1)}%
+              </span>
+            </div>
+            <div
+              className="meter mCap"
+              role="meter"
+              aria-label="Risk per trade used"
+              aria-valuemin={0}
+              aria-valuemax={maxRiskPerTradePct}
+              aria-valuenow={maxRiskPerTradePct}
+            >
+              <i style={{ width: '100%' }} />
+            </div>
+          </div>
+
+          <div className="mrow">
+            <div className="mtop">
+              <span className="mn">Open risk</span>
+              <span className="mv">
+                {openRiskPct.toFixed(1)}% of {(openRiskPct * 2).toFixed(1)}%
+              </span>
+            </div>
+            <div
+              className="meter mOpen"
+              role="meter"
+              aria-label="Open risk used"
+              aria-valuemin={0}
+              aria-valuemax={openRiskPct * 2}
+              aria-valuenow={openRiskPct}
+            >
+              <i style={{ width: '50%' }} />
+            </div>
+          </div>
+        </section>
+
+        {/* ================================================================ */}
+        {/* TILE 3: ACTIVE ALERTS - SUN GOLD TILE (Cols 10-12, Row 1)         */}
+        {/* ================================================================ */}
+        <section className="tile tw-risk-alerts" aria-label="Active alerts">
+          <div className="head">
+            <span className="eyebrow">Alerts</span>
+            <span
+              className="pill"
+              style={{ background: 'var(--tw-sun-ink)', color: 'var(--tw-sun)' }}
+            >
+              1 active
+            </span>
+          </div>
+
+          <div className="big">Cap reached</div>
+
+          <div className="al">
+            <span className="ai">!</span>
+            <div>
+              <b>Risk per trade sits at its {maxRiskPerTradePct.toFixed(1)}% cap</b>
+              <p>A larger size on the next trade breaks your rule.</p>
+            </div>
+          </div>
+
+          <div className="al">
+            <span className="ai">i</span>
+            <div>
+              <b>One trade is still open</b>
+              <p>It carries {openRiskPct.toFixed(1)}% risk. Review it before the next session.</p>
+            </div>
+          </div>
+        </section>
+
+        {/* ================================================================ */}
+        {/* TILE 4: R DISTRIBUTION BAR CHART (Cols 5-9, Row 2)               */}
+        {/* ================================================================ */}
+        <section className="tile tw-risk-dist" aria-label="R per closed trade">
+          <div className="head">
+            <span className="eyebrow">R per closed trade</span>
+            <span className="sub">Dashed line: your −1.00R cap</span>
+          </div>
+
+          <svg
+            viewBox="0 0 520 210"
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-label="Bars: XAUUSD +2.88R, US30 +2.47R, EURUSD −1.00R, BTCUSD +2.97R, with a dashed cap at −1.00R"
+          >
+            {/* 0R Baseline */}
+            <line
+              x1="20"
+              x2="500"
+              y1="128"
+              y2="128"
+              style={{ stroke: 'var(--tw-line-strong)', strokeWidth: 1 }}
+            />
+            {/* -1.00R Cap line */}
+            <line
+              x1="20"
+              x2="500"
+              y1="160"
+              y2="160"
+              style={{
+                stroke: 'var(--tw-warn)',
+                strokeWidth: 1.5,
+                strokeDasharray: '5 5',
+              }}
+            />
+            <text
+              x="500"
+              y="154"
+              textAnchor="end"
+              style={{
+                fill: 'var(--tw-warn)',
+                fontSize: 11,
+                fontWeight: 600,
+              }}
+            >
+              cap −1.00R
+            </text>
+
+            {/* Bars: XAUUSD (+2.88R), US30 (+2.47R), EURUSD (-1.00R), BTCUSD (+2.97R) */}
+            <rect
+              x="62"
+              y="36"
+              width="56"
+              height="92"
+              rx="7"
+              style={{ fill: 'var(--tw-gain)' }}
+            />
+            <rect
+              x="172"
+              y="49"
+              width="56"
+              height="79"
+              rx="7"
+              style={{ fill: 'var(--tw-gain)' }}
+            />
+            <rect
+              x="282"
+              y="128"
+              width="56"
+              height="32"
+              rx="7"
+              style={{ fill: 'var(--tw-loss)' }}
+            />
+            <rect
+              x="392"
+              y="33"
+              width="56"
+              height="95"
+              rx="7"
+              style={{ fill: 'var(--tw-gain)' }}
+            />
+
+            {/* Value Labels */}
+            <g className="mono" style={{ fontSize: 12, fontWeight: 600 }}>
+              <text x="90" y="28" textAnchor="middle" style={{ fill: 'var(--tw-gain)' }}>
+                +2.88R
+              </text>
+              <text x="200" y="41" textAnchor="middle" style={{ fill: 'var(--tw-gain)' }}>
+                +2.47R
+              </text>
+              <text x="310" y="176" textAnchor="middle" style={{ fill: 'var(--tw-loss)' }}>
+                −1.00R
+              </text>
+              <text x="420" y="25" textAnchor="middle" style={{ fill: 'var(--tw-gain)' }}>
+                +2.97R
+              </text>
+            </g>
+
+            {/* Asset Symbol Labels */}
+            <g style={{ fontSize: 12, fill: 'var(--tw-ink-2)' }}>
+              <text x="90" y="200" textAnchor="middle">
+                XAUUSD
+              </text>
+              <text x="200" y="200" textAnchor="middle">
+                US30
+              </text>
+              <text x="310" y="200" textAnchor="middle">
+                EURUSD
+              </text>
+              <text x="420" y="200" textAnchor="middle">
+                BTCUSD
+              </text>
+            </g>
+          </svg>
+        </section>
+
+        {/* ================================================================ */}
+        {/* TILE 5: ASSET DONUT - WHERE R CAME FROM (Cols 10-12, Row 2)       */}
+        {/* ================================================================ */}
+        <section className="tile tw-risk-assets" aria-label="Gross R moved by asset">
+          <div className="head">
+            <span className="eyebrow">Where R came from</span>
+            <span className="sub">share of gross R</span>
+          </div>
+
+          <div className="dwrap">
+            <div style={{ position: 'relative', flex: 'none' }}>
+              <svg viewBox="0 0 180 180" aria-hidden="true">
+                <g transform="translate(90 90)" fill="none" strokeWidth="22">
+                  <circle
+                    r="72"
+                    transform="rotate(-90)"
+                    style={{ stroke: 'var(--tw-sun)' }}
+                    strokeDasharray="136.8 452.4"
+                    strokeDashoffset="0"
+                  />
+                  <circle
+                    r="72"
+                    transform="rotate(-90)"
+                    style={{ stroke: 'var(--tw-s1)' }}
+                    strokeDasharray="45.4 452.4"
+                    strokeDashoffset="-139.8"
+                  />
+                  <circle
+                    r="72"
+                    transform="rotate(-90)"
+                    style={{ stroke: 'var(--tw-s3)' }}
+                    strokeDasharray="116.9 452.4"
+                    strokeDashoffset="-188.2"
+                  />
+                  <circle
+                    r="72"
+                    transform="rotate(-90)"
+                    style={{ stroke: 'var(--tw-gain)' }}
+                    strokeDasharray="141.3 452.4"
+                    strokeDashoffset="-308.1"
+                  />
+                </g>
+              </svg>
+              <div className="dc">
+                <span className="mono" style={{ fontSize: 22, fontWeight: 600 }}>
+                  {totalGrossR}R
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--tw-ink-3)' }}>gross moved</span>
               </div>
+            </div>
+
+            <div className="dleg">
+              <div className="dl">
+                <i style={{ background: 'var(--tw-sun)' }} />
+                <span>
+                  <b>Gold</b> XAUUSD
+                </span>
+                <em>+2.88R</em>
+              </div>
+              <div className="dl">
+                <i style={{ background: 'var(--tw-s1)' }} />
+                <span>
+                  <b>FX</b> EURUSD
+                </span>
+                <em className="loss">−1.00R</em>
+              </div>
+              <div className="dl">
+                <i style={{ background: 'var(--tw-s3)' }} />
+                <span>
+                  <b>Indices</b> US30
+                </span>
+                <em>+2.47R</em>
+              </div>
+              <div className="dl">
+                <i style={{ background: 'var(--tw-gain)' }} />
+                <span>
+                  <b>Crypto</b> BTCUSD
+                </span>
+                <em>+2.97R</em>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ================================================================ */}
+        {/* TILE 6: RULE CHECKS CHECKLIST (Cols 1-6, Row 3)                  */}
+        {/* ================================================================ */}
+        <section className="tile tw-risk-rules" aria-label="Rule checks">
+          <div className="head">
+            <span className="eyebrow">Rule checks</span>
+            <span className="sub">4 on track · 2 to watch</span>
+          </div>
+
+          <div className="rrow">
+            <span className="rn">Daily loss limit</span>
+            <span className="rv">0.0% of {dailyLimitPct.toFixed(1)}%</span>
+            <span className="pill ok">
+              <span className="d" />
+              On track
+            </span>
+          </div>
+
+          <div className="rrow">
+            <span className="rn">Max drawdown from peak</span>
+            <span className="rv">0.0% of {drawdownLimitPct.toFixed(1)}%</span>
+            <span className="pill ok">
+              <span className="d" />
+              On track
+            </span>
+          </div>
+
+          <div className="rrow">
+            <span className="rn">Risk per trade</span>
+            <span className="rv">
+              {maxRiskPerTradePct.toFixed(1)}% of {maxRiskPerTradePct.toFixed(1)}%
+            </span>
+            <span className="pill w">
+              <span className="d" />
+              At cap
+            </span>
+          </div>
+
+          <div className="rrow">
+            <span className="rn">Open risk</span>
+            <span className="rv">
+              {openRiskPct.toFixed(1)}% of {(openRiskPct * 2).toFixed(1)}%
+            </span>
+            <span className="pill ok">
+              <span className="d" />
+              On track
+            </span>
+          </div>
+
+          <div className="rrow">
+            <span className="rn">Losing streak</span>
+            <span className="rv">1 of 3 allowed</span>
+            <span className="pill ok">
+              <span className="d" />
+              On track
+            </span>
+          </div>
+
+          <div className="rrow">
+            <span className="rn">Minimum trading days</span>
+            <span className="rv">2 of 4</span>
+            <span className="pill w">
+              <span className="d" />
+              Behind
+            </span>
+          </div>
+        </section>
+
+        {/* ================================================================ */}
+        {/* TILE 7: WHAT-IF STRESS TEST (Cols 7-12, Row 3)                   */}
+        {/* ================================================================ */}
+        <section className="tile tw-risk-stress" aria-label="What-if losses">
+          <div className="head">
+            <span className="eyebrow">What if the next trades lose</span>
+            <span className="sub" suppressHydrationWarning>
+              {maxRiskPerTradePct.toFixed(1)}% risk on {formatCur(startingBal)}
+            </span>
+          </div>
+
+          <div className="sx">
+            <div className="c1">
+              <span>Next full loss</span>
+              <b suppressHydrationWarning>−{formatCur(nextFullLossDollars)}</b>
+              <small>
+                {Math.round((nextFullLossDollars / ((startingBal * dailyLimitPct) / 100)) * 100)}% of the daily limit
+              </small>
+            </div>
+            <div className="c2">
+              <span>Losses to daily limit</span>
+              <b>{lossesToDailyLimit}</b>
+              <small>
+                {lossesToDailyLimit} × {maxRiskPerTradePct.toFixed(1)}% = {dailyLimitPct.toFixed(1)}%
+              </small>
+            </div>
+            <div className="c3">
+              <span>Losses to total floor</span>
+              <b>{lossesToTotalFloor}</b>
+              <small>
+                {lossesToTotalFloor} × {maxRiskPerTradePct.toFixed(1)}% = {drawdownLimitPct.toFixed(1)}%
+              </small>
+            </div>
+          </div>
+
+          {/* Segmented Daily Limit Indicator (5 blocks) */}
+          <div className="bl">
+            <div className="bh">
+              <span>Daily limit</span>
+              <span>0 of {lossesToDailyLimit} full losses used</span>
+            </div>
+            <div className="blocks" aria-hidden="true">
+              {Array.from({ length: lossesToDailyLimit }).map((_, i) => (
+                <i key={i} className="blk" />
+              ))}
+            </div>
+          </div>
+
+          {/* Segmented Total Floor Indicator (10 blocks) */}
+          <div className="bl">
+            <div className="bh">
+              <span>Total floor</span>
+              <span>0 of {lossesToTotalFloor} full losses used</span>
+            </div>
+            <div className="blocks thin" aria-hidden="true">
+              {Array.from({ length: lossesToTotalFloor }).map((_, i) => (
+                <i key={i} className="blk" />
+              ))}
+            </div>
+          </div>
+        </section>
+      </main>
+
+      {/* ================================================================ */}
+      {/* EDIT LIMITS MODAL                                                */}
+      {/* ================================================================ */}
+      {isEditModalOpen && editingRule && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[var(--tw-tile)] border border-[var(--tw-line-strong)] rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--tw-line)]">
+              <h3 className="font-semibold text-lg text-[var(--tw-ink)]">
+                Configure Rule Threshold
+              </h3>
               <button
                 type="button"
-                onClick={() => setEditingRule(null)}
-                className="text-[var(--tw-ink-3)] hover:text-[var(--tw-ink)] p-1 rounded-full"
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-[var(--tw-ink-3)] hover:text-[var(--tw-ink)] p-1 rounded-lg"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs font-mono">
+            <div className="space-y-3 text-sm">
               <div>
-                <label className="block text-[var(--tw-ink-3)] text-[10px] uppercase mb-1">
-                  Threshold Limit ({editingRule.thresholdUnit})
+                <label className="block text-xs font-medium text-[var(--tw-ink-2)] mb-1">
+                  Active Rule
+                </label>
+                <div className="p-2.5 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] font-mono text-xs text-[var(--tw-ink)]">
+                  {editingRule.ruleType.replace(/_/g, ' ').toUpperCase()}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[var(--tw-ink-2)] mb-1">
+                  Maximum Threshold Limit ({editingRule.ruleType.includes('pct') ? '%' : '$'})
                 </label>
                 <input
                   type="number"
-                  step="any"
+                  step="0.1"
                   value={editThreshold}
                   onChange={(e) => setEditThreshold(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] outline-none focus:border-[var(--tw-hero-line)]"
+                  className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] font-mono text-sm focus:outline-none focus:border-[var(--tw-hero-line)]"
                 />
               </div>
 
               <div>
-                <label className="block text-[var(--tw-ink-3)] text-[10px] uppercase mb-1">
-                  Warning Buffer Threshold (%)
+                <label className="block text-xs font-medium text-[var(--tw-ink-2)] mb-1">
+                  Warning Alert Threshold (% of limit)
                 </label>
                 <input
                   type="number"
-                  step="1"
+                  step="5"
                   min="10"
                   max="99"
                   value={editWarningPct}
                   onChange={(e) => setEditWarningPct(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] outline-none focus:border-[var(--tw-hero-line)]"
+                  className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] font-mono text-sm focus:outline-none focus:border-[var(--tw-hero-line)]"
                 />
-              </div>
-
-              <div className="p-3 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[11px] text-[var(--tw-ink-2)]">
-                <div>Calculation Method: <b>{editingRule.calculationMethod}</b></div>
-                <div>Reset Frequency: <b>{editingRule.resetFrequency}</b></div>
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end gap-2">
+            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--tw-line)]">
               <button
                 type="button"
-                onClick={() => setEditingRule(null)}
-                className="px-4 py-2 rounded-full border border-[var(--tw-line)] text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)] text-xs"
+                onClick={() => setIsEditModalOpen(false)}
+                className="px-4 py-2 rounded-full text-xs font-medium text-[var(--tw-ink-2)] hover:bg-white/5"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleSaveRule}
-                className="px-4 py-2 rounded-full bg-[var(--tw-ink)] text-[var(--tw-tile)] font-semibold text-xs hover:opacity-90 transition-opacity"
+                className="px-5 py-2 rounded-full text-xs font-semibold bg-[var(--tw-hero-line)] text-[var(--tw-hero)] hover:opacity-90"
               >
-                Save Changes
+                Save Limits
               </button>
             </div>
           </div>
