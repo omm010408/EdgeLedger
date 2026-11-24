@@ -243,10 +243,10 @@ export default function OverviewPage() {
               </g>
             </svg>
             <span className="tw-end" aria-hidden="true" />
-            <span className="tw-tag start">
+            <span className="tw-tag start" suppressHydrationWarning>
               Start, ${formatInt(capitalStats.startingBal)}
             </span>
-            <span className="tw-tag close">
+            <span className="tw-tag close" suppressHydrationWarning>
               Closing, ${formatInt(capitalStats.currentBal)}
             </span>
             <span className="tw-tag x x1">18 Mar</span>
@@ -303,7 +303,7 @@ export default function OverviewPage() {
         <span className="tw-disc" aria-hidden="true" />
         <div className="tw-lbl">Profit factor</div>
         <div className="tw-n">{capitalStats.profitFactor.toFixed(2)}</div>
-        <div className={`tw-sub ${isPnlHidden ? 'tw-pnl-blur' : ''}`}>
+        <div className={`tw-sub ${isPnlHidden ? 'tw-pnl-blur' : ''}`} suppressHydrationWarning>
           Gross {isPnlHidden ? '$••••' : `$${formatInt(capitalStats.grossProfit)}`} over{' '}
           {isPnlHidden ? '$•••' : `$${formatInt(capitalStats.grossLoss)}`} in losses
         </div>
@@ -517,7 +517,7 @@ export default function OverviewPage() {
         <div>
           <div className="tw-row2">
             <span className="tw-sub">Average win</span>
-            <span className={`tw-pos ${isPnlHidden ? 'tw-pnl-blur' : ''}`} style={{ fontWeight: 600 }}>
+            <span className={`tw-pos ${isPnlHidden ? 'tw-pnl-blur' : ''}`} style={{ fontWeight: 600 }} suppressHydrationWarning>
               {isPnlHidden ? '+$••••' : `+$${formatInt(capitalStats.avgWin)}`}
             </span>
           </div>
@@ -528,7 +528,7 @@ export default function OverviewPage() {
         <div>
           <div className="tw-row2">
             <span className="tw-sub">Average loss</span>
-            <span className={`tw-neg ${isPnlHidden ? 'tw-pnl-blur' : ''}`} style={{ fontWeight: 600 }}>
+            <span className={`tw-neg ${isPnlHidden ? 'tw-pnl-blur' : ''}`} style={{ fontWeight: 600 }} suppressHydrationWarning>
               {isPnlHidden ? '−$•••' : `−$${formatInt(capitalStats.avgLoss)}`}
             </span>
           </div>

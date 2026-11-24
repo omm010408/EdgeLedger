@@ -843,21 +843,21 @@ export default function TradesPage() {
                     <line className="lsl" x1="0" x2="330" y1="140" y2="140" />
 
                     {/* Left Labels */}
-                    <text className="tl-ladder lt" x="8" y="6">
+                    <text className="tl-ladder lt" x="8" y="6" suppressHydrationWarning>
                       Target {ladderStats.target.toLocaleString('en-US')}
                     </text>
-                    <text className="tl-ladder lt" x="8" y={ladderStats.entryY - 5}>
+                    <text className="tl-ladder lt" x="8" y={ladderStats.entryY - 5} suppressHydrationWarning>
                       Entry {ladderStats.entry.toLocaleString('en-US')}
                     </text>
-                    <text className="tl-ladder lt" x="8" y="154">
+                    <text className="tl-ladder lt" x="8" y="154" suppressHydrationWarning>
                       Stop {ladderStats.stop.toLocaleString('en-US')}
                     </text>
 
                     {/* Right Labels (Distances in pts) */}
-                    <text className="tl-ladder lt" x="322" y="6" textAnchor="end">
+                    <text className="tl-ladder lt" x="322" y="6" textAnchor="end" suppressHydrationWarning>
                       +{ladderStats.targetDist.toFixed(1)} pts
                     </text>
-                    <text className="tl-ladder lt" x="322" y="154" textAnchor="end">
+                    <text className="tl-ladder lt" x="322" y="154" textAnchor="end" suppressHydrationWarning>
                       -{ladderStats.stopDist.toFixed(1)} pts
                     </text>
                   </>
@@ -893,21 +893,21 @@ export default function TradesPage() {
                     <line className="ltp" x1="0" x2="330" y1="140" y2="140" />
 
                     {/* Left Labels */}
-                    <text className="tl-ladder lt" x="8" y="6">
+                    <text className="tl-ladder lt" x="8" y="6" suppressHydrationWarning>
                       Stop {ladderStats.stop.toLocaleString('en-US')}
                     </text>
-                    <text className="tl-ladder lt" x="8" y={ladderStats.entryY - 5}>
+                    <text className="tl-ladder lt" x="8" y={ladderStats.entryY - 5} suppressHydrationWarning>
                       Entry {ladderStats.entry.toLocaleString('en-US')}
                     </text>
-                    <text className="tl-ladder lt" x="8" y="154">
+                    <text className="tl-ladder lt" x="8" y="154" suppressHydrationWarning>
                       Target {ladderStats.target.toLocaleString('en-US')}
                     </text>
 
                     {/* Right Labels (Distances in pts) */}
-                    <text className="tl-ladder lt" x="322" y="6" textAnchor="end">
+                    <text className="tl-ladder lt" x="322" y="6" textAnchor="end" suppressHydrationWarning>
                       -{ladderStats.stopDist.toFixed(1)} pts
                     </text>
-                    <text className="tl-ladder lt" x="322" y="154" textAnchor="end">
+                    <text className="tl-ladder lt" x="322" y="154" textAnchor="end" suppressHydrationWarning>
                       +{ladderStats.targetDist.toFixed(1)} pts
                     </text>
                   </>
