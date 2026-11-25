@@ -5,6 +5,7 @@ import { useTrading } from '../../context/TradingContext';
 import { CheckCircle2, ArrowRight, Plus, X } from 'lucide-react';
 import { Strategy } from '../../lib/data/seedData';
 import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
+import { filterTradesByPeriod } from '../../lib/data/periodFilter';
 
 const STRATEGY_COLORS = ['var(--tw-s1)', 'var(--tw-s2)', 'var(--tw-s3)', 'var(--tw-gain)', 'var(--tw-warn)'];
 
@@ -106,9 +107,10 @@ export default function StrategiesPage() {
     resetForm();
   };
 
-  // Compute live attribution across closed trades in current scope
+  // Compute live attribution across closed trades in current scope and period
   const computed = useMemo(() => {
-    const closedTrades = filteredTrades.filter((t) => t.status === 'CLOSED');
+    const periodTrades = filterTradesByPeriod(filteredTrades, periodFilter);
+    const closedTrades = periodTrades.filter((t) => t.status === 'CLOSED');
     const getTradePnl = (t: (typeof closedTrades)[number]) => {
       if (selectedAccountId === 'ALL') return t.netPnl;
       return t.allocations.find((a) => a.accountId === selectedAccountId)?.netPnl || 0;
@@ -161,7 +163,7 @@ export default function StrategiesPage() {
       allStats: enriched,
       sortedStats: sorted,
     };
-  }, [strategies, filteredTrades, selectedAccountId]);
+  }, [strategies, filteredTrades, selectedAccountId, periodFilter]);
 
   const availableRegimes = useMemo(() => {
     const base: Strategy['marketRegime'][] = ['reversal', 'trending'];

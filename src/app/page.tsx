@@ -2,6 +2,11 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import {
+  filterTradesByPeriod,
+  getPeriodDateRangeLabel,
+  getRollingSevenDays,
+} from '../lib/data/periodFilter';
 import { Fingerprint, Eye, EyeOff } from 'lucide-react';
 import { useTrading } from '../context/TradingContext';
 
@@ -45,24 +50,7 @@ export default function OverviewPage() {
 
   // Filter trades based on active period and selected account
   const activeTrades = useMemo(() => {
-    let list = filteredTrades;
-
-    // Filter by period
-    if (periodFilter === 'Week') {
-      // 16 to 22 Mar or recent 7-day window
-      const cutoff = new Date('2024-03-16T00:00:00Z').getTime();
-      const endCutoff = new Date('2024-03-23T00:00:00Z').getTime();
-      const inWindow = list.filter((t) => {
-        const time = new Date(t.entryTime).getTime();
-        return time >= cutoff && time <= endCutoff;
-      });
-      list = inWindow.length > 0 ? inWindow : list.slice(0, 5);
-    } else if (periodFilter === 'Month') {
-      const cutoff = new Date('2024-03-01T00:00:00Z').getTime();
-      list = list.filter((t) => new Date(t.entryTime).getTime() >= cutoff);
-    }
-
-    return list;
+    return filterTradesByPeriod(filteredTrades, periodFilter);
   }, [filteredTrades, periodFilter]);
 
   const closedTrades = useMemo(() => {
@@ -75,20 +63,25 @@ export default function OverviewPage() {
     return activeTrades.filter((t) => t.status === 'OPEN');
   }, [activeTrades]);
 
+  const getScopedTradePnl = (t: (typeof activeTrades)[number]) => {
+    if (selectedAccountId === 'ALL') return t.netPnl;
+    return t.allocations.find((a) => a.accountId === selectedAccountId)?.netPnl ?? t.netPnl;
+  };
+
   // Dynamic Portfolio Capital Stats
   const capitalStats = useMemo(() => {
     const startingBal = selectedAccount
       ? selectedAccount.startingBalance
       : accounts.reduce((sum, a) => sum + a.startingBalance, 0);
 
-    const netProfit = closedTrades.reduce((sum, t) => sum + t.netPnl, 0);
-    const grossProfit = closedTrades.filter((t) => t.netPnl > 0).reduce((sum, t) => sum + t.netPnl, 0);
-    const grossLoss = Math.abs(closedTrades.filter((t) => t.netPnl < 0).reduce((sum, t) => sum + t.netPnl, 0));
+    const netProfit = closedTrades.reduce((sum, t) => sum + getScopedTradePnl(t), 0);
+    const grossProfit = closedTrades.filter((t) => getScopedTradePnl(t) > 0).reduce((sum, t) => sum + getScopedTradePnl(t), 0);
+    const grossLoss = Math.abs(closedTrades.filter((t) => getScopedTradePnl(t) < 0).reduce((sum, t) => sum + getScopedTradePnl(t), 0));
     const currentBal = startingBal + netProfit;
     const returnPct = startingBal > 0 ? (netProfit / startingBal) * 100 : 0;
 
-    const wonCount = closedTrades.filter((t) => t.netPnl > 0).length;
-    const lostCount = closedTrades.filter((t) => t.netPnl < 0).length;
+    const wonCount = closedTrades.filter((t) => getScopedTradePnl(t) > 0).length;
+    const lostCount = closedTrades.filter((t) => getScopedTradePnl(t) < 0).length;
     const totalClosed = closedTrades.length;
     const winRatePct = totalClosed > 0 ? (wonCount / totalClosed) * 100 : 0;
 
@@ -174,23 +167,31 @@ export default function OverviewPage() {
   }, [closedTrades]);
 
   const weekDays = useMemo(() => {
-    const baseDates = [
-      { day: 16, dateKey: '2024-03-16' },
-      { day: 17, dateKey: '2024-03-17' },
-      { day: 18, dateKey: '2024-03-18' },
-      { day: 19, dateKey: '2024-03-19' },
-      { day: 20, dateKey: '2024-03-20' },
-      { day: 21, dateKey: '2024-03-21' },
-      { day: 22, dateKey: '2024-03-22' },
-    ];
-    return baseDates.map(({ day, dateKey }) => {
+    const baseDates = getRollingSevenDays(activeTrades);
+    return baseDates.map(({ day, monthShort, dateKey }) => {
       const dayTrades = activeTrades.filter((t) => (t.entryTime || t.createdAt).startsWith(dateKey));
       const dayClosed = dayTrades.filter((t) => t.status === 'CLOSED');
       const dayOpen = dayTrades.filter((t) => t.status === 'OPEN' || t.status === 'PARTIALLY_CLOSED');
-      const netPnl = dayClosed.reduce((sum, t) => sum + t.netPnl, 0);
-      return { day, dateKey, dayTrades, dayClosed, dayOpen, netPnl };
+      const netPnl = dayClosed.reduce((sum, t) => sum + getScopedTradePnl(t), 0);
+      return { day, monthShort, dateKey, dayTrades, dayClosed, dayOpen, netPnl };
     });
-  }, [activeTrades]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTrades, selectedAccountId]);
+
+  const periodRangeLabel = useMemo(
+    () => getPeriodDateRangeLabel(activeTrades, periodFilter),
+    [activeTrades, periodFilter]
+  );
+
+  const weekBubbleRangeLabel = useMemo(() => {
+    if (weekDays.length === 0) return '7-day window';
+    const first = weekDays[0];
+    const last = weekDays[weekDays.length - 1];
+    const year = last.dateKey.slice(0, 4);
+    return first.monthShort === last.monthShort
+      ? `${first.day}–${last.day} ${last.monthShort} ${year}`
+      : `${first.day} ${first.monthShort}–${last.day} ${last.monthShort} ${year}`;
+  }, [weekDays]);
 
   const rankedByR = useMemo(() => {
     return [...closedTrades].sort((a, b) => (b.realizedR || 0) - (a.realizedR || 0)).slice(0, 4);
@@ -269,12 +270,7 @@ export default function OverviewPage() {
       <section className={`tw-tile tw-hero ${isPnlHidden ? 'tw-hero-locked' : 'tw-hero-unlocked'}`} aria-label="Net P&L">
         <div className="tw-hero-topline">
           <div className="tw-lbl">
-            Net P&amp;L from closed trades,{' '}
-            {periodFilter === 'Week'
-              ? '16–22 Mar'
-              : periodFilter === 'Month'
-              ? '1–31 Mar'
-              : 'All Time'}
+            Net P&amp;L from closed trades, {periodRangeLabel}
           </div>
           <button
             type="button"
@@ -357,8 +353,20 @@ export default function OverviewPage() {
             <span className="tw-tag close" suppressHydrationWarning>
               Closing, ${formatInt(capitalStats.currentBal)}
             </span>
-            <span className="tw-tag x x1">18 Mar</span>
-            <span className="tw-tag x x2">19 Mar</span>
+            <span className="tw-tag x x1">
+              {closedTrades[0]
+                ? new Date(closedTrades[0].entryTime || closedTrades[0].createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+                : weekDays[0]
+                ? `${weekDays[0].day} ${weekDays[0].monthShort}`
+                : 'Start'}
+            </span>
+            <span className="tw-tag x x2">
+              {closedTrades.length > 0
+                ? new Date(closedTrades[closedTrades.length - 1].entryTime || closedTrades[closedTrades.length - 1].createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+                : weekDays[weekDays.length - 1]
+                ? `${weekDays[weekDays.length - 1].day} ${weekDays[weekDays.length - 1].monthShort}`
+                : 'Now'}
+            </span>
           </div>
         </div>
 
@@ -491,7 +499,7 @@ export default function OverviewPage() {
       {/* ------------------------------------------------------------------ */}
       {/* 5. WEEK BUBBLES TILE: Net P&L by Day (Cols 6-10, Row 2)            */}
       {/* ------------------------------------------------------------------ */}
-      <section className="tw-tile tw-week" aria-label="Net P&L by day, 16 to 22 March">
+      <section className="tw-tile tw-week" aria-label={`Net P&L by day, ${weekBubbleRangeLabel}`}>
         <div className="tw-clip" aria-hidden="true">
           <svg className="tw-wave" viewBox="0 0 560 84" preserveAspectRatio="none">
             <path d="M0 40C90 18 170 56 280 36S460 16 560 38V84H0Z" />
@@ -499,7 +507,7 @@ export default function OverviewPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px' }}>
           <div>
-            <div className="tw-lbl">Net P&amp;L by day, 16–22 Mar 2024</div>
+            <div className="tw-lbl">Net P&amp;L by day, {weekBubbleRangeLabel}</div>
             <div className="tw-sub tw-s12" style={{ marginTop: '2px' }}>
               Click a day to filter Trade ledger. Dashed ring marks an open trade.
             </div>
@@ -555,7 +563,7 @@ export default function OverviewPage() {
                   {hasClosed ? (
                     <>
                       <b>
-                        {wd.day} Mar,{' '}
+                        {wd.day} {wd.monthShort},{' '}
                         {isPnlHidden
                           ? '••••••'
                           : `${wd.netPnl >= 0 ? '+' : '−'}${formatCur(Math.abs(wd.netPnl))}`}
@@ -564,12 +572,12 @@ export default function OverviewPage() {
                     </>
                   ) : hasOpen ? (
                     <>
-                      <b>{wd.day} Mar, open trade</b>
+                      <b>{wd.day} {wd.monthShort}, open trade</b>
                       {syms} floating position
                     </>
                   ) : (
                     <>
-                      <b>{wd.day} Mar, no trades</b>Click to open calendar
+                      <b>{wd.day} {wd.monthShort}, no trades</b>Click to open calendar
                     </>
                   )}
                 </div>

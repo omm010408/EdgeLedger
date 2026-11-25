@@ -245,12 +245,12 @@ export default function AccountsPage() {
           </div>
 
           <div className="text-4xl font-mono font-bold tracking-tight" style={{ color: 'var(--tw-sun-ink)' }}>
-            {formatCurrency(portfolioMetrics.openRiskUsd || 600)}
+            {formatCurrency(portfolioMetrics.openRiskUsd)}
           </div>
 
           <div className="text-xs font-sans font-medium" style={{ color: 'var(--tw-sun-ink)' }}>
             {portfolioSummary.totalEquity > 0
-              ? `${((portfolioMetrics.openRiskUsd || 600) / portfolioSummary.totalEquity * 100).toFixed(2)}% of balance`
+              ? `${(portfolioMetrics.openRiskUsd / portfolioSummary.totalEquity * 100).toFixed(2)}% of balance`
               : '0.00%'}
           </div>
         </section>

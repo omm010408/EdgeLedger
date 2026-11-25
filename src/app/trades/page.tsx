@@ -6,6 +6,7 @@ import { useTrading } from '../../context/TradingContext';
 import { Trade, TradeAllocation } from '../../lib/types/financial';
 import { QuickTradeModal } from '../../components/modals/QuickTradeModal';
 import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
+import { filterTradesByPeriod } from '../../lib/data/periodFilter';
 import {
   Search,
   Plus,
@@ -68,24 +69,12 @@ export default function TradesPage() {
 
   // 1. Period & Search filtered trades
   const tradesInPeriod = useMemo(() => {
-    let list = filteredTrades;
+    const list = filteredTrades;
 
     if (selectedDateFilter) {
-      list = list.filter((t) => (t.entryTime || t.createdAt).startsWith(selectedDateFilter));
-    } else if (periodFilter === 'Week') {
-      const cutoff = new Date('2024-03-16T00:00:00Z').getTime();
-      const endCutoff = new Date('2024-03-23T00:00:00Z').getTime();
-      const inWindow = list.filter((t) => {
-        const time = new Date(t.entryTime).getTime();
-        return time >= cutoff && time <= endCutoff;
-      });
-      list = inWindow.length > 0 ? inWindow : list.slice(0, 5);
-    } else if (periodFilter === 'Month') {
-      const cutoff = new Date('2024-03-01T00:00:00Z').getTime();
-      list = list.filter((t) => new Date(t.entryTime).getTime() >= cutoff);
+      return list.filter((t) => (t.entryTime || t.createdAt).startsWith(selectedDateFilter));
     }
-
-    return list;
+    return filterTradesByPeriod(list, periodFilter);
   }, [filteredTrades, periodFilter, selectedDateFilter]);
 
   // Apply search and status chip filters

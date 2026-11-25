@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useTrading } from '../../context/TradingContext';
-import { calculatePositionSize } from '../../lib/calculations/financialEngine';
+import { calculatePositionSize, calculateExecutionPnl } from '../../lib/calculations/financialEngine';
 import { Trade, TradeDirection, TradeStatus } from '../../lib/types/financial';
 import { X, CheckSquare, Square, Calculator, AlertCircle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
@@ -25,6 +25,8 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
   const [entryPrice, setEntryPrice] = useState<string>('');
   const [stopLoss, setStopLoss] = useState<string>('');
   const [takeProfit, setTakeProfit] = useState<string>('');
+  const [exitPrice, setExitPrice] = useState<string>('');
+  const [realizedNetInput, setRealizedNetInput] = useState<string>('');
   const [riskPct, setRiskPct] = useState<string>('1.0');
   const [strategyId, setStrategyId] = useState<string>('');
   const [setupType, setSetupType] = useState<string>('');
@@ -55,6 +57,13 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       setEntryPrice(editTrade.entryPrice ? String(editTrade.entryPrice) : '');
       setStopLoss(editTrade.stopLoss ? String(editTrade.stopLoss) : '');
       setTakeProfit(editTrade.takeProfit ? String(editTrade.takeProfit) : '');
+      const existingExit = editTrade.allocations?.find((a) => a.exitPrice)?.exitPrice;
+      setExitPrice(existingExit ? String(existingExit) : '');
+      setRealizedNetInput(
+        editTrade.status === 'CLOSED' && Number.isFinite(editTrade.netPnl)
+          ? String(editTrade.netPnl)
+          : ''
+      );
       setRiskPct(editTrade.plannedRiskPct ? String(editTrade.plannedRiskPct) : '1.0');
       setStrategyId(editTrade.strategyId || '');
       setSetupType(editTrade.setupType || '');
@@ -72,6 +81,8 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       setEntryPrice('');
       setStopLoss('');
       setTakeProfit('');
+      setExitPrice('');
+      setRealizedNetInput('');
       setRiskPct('1.0');
       setStrategyId('');
       setSetupType('');
@@ -118,10 +129,24 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!calcPreview || calcError || selectedAccountIds.length === 0) return;
+    if (!calcPreview || calcError) return;
 
-    const allocations = selectedAccountIds.map((accId) => {
+    const targetAccountIds =
+      selectedAccountIds.length > 0
+        ? selectedAccountIds
+        : accounts.length > 0
+        ? [accounts[0].id]
+        : ['unassigned'];
+
+    const numExit = parseFloat(exitPrice) || 0;
+    const explicitNetOverride =
+      realizedNetInput.trim() !== '' && Number.isFinite(Number(realizedNetInput))
+        ? Number(realizedNetInput)
+        : null;
+
+    const allocations = targetAccountIds.map((accId) => {
       const acc = accounts.find((a) => a.id === accId);
+      const existingAlloc = editTrade?.allocations?.find((a) => a.accountId === accId);
       const accSize = acc ? acc.currentEquity : 100000;
       const sizeCalc = calculatePositionSize({
         accountEquity: accSize,
@@ -132,43 +157,82 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         instrument: activeInstrument,
       });
 
+      const commission =
+        activeInstrument.category === 'forex' ? 7 * sizeCalc.positionSize : 15;
+      let allocGross = existingAlloc?.realizedPnl || 0;
+      let allocNet = existingAlloc?.netPnl || 0;
+
+      if (status === 'CLOSED') {
+        if (explicitNetOverride !== null) {
+          const splitNet = explicitNetOverride / targetAccountIds.length;
+          allocNet = Math.round(splitNet * 100) / 100;
+          allocGross = Math.round((splitNet + commission) * 100) / 100;
+        } else if (numExit > 0) {
+          const pnlRes = calculateExecutionPnl(
+            direction,
+            numEntry,
+            numExit,
+            sizeCalc.positionSize,
+            activeInstrument,
+            commission,
+            0
+          );
+          allocGross = Math.round(pnlRes.grossPnl * 100) / 100;
+          allocNet = Math.round(pnlRes.netPnl * 100) / 100;
+        }
+      } else {
+        allocGross = 0;
+        allocNet = 0;
+      }
+
+      const allocId = existingAlloc?.id || `alloc-${Date.now()}-${accId}`;
+      const existingExecs = existingAlloc?.executions || [
+        {
+          id: `exec-${Date.now()}-${accId}`,
+          tradeId: editTrade?.id || '',
+          allocationId: allocId,
+          accountId: accId,
+          executionType: 'ENTRY' as const,
+          price: numEntry,
+          size: sizeCalc.positionSize,
+          commission,
+          swap: 0,
+          realizedPnl: 0,
+          executionTime: editTrade?.entryTime || new Date().toISOString(),
+          notes: 'Position Entry',
+        },
+      ];
+
       return {
-        id: `alloc-${Date.now()}-${accId}`,
-        tradeId: '',
+        id: allocId,
+        tradeId: editTrade?.id || '',
         accountId: accId,
-        accountName: acc?.name,
+        accountName: acc?.name || existingAlloc?.accountName || 'Primary Desk',
         allocatedPositionSize: sizeCalc.positionSize,
         allocatedRiskUsd: sizeCalc.potentialLoss,
         allocatedRiskPct: numRisk,
         entryPrice: numEntry,
         stopLoss: numSl,
         takeProfit: numTp > 0 ? numTp : undefined,
-        realizedPnl: 0,
-        netPnl: 0,
-        commission: activeInstrument.category === 'forex' ? 7 * sizeCalc.positionSize : 15,
-        swap: 0,
-        fees: 0,
+        exitPrice: numExit > 0 ? numExit : existingAlloc?.exitPrice,
+        realizedPnl: allocGross,
+        netPnl: allocNet,
+        commission,
+        swap: existingAlloc?.swap || 0,
+        fees: existingAlloc?.fees || 0,
         status,
-        executions: [
-          {
-            id: `exec-${Date.now()}-${accId}`,
-            tradeId: '',
-            allocationId: `alloc-${Date.now()}-${accId}`,
-            accountId: accId,
-            executionType: 'ENTRY' as const,
-            price: numEntry,
-            size: sizeCalc.positionSize,
-            commission: activeInstrument.category === 'forex' ? 7 * sizeCalc.positionSize : 15,
-            swap: 0,
-            realizedPnl: 0,
-            executionTime: new Date().toISOString(),
-            notes: 'Position Entry',
-          },
-        ],
+        executions: existingExecs,
       };
     });
 
     const totalRiskUsd = allocations.reduce((sum, a) => sum + a.allocatedRiskUsd, 0);
+    const totalGrossPnl = allocations.reduce((sum, a) => sum + a.realizedPnl, 0);
+    const totalNetPnl =
+      status === 'CLOSED' && explicitNetOverride !== null
+        ? explicitNetOverride
+        : allocations.reduce((sum, a) => sum + a.netPnl, 0);
+    const totalRealizedR =
+      totalRiskUsd > 0 ? Math.round((totalNetPnl / totalRiskUsd) * 100) / 100 : 0;
 
     if (editTrade) {
       updateTrade({
@@ -187,6 +251,10 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         plannedRiskUsd: totalRiskUsd > 0 ? totalRiskUsd : editTrade.plannedRiskUsd,
         plannedRiskPct: numRisk,
         plannedRr: calcPreview?.plannedRr || editTrade.plannedRr,
+        realizedPnl: totalGrossPnl,
+        netPnl: totalNetPnl,
+        realizedR: totalRealizedR,
+        allocations,
         tradeThesis,
         isRuleCompliant: allChecklistPassed,
         updatedAt: new Date().toISOString(),
@@ -206,6 +274,9 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         plannedRiskUsd: totalRiskUsd,
         plannedRiskPct: numRisk,
         plannedRr: calcPreview?.plannedRr || 2.0,
+        realizedPnl: totalGrossPnl,
+        netPnl: totalNetPnl,
+        realizedR: totalRealizedR,
         tradeThesis,
         isRuleCompliant: allChecklistPassed,
         allocations,
@@ -365,6 +436,37 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
               />
             </div>
           </div>
+
+          {status === 'CLOSED' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-edge-surface-secondary/40 p-3 rounded border border-edge-border/60">
+              <div>
+                <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
+                  Exit Price (for closed trade)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={exitPrice}
+                  onChange={(e) => setExitPrice(e.target.value)}
+                  placeholder="Optional if entering Net P&L"
+                  className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
+                />
+              </div>
+              <div>
+                <label className="block font-mono text-[10px] text-edge-profit uppercase mb-1">
+                  Realized Net P&amp;L ($)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={realizedNetInput}
+                  onChange={(e) => setRealizedNetInput(e.target.value)}
+                  placeholder="Auto from exit price, or enter exact $"
+                  className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Account Allocation Selector */}
           <div>

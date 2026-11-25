@@ -15,7 +15,8 @@ import {
   Info,
 } from 'lucide-react';
 import { evaluateAccountRule } from '../../lib/calculations/financialEngine';
-import { AccountRule, RuleStatus } from '../../lib/types/financial';
+import { AccountRule } from '../../lib/types/financial';
+import { filterTradesByPeriod } from '../../lib/data/periodFilter';
 import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
 
 export default function RiskTerminalPage() {
@@ -43,8 +44,16 @@ export default function RiskTerminalPage() {
     if (accId && accounts.some((a) => a.id === accId)) {
       setLocalAccountId(accId);
       setSelectedAccountId(accId);
+      return;
     }
-  }, [accounts, setSelectedAccountId]);
+    if (selectedAccountId && selectedAccountId !== 'ALL' && accounts.some((a) => a.id === selectedAccountId)) {
+      setLocalAccountId(selectedAccountId);
+      return;
+    }
+    if (!accounts.some((a) => a.id === localAccountId) && accounts[0]?.id) {
+      setLocalAccountId(accounts[0].id);
+    }
+  }, [accounts, selectedAccountId, localAccountId, setSelectedAccountId]);
 
   const [period, setPeriod] = useState<'session' | 'week' | 'month'>('week');
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
@@ -122,6 +131,9 @@ export default function RiskTerminalPage() {
     (r) => r.rule.ruleType === 'trailing_drawdown' || r.rule.ruleType === 'max_overall_loss'
   );
   const tradeRiskRule = evaluatedRules.find((r) => r.rule.ruleType === 'max_risk_per_trade_pct');
+  const openRiskRule = evaluatedRules.find((r) => r.rule.ruleType === 'max_open_risk_pct');
+  const losingStreakRule = evaluatedRules.find((r) => r.rule.ruleType === 'max_consecutive_losses');
+  const minDaysRule = evaluatedRules.find((r) => r.rule.ruleType === 'min_trading_days');
 
   const dailyLimitPct = useMemo(() => {
     if (!dailyLossRule) return 5.0;
@@ -144,85 +156,227 @@ export default function RiskTerminalPage() {
     return val > 100 ? Number(((val / startingBal) * 100).toFixed(1)) : val;
   }, [tradeRiskRule, startingBal]);
 
-  // Open risk calculations
+  const openRiskLimitPct = useMemo(() => {
+    if (!openRiskRule) return Number((maxRiskPerTradePct * 2).toFixed(1));
+    const val = openRiskRule.rule.thresholdValue;
+    if (openRiskRule.rule.thresholdUnit === 'percent') return val;
+    return val > 100 ? Number(((val / startingBal) * 100).toFixed(1)) : val;
+  }, [openRiskRule, maxRiskPerTradePct, startingBal]);
+
+  const losingStreakLimit = Math.max(1, Math.round(losingStreakRule?.rule.thresholdValue || 3));
+  const minTradingDaysTarget = Math.max(1, Math.round(minDaysRule?.rule.thresholdValue || 4));
+
+  // Scope trades strictly to activeAccount
+  const accountTrades = useMemo(() => {
+    if (!activeAccount) return [];
+    return trades.filter((t) => {
+      if (t.allocations && t.allocations.length > 0) {
+        return t.allocations.some((a) => a.accountId === activeAccount.id);
+      }
+      return accounts.length === 1;
+    });
+  }, [trades, activeAccount, accounts.length]);
+
+  const getAccountTradePnl = (t: (typeof trades)[number]) => {
+    if (!activeAccount) return t.netPnl;
+    const alloc = t.allocations?.find((a) => a.accountId === activeAccount.id);
+    return alloc ? alloc.netPnl : t.netPnl;
+  };
+
+  const getAccountTradeRiskUsd = (t: (typeof trades)[number]) => {
+    if (!activeAccount) return t.plannedRiskUsd || 0;
+    const alloc = t.allocations?.find((a) => a.accountId === activeAccount.id);
+    if (alloc?.allocatedRiskUsd !== undefined) return alloc.allocatedRiskUsd;
+    if (t.plannedRiskUsd && t.plannedRiskUsd > 0) return t.plannedRiskUsd;
+    const inst = instruments.find((i) => i.symbol === t.instrumentSymbol);
+    const size = alloc ? alloc.allocatedPositionSize : t.allocations?.[0]?.allocatedPositionSize || 1;
+    const dist = Math.abs(t.entryPrice - t.stopLoss);
+    return dist * size * (inst?.pointValue || inst?.contractSize || 1);
+  };
+
+  // Open risk calculations (live, 0.0% when no open trades)
   const openTrades = useMemo(() => {
-    return trades.filter((t) => t.status === 'OPEN');
-  }, [trades]);
+    return accountTrades.filter((t) => t.status === 'OPEN');
+  }, [accountTrades]);
 
   const openRiskPct = useMemo(() => {
-    if (!activeAccount || openTrades.length === 0) return 1.0; // fallback matching reference
-    const totalOpenRiskDollars = openTrades.reduce((sum, t) => {
-      const entry = t.entryPrice;
-      const stop = t.stopLoss;
-      const dist = Math.abs(entry - stop);
-      const alloc = t.allocations?.find((a) => a.accountId === activeAccount.id);
-      const size = alloc ? alloc.allocatedPositionSize : 1.0;
-      return sum + dist * size * 100;
-    }, 0);
-    const pct = (totalOpenRiskDollars / (activeAccount.currentEquity || 100000)) * 100;
-    return Math.max(1.0, Math.min(5.0, Number(pct.toFixed(1))));
-  }, [activeAccount, openTrades]);
+    if (!activeAccount || openTrades.length === 0) return 0;
+    const totalOpenRiskDollars = openTrades.reduce((sum, t) => sum + getAccountTradeRiskUsd(t), 0);
+    const equity = activeAccount.currentEquity || startingBal;
+    return equity > 0 ? Number(((totalOpenRiskDollars / equity) * 100).toFixed(1)) : 0;
+  }, [activeAccount, openTrades, startingBal]);
 
-  // Closed trades in period for R distribution
+  // Chronological closed trades for this account
+  const allClosedTrades = useMemo(() => {
+    return accountTrades
+      .filter((t) => t.status === 'CLOSED')
+      .sort(
+        (a, b) =>
+          new Date(a.exitTime || a.entryTime || a.createdAt).getTime() -
+          new Date(b.exitTime || b.entryTime || b.createdAt).getTime()
+      );
+  }, [accountTrades]);
+
+  const periodFilterKey = period === 'session' ? 'Today' : period === 'week' ? 'Week' : 'Month';
+
   const closedTrades = useMemo(() => {
-    const list = trades.filter((t) => t.status === 'CLOSED');
-    return list.slice(0, 4); // show last 4 executions matching reference
-  }, [trades]);
+    return filterTradesByPeriod(allClosedTrades, periodFilterKey);
+  }, [allClosedTrades, periodFilterKey]);
 
-  // Execution Bar Data for Tile 4
+  const recentClosedForBars = useMemo(() => {
+    return closedTrades.slice(-4);
+  }, [closedTrades]);
+
+  // Execution Bar Data for Tile 4 (strictly from live trades, no static defaults)
   const barChartData = useMemo(() => {
-    const defaultBars = [
-      { symbol: 'XAUUSD', r: 2.88, pnl: 2880, date: '18 Mar', x: 62, y: 36, w: 56, h: 92, labelY: 28, isLoss: false },
-      { symbol: 'US30', r: 2.47, pnl: 1235, date: '18 Mar', x: 172, y: 49, w: 56, h: 79, labelY: 41, isLoss: false },
-      { symbol: 'EURUSD', r: -1.0, pnl: -314, date: '19 Mar', x: 282, y: 128, w: 56, h: 32, labelY: 176, isLoss: true },
-      { symbol: 'BTCUSD', r: 2.97, pnl: 3270, date: '19 Mar', x: 392, y: 33, w: 56, h: 95, labelY: 25, isLoss: false },
-    ];
+    if (recentClosedForBars.length === 0) return [];
+    const maxAbsR = Math.max(
+      1.5,
+      ...recentClosedForBars.map((t) => Math.abs(t.realizedR || 0))
+    );
+    const baselineY = 128;
+    const maxUpH = 96;
+    const maxDownH = 44;
+    const slots = [62, 172, 282, 392];
+    const width = 56;
+    const startIdx = recentClosedForBars.length < 4 ? 0 : 0;
+    const spacing = recentClosedForBars.length <= 1 ? 0 : 330 / Math.max(1, recentClosedForBars.length - 1);
 
-    if (closedTrades.length === 0) return defaultBars;
-
-    return defaultBars.map((item, idx) => {
-      const t = closedTrades[idx];
-      if (!t) return item;
+    return recentClosedForBars.map((t, idx) => {
+      const r = Number((t.realizedR || 0).toFixed(2));
+      const pnl = getAccountTradePnl(t);
+      const isLoss = r < 0 || (r === 0 && pnl < 0);
+      const scaleH = isLoss
+        ? Math.max(8, Math.round((Math.abs(r) / maxAbsR) * maxDownH))
+        : Math.max(8, Math.round((Math.abs(r) / maxAbsR) * maxUpH));
+      const x =
+        recentClosedForBars.length === 4
+          ? slots[idx]
+          : recentClosedForBars.length === 1
+            ? 227
+            : Math.round(70 + (idx + startIdx) * spacing);
+      const y = isLoss ? baselineY : baselineY - scaleH;
+      const labelY = isLoss ? baselineY + scaleH + 16 : Math.max(18, y - 8);
       return {
-        ...item,
+        id: t.id,
         symbol: t.instrumentSymbol,
-        r: t.realizedR || item.r,
-        pnl: t.netPnl,
-        date: t.exitTime ? new Date(t.exitTime).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }) : item.date,
-        isLoss: (t.realizedR || item.r) < 0,
-      };
-    });
-  }, [closedTrades]);
-
-  // Gross R by asset class for Tile 5
-  const assetBreakdown = useMemo(() => {
-    const defaultData = [
-      { category: 'Gold', symbol: 'XAUUSD', r: 2.88, color: 'var(--tw-sun)', isLoss: false },
-      { category: 'FX', symbol: 'EURUSD', r: -1.0, color: 'var(--tw-s1)', isLoss: true },
-      { category: 'Indices', symbol: 'US30', r: 2.47, color: 'var(--tw-s3)', isLoss: false },
-      { category: 'Crypto', symbol: 'BTCUSD', r: 2.97, color: 'var(--tw-gain)', isLoss: false },
-    ];
-
-    if (closedTrades.length === 0) return defaultData;
-
-    return defaultData.map((item, idx) => {
-      const t = closedTrades[idx];
-      if (!t) return item;
-      const symbol = t.instrumentSymbol;
-      const r = t.realizedR || item.r;
-      return {
-        ...item,
-        symbol,
         r,
-        isLoss: r < 0,
+        pnl,
+        date: new Date(t.exitTime || t.entryTime || t.createdAt).toLocaleDateString('en-US', {
+          day: 'numeric',
+          month: 'short',
+        }),
+        x,
+        y,
+        w: width,
+        h: scaleH,
+        labelY,
+        isLoss,
       };
     });
-  }, [closedTrades]);
+  }, [recentClosedForBars]);
+
+  // Gross R by asset class for Tile 5 (strictly from live period closed trades)
+  const assetBreakdown = useMemo(() => {
+    if (closedTrades.length === 0) return [];
+    const palette = ['var(--tw-sun)', 'var(--tw-gain)', 'var(--tw-s3)', 'var(--tw-s1)'];
+    const bySymbol = new Map<string, { category: string; symbol: string; r: number }>();
+
+    for (const t of closedTrades) {
+      const inst = instruments.find((i) => i.symbol === t.instrumentSymbol);
+      const cat = inst?.category ? inst.category.toUpperCase() : t.instrumentSymbol;
+      const prev = bySymbol.get(t.instrumentSymbol) || {
+        category: cat,
+        symbol: t.instrumentSymbol,
+        r: 0,
+      };
+      prev.r += t.realizedR || 0;
+      bySymbol.set(t.instrumentSymbol, prev);
+    }
+
+    return Array.from(bySymbol.values())
+      .slice(0, 4)
+      .map((item, idx) => ({
+        category: item.symbol,
+        symbol: item.category,
+        r: Number(item.r.toFixed(2)),
+        color: item.r < 0 ? 'var(--tw-s1)' : palette[idx % palette.length],
+        isLoss: item.r < 0,
+      }));
+  }, [closedTrades, instruments]);
 
   const totalGrossR = useMemo(() => {
     const sum = assetBreakdown.reduce((acc, item) => acc + Math.abs(item.r), 0);
-    return sum > 0 ? Number(sum.toFixed(2)) : 9.32;
+    return Number(sum.toFixed(2));
   }, [assetBreakdown]);
+
+  // Live daily loss %, drawdown %, worst day, worst trade R, losing streak, trading days
+  const todayLossUsedPct = useMemo(() => {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const todayNet = allClosedTrades
+      .filter((t) => (t.exitTime || t.entryTime || t.createdAt).slice(0, 10) === todayKey)
+      .reduce((sum, t) => sum + getAccountTradePnl(t), 0);
+    if (todayNet >= 0 || startingBal <= 0) return 0;
+    return Number(((Math.abs(todayNet) / startingBal) * 100).toFixed(1));
+  }, [allClosedTrades, startingBal]);
+
+  const drawdownUsedPct = useMemo(() => {
+    if (!activeAccount || activeAccount.highWaterMark <= 0) return 0;
+    const ddDollars = Math.max(0, activeAccount.highWaterMark - activeAccount.currentEquity);
+    return Number(((ddDollars / activeAccount.highWaterMark) * 100).toFixed(1));
+  }, [activeAccount]);
+
+  const maxObservedTradeRiskPct = useMemo(() => {
+    const scopeList = closedTrades.length > 0 ? closedTrades : openTrades;
+    if (scopeList.length === 0 || startingBal <= 0) return 0;
+    const peak = Math.max(...scopeList.map((t) => (getAccountTradeRiskUsd(t) / startingBal) * 100));
+    return Number(peak.toFixed(1));
+  }, [closedTrades, openTrades, startingBal]);
+
+  const worstTradeR = useMemo(() => {
+    if (allClosedTrades.length === 0) return null;
+    const minR = Math.min(...allClosedTrades.map((t) => t.realizedR || 0));
+    return Number(minR.toFixed(2));
+  }, [allClosedTrades]);
+
+  const worstDaySummary = useMemo(() => {
+    if (allClosedTrades.length === 0) return null;
+    const byDay = new Map<string, number>();
+    for (const t of allClosedTrades) {
+      const dayKey = (t.exitTime || t.entryTime || t.createdAt).slice(0, 10);
+      byDay.set(dayKey, (byDay.get(dayKey) || 0) + getAccountTradePnl(t));
+    }
+    let minDay = '';
+    let minVal = Infinity;
+    for (const [k, v] of byDay.entries()) {
+      if (v < minVal) {
+        minVal = v;
+        minDay = k;
+      }
+    }
+    const label = minDay
+      ? new Date(`${minDay}T00:00:00`).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+      : '';
+    return { pnl: minVal, label, daysCount: byDay.size };
+  }, [allClosedTrades]);
+
+  const losingStreakCurrent = useMemo(() => {
+    let streak = 0;
+    for (let i = allClosedTrades.length - 1; i >= 0; i--) {
+      if (getAccountTradePnl(allClosedTrades[i]) < 0) streak++;
+      else break;
+    }
+    return streak;
+  }, [allClosedTrades]);
+
+  const tradingDaysCount = worstDaySummary?.daysCount ?? 0;
+
+  const latestStatusDateLabel = useMemo(() => {
+    const latest = allClosedTrades[allClosedTrades.length - 1] || openTrades[0];
+    if (!latest) return 'Live status';
+    const d = new Date(latest.exitTime || latest.entryTime || latest.createdAt);
+    return `${d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })} close`;
+  }, [allClosedTrades, openTrades]);
 
   // Donut SVG circumference calculation (r = 72, C = 2 * PI * 72 = 452.39)
   const donutSegments = useMemo(() => {
@@ -259,16 +413,77 @@ export default function RiskTerminalPage() {
 
   // Stress test / what-if metrics
   const nextFullLossDollars = (startingBal * maxRiskPerTradePct) / 100;
-  const lossesToDailyLimit = Math.max(1, Math.min(20, Math.round(dailyLimitPct / maxRiskPerTradePct)));
-  const lossesToTotalFloor = Math.max(1, Math.min(20, Math.round(drawdownLimitPct / maxRiskPerTradePct)));
+  const lossesToDailyLimit = Math.max(1, Math.min(20, Math.round(dailyLimitPct / Math.max(0.1, maxRiskPerTradePct))));
+  const lossesToTotalFloor = Math.max(1, Math.min(20, Math.round(drawdownLimitPct / Math.max(0.1, maxRiskPerTradePct))));
 
-  // Dynamic values adjusted for interactive simulated loss count
+  // Dynamic values adjusted for live today losses + interactive simulated loss count
+  const totalDailyLossUsedPct = Number((todayLossUsedPct + simulatedLosses * maxRiskPerTradePct).toFixed(1));
   const effectiveSimulatedLosses = Math.min(lossesToDailyLimit, simulatedLosses);
-  const remainingLossesToDaily = Math.max(0, lossesToDailyLimit - effectiveSimulatedLosses);
-  const remainingDailyLimitPct = Math.max(0, dailyLimitPct - effectiveSimulatedLosses * maxRiskPerTradePct);
+  const remainingDailyLimitPct = Number(Math.max(0, dailyLimitPct - totalDailyLossUsedPct).toFixed(1));
+  const remainingLossesToDaily = Math.max(0, Math.floor(remainingDailyLimitPct / Math.max(0.1, maxRiskPerTradePct)));
+
+  // Overall status & alerts summary
+  const isDailyBreached = todayLossUsedPct >= dailyLimitPct;
+  const isDrawdownBreached = drawdownUsedPct >= drawdownLimitPct;
+  const isRiskAtCap = maxObservedTradeRiskPct >= maxRiskPerTradePct && maxObservedTradeRiskPct > 0;
+  const isOpenRiskHigh = openRiskPct >= openRiskLimitPct;
+  const isStreakAtWarn = losingStreakCurrent >= losingStreakLimit;
+  const hasBreach = isDailyBreached || isDrawdownBreached;
+  const riskAlertsCount =
+    (hasBreach ? 1 : 0) +
+    (isRiskAtCap ? 1 : 0) +
+    (isOpenRiskHigh ? 1 : 0) +
+    (isStreakAtWarn ? 1 : 0);
+
+  const ruleRows = [
+    {
+      label: 'Daily loss limit',
+      valueText: `${todayLossUsedPct.toFixed(1)}% of ${dailyLimitPct.toFixed(1)}%`,
+      status: todayLossUsedPct >= dailyLimitPct ? 'breached' : todayLossUsedPct >= dailyLimitPct * 0.8 ? 'watch' : 'ok',
+      statusLabel: todayLossUsedPct >= dailyLimitPct ? 'Breached' : todayLossUsedPct >= dailyLimitPct * 0.8 ? 'Watch' : 'On track',
+      rule: dailyLossRule?.rule,
+    },
+    {
+      label: 'Max drawdown from peak',
+      valueText: `${drawdownUsedPct.toFixed(1)}% of ${drawdownLimitPct.toFixed(1)}%`,
+      status: drawdownUsedPct >= drawdownLimitPct ? 'breached' : drawdownUsedPct >= drawdownLimitPct * 0.8 ? 'watch' : 'ok',
+      statusLabel: drawdownUsedPct >= drawdownLimitPct ? 'Breached' : drawdownUsedPct >= drawdownLimitPct * 0.8 ? 'Watch' : 'On track',
+      rule: drawdownRule?.rule,
+    },
+    {
+      label: 'Risk per trade',
+      valueText: `${maxObservedTradeRiskPct.toFixed(1)}% of ${maxRiskPerTradePct.toFixed(1)}%`,
+      status: maxObservedTradeRiskPct > maxRiskPerTradePct ? 'breached' : isRiskAtCap ? 'watch' : 'ok',
+      statusLabel: maxObservedTradeRiskPct > maxRiskPerTradePct ? 'Over cap' : isRiskAtCap ? 'At cap' : 'On track',
+      rule: tradeRiskRule?.rule,
+    },
+    {
+      label: 'Open risk',
+      valueText: `${openRiskPct.toFixed(1)}% of ${openRiskLimitPct.toFixed(1)}%`,
+      status: openRiskPct > openRiskLimitPct ? 'breached' : openRiskPct >= openRiskLimitPct * 0.8 ? 'watch' : 'ok',
+      statusLabel: openRiskPct > openRiskLimitPct ? 'Over cap' : openRiskPct >= openRiskLimitPct * 0.8 ? 'Watch' : 'On track',
+      rule: openRiskRule?.rule,
+    },
+    {
+      label: 'Losing streak',
+      valueText: `${losingStreakCurrent} of ${losingStreakLimit} allowed`,
+      status: losingStreakCurrent >= losingStreakLimit ? 'breached' : losingStreakCurrent >= Math.max(1, losingStreakLimit - 1) ? 'watch' : 'ok',
+      statusLabel: losingStreakCurrent >= losingStreakLimit ? 'At limit' : 'On track',
+      rule: losingStreakRule?.rule,
+    },
+    {
+      label: 'Minimum trading days',
+      valueText: `${tradingDaysCount} of ${minTradingDaysTarget}`,
+      status: tradingDaysCount >= minTradingDaysTarget ? 'ok' : 'watch',
+      statusLabel: tradingDaysCount >= minTradingDaysTarget ? 'Met' : 'Behind',
+      rule: minDaysRule?.rule,
+    },
+  ];
+  const onTrackCount = ruleRows.filter((r) => r.status === 'ok').length;
+  const watchCount = ruleRows.length - onTrackCount;
 
   // SVG Gauge Dasharray (total circumference = 2 * PI * 86 ~= 540)
-  const ringDash = Number(((Math.max(0.01, remainingDailyLimitPct) / dailyLimitPct) * 540).toFixed(1));
+  const ringDash = Number(((Math.max(0.01, remainingDailyLimitPct) / Math.max(0.1, dailyLimitPct)) * 540).toFixed(1));
 
   // Currency formatter
   const formatCur = (val: number) => {
@@ -381,10 +596,10 @@ export default function RiskTerminalPage() {
         {/* ================================================================ */}
         <section className="tile tw-risk-hero select-none" aria-label="Risk status">
           <div className="head flex items-center justify-between w-full select-none">
-            <span className="eyebrow">Risk status · 19 Mar 2026 close</span>
+            <span className="eyebrow">Risk status · {latestStatusDateLabel}</span>
             <span className="pill select-none">
               <span className="d" />
-              Within limits
+              {hasBreach ? 'Limit breached' : riskAlertsCount > 0 ? 'Attention' : 'Within limits'}
             </span>
           </div>
 
@@ -425,7 +640,11 @@ export default function RiskTerminalPage() {
           </div>
 
           <p className="rsub">
-            Worst day was +$2,956.00 on 19 Mar. No day has closed negative.
+            {!worstDaySummary
+              ? 'No closed trades recorded for this account yet.'
+              : worstDaySummary.pnl >= 0
+                ? `Lowest closed day was +${formatCur(worstDaySummary.pnl)} on ${worstDaySummary.label}. No day has closed negative.`
+                : `Worst closed day was −${formatCur(worstDaySummary.pnl)} on ${worstDaySummary.label}.`}
           </p>
 
           <div className="rstats">
@@ -439,7 +658,11 @@ export default function RiskTerminalPage() {
             </div>
             <div>
               <span>Worst trade</span>
-              <b>−1.00R</b>
+              <b>
+                {worstTradeR === null
+                  ? '—'
+                  : `${worstTradeR >= 0 ? '+' : '−'}${Math.abs(worstTradeR).toFixed(2)}R`}
+              </b>
             </div>
           </div>
         </section>
@@ -457,20 +680,20 @@ export default function RiskTerminalPage() {
             <div className="mtop">
               <span className="mn">Daily loss</span>
               <span className="mv">
-                {(effectiveSimulatedLosses * maxRiskPerTradePct).toFixed(1)}% of {dailyLimitPct.toFixed(1)}%
+                {totalDailyLossUsedPct.toFixed(1)}% of {dailyLimitPct.toFixed(1)}%
               </span>
             </div>
             <div
-              className="meter mGain"
+              className={`meter ${totalDailyLossUsedPct >= dailyLimitPct ? 'mCap' : 'mGain'}`}
               role="meter"
               aria-label="Daily loss used"
               aria-valuemin={0}
               aria-valuemax={dailyLimitPct}
-              aria-valuenow={effectiveSimulatedLosses * maxRiskPerTradePct}
+              aria-valuenow={totalDailyLossUsedPct}
             >
               <i
                 style={{
-                  width: `${Math.min(100, ((effectiveSimulatedLosses * maxRiskPerTradePct) / dailyLimitPct) * 100)}%`,
+                  width: `${Math.min(100, (totalDailyLossUsedPct / Math.max(0.1, dailyLimitPct)) * 100)}%`,
                 }}
               />
             </div>
@@ -479,17 +702,23 @@ export default function RiskTerminalPage() {
           <div className="mrow">
             <div className="mtop">
               <span className="mn">Drawdown from peak</span>
-              <span className="mv">0.0% of {drawdownLimitPct.toFixed(1)}%</span>
+              <span className="mv">
+                {drawdownUsedPct.toFixed(1)}% of {drawdownLimitPct.toFixed(1)}%
+              </span>
             </div>
             <div
-              className="meter mGain"
+              className={`meter ${drawdownUsedPct >= drawdownLimitPct ? 'mCap' : 'mGain'}`}
               role="meter"
               aria-label="Drawdown used"
               aria-valuemin={0}
               aria-valuemax={drawdownLimitPct}
-              aria-valuenow={0}
+              aria-valuenow={drawdownUsedPct}
             >
-              <i style={{ width: '0%' }} />
+              <i
+                style={{
+                  width: `${Math.min(100, (drawdownUsedPct / Math.max(0.1, drawdownLimitPct)) * 100)}%`,
+                }}
+              />
             </div>
           </div>
 
@@ -497,18 +726,22 @@ export default function RiskTerminalPage() {
             <div className="mtop">
               <span className="mn">Risk per trade</span>
               <span className="mv">
-                {maxRiskPerTradePct.toFixed(1)}% of {maxRiskPerTradePct.toFixed(1)}%
+                {maxObservedTradeRiskPct.toFixed(1)}% of {maxRiskPerTradePct.toFixed(1)}%
               </span>
             </div>
             <div
-              className="meter mCap"
+              className={`meter ${maxObservedTradeRiskPct >= maxRiskPerTradePct ? 'mCap' : 'mGain'}`}
               role="meter"
               aria-label="Risk per trade used"
               aria-valuemin={0}
               aria-valuemax={maxRiskPerTradePct}
-              aria-valuenow={maxRiskPerTradePct}
+              aria-valuenow={maxObservedTradeRiskPct}
             >
-              <i style={{ width: '100%' }} />
+              <i
+                style={{
+                  width: `${Math.min(100, (maxObservedTradeRiskPct / Math.max(0.1, maxRiskPerTradePct)) * 100)}%`,
+                }}
+              />
             </div>
           </div>
 
@@ -516,7 +749,7 @@ export default function RiskTerminalPage() {
             <div className="mtop">
               <span className="mn">Open risk</span>
               <span className="mv">
-                {openRiskPct.toFixed(1)}% of {(openRiskPct * 2).toFixed(1)}%
+                {openRiskPct.toFixed(1)}% of {openRiskLimitPct.toFixed(1)}%
               </span>
             </div>
             <div
@@ -524,10 +757,14 @@ export default function RiskTerminalPage() {
               role="meter"
               aria-label="Open risk used"
               aria-valuemin={0}
-              aria-valuemax={openRiskPct * 2}
+              aria-valuemax={openRiskLimitPct}
               aria-valuenow={openRiskPct}
             >
-              <i style={{ width: '50%' }} />
+              <i
+                style={{
+                  width: `${Math.min(100, (openRiskPct / Math.max(0.1, openRiskLimitPct)) * 100)}%`,
+                }}
+              />
             </div>
           </div>
         </section>
@@ -542,25 +779,59 @@ export default function RiskTerminalPage() {
               className="pill select-none"
               style={{ background: 'var(--tw-sun-ink)', color: 'var(--tw-sun)' }}
             >
-              1 active
+              {riskAlertsCount} active
             </span>
           </div>
 
-          <div className="big">Cap reached</div>
+          <div className="big">
+            {hasBreach
+              ? 'Limit reached'
+              : isRiskAtCap
+                ? 'Cap reached'
+                : openTrades.length > 0
+                  ? `${openTrades.length} live ${openTrades.length === 1 ? 'position' : 'positions'}`
+                  : 'All clear'}
+          </div>
 
           <div className="al">
-            <span className="ai">!</span>
+            <span className="ai">{hasBreach || isRiskAtCap ? '!' : '✓'}</span>
             <div>
-              <b>Risk per trade sits at its {maxRiskPerTradePct.toFixed(1)}% cap</b>
-              <p>A larger size on the next trade breaks your rule.</p>
+              {hasBreach ? (
+                <>
+                  <b>Account risk threshold exceeded</b>
+                  <p>Pause new entries and review breached rule checks below.</p>
+                </>
+              ) : isRiskAtCap ? (
+                <>
+                  <b>Risk per trade reached its {maxRiskPerTradePct.toFixed(1)}% cap</b>
+                  <p>Keep position sizing at or below {maxRiskPerTradePct.toFixed(1)}% on the next trade.</p>
+                </>
+              ) : (
+                <>
+                  <b>All risk rules within bounds</b>
+                  <p>
+                    Daily drawdown headroom sits at {remainingDailyLimitPct.toFixed(1)}% of {dailyLimitPct.toFixed(1)}%.
+                  </p>
+                </>
+              )}
             </div>
           </div>
 
           <div className="al">
             <span className="ai">i</span>
             <div>
-              <b>One trade is still open</b>
-              <p>It carries {openRiskPct.toFixed(1)}% risk. Review it before the next session.</p>
+              <b>
+                {openTrades.length === 0
+                  ? 'No trades currently open'
+                  : openTrades.length === 1
+                    ? '1 trade is still open'
+                    : `${openTrades.length} trades are currently open`}
+              </b>
+              <p>
+                {openTrades.length === 0
+                  ? '0.0% open risk exposed across live positions.'
+                  : `Carries ${openRiskPct.toFixed(1)}% open risk against your ${openRiskLimitPct.toFixed(1)}% ceiling.`}
+              </p>
             </div>
           </div>
         </section>
@@ -572,100 +843,106 @@ export default function RiskTerminalPage() {
           <div className="head flex items-center justify-between w-full select-none">
             <span className="eyebrow">R per closed trade</span>
             <span className="sub">
-              {hoveredBarIndex !== null
-                ? `${barChartData[hoveredBarIndex]?.symbol} · ${barChartData[hoveredBarIndex]?.date}: ${barChartData[hoveredBarIndex]?.r >= 0 ? '+' : '−'}${Math.abs(barChartData[hoveredBarIndex]?.r).toFixed(2)}R`
+              {hoveredBarIndex !== null && barChartData[hoveredBarIndex]
+                ? `${barChartData[hoveredBarIndex].symbol} · ${barChartData[hoveredBarIndex].date}: ${barChartData[hoveredBarIndex].r >= 0 ? '+' : '−'}${Math.abs(barChartData[hoveredBarIndex].r).toFixed(2)}R`
                 : 'Dashed line: your −1.00R cap'}
             </span>
           </div>
 
-          <svg
-            viewBox="0 0 520 210"
-            preserveAspectRatio="xMidYMid meet"
-            role="img"
-            aria-label="Bars: XAUUSD +2.88R, US30 +2.47R, EURUSD −1.00R, BTCUSD +2.97R, with a dashed cap at −1.00R"
-          >
-            {/* 0R Baseline */}
-            <line
-              x1="20"
-              x2="500"
-              y1="128"
-              y2="128"
-              style={{ stroke: 'var(--tw-line-strong)', strokeWidth: 1 }}
-            />
-            {/* -1.00R Cap line */}
-            <line
-              x1="20"
-              x2="500"
-              y1="160"
-              y2="160"
-              style={{
-                stroke: 'var(--tw-warn)',
-                strokeWidth: 1.5,
-                strokeDasharray: '5 5',
-              }}
-            />
-            <text
-              x="500"
-              y="154"
-              textAnchor="end"
-              style={{
-                fill: 'var(--tw-warn)',
-                fontSize: 11,
-                fontWeight: 600,
-              }}
+          {barChartData.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-xs text-[var(--tw-ink-3)] py-12">
+              No closed trades recorded in this period for {activeAccount.name}.
+            </div>
+          ) : (
+            <svg
+              viewBox="0 0 520 210"
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              aria-label="R multiple distribution across recent closed trades"
             >
-              cap −1.00R
-            </text>
-
-            {/* Bars with interactive hover highlighting */}
-            {barChartData.map((bar, i) => (
-              <rect
-                key={bar.symbol}
-                className="rbar"
-                x={bar.x}
-                y={bar.y}
-                width={bar.w}
-                height={bar.h}
-                rx={7}
-                style={{
-                  fill: bar.isLoss ? 'var(--tw-loss)' : 'var(--tw-gain)',
-                  opacity: hoveredBarIndex === null || hoveredBarIndex === i ? 1 : 0.45,
-                }}
-                onMouseEnter={() => setHoveredBarIndex(i)}
-                onMouseLeave={() => setHoveredBarIndex(null)}
+              {/* 0R Baseline */}
+              <line
+                x1="20"
+                x2="500"
+                y1="128"
+                y2="128"
+                style={{ stroke: 'var(--tw-line-strong)', strokeWidth: 1 }}
               />
-            ))}
+              {/* -1.00R Cap line */}
+              <line
+                x1="20"
+                x2="500"
+                y1="160"
+                y2="160"
+                style={{
+                  stroke: 'var(--tw-warn)',
+                  strokeWidth: 1.5,
+                  strokeDasharray: '5 5',
+                }}
+              />
+              <text
+                x="500"
+                y="154"
+                textAnchor="end"
+                style={{
+                  fill: 'var(--tw-warn)',
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                cap −1.00R
+              </text>
 
-            {/* Value Labels */}
-            <g className="mono" style={{ fontSize: 12, fontWeight: 600 }}>
-              {barChartData.map((bar) => (
-                <text
-                  key={`val-${bar.symbol}`}
-                  x={bar.x + bar.w / 2}
-                  y={bar.labelY}
-                  textAnchor="middle"
-                  style={{ fill: bar.isLoss ? 'var(--tw-loss)' : 'var(--tw-gain)' }}
-                >
-                  {bar.r >= 0 ? '+' : '−'}
-                  {Math.abs(bar.r).toFixed(2)}R
-                </text>
+              {/* Bars with interactive hover highlighting */}
+              {barChartData.map((bar, i) => (
+                <rect
+                  key={bar.id}
+                  className="rbar"
+                  x={bar.x}
+                  y={bar.y}
+                  width={bar.w}
+                  height={bar.h}
+                  rx={7}
+                  style={{
+                    fill: bar.isLoss ? 'var(--tw-loss)' : 'var(--tw-gain)',
+                    opacity: hoveredBarIndex === null || hoveredBarIndex === i ? 1 : 0.45,
+                  }}
+                  onMouseEnter={() => setHoveredBarIndex(i)}
+                  onMouseLeave={() => setHoveredBarIndex(null)}
+                />
               ))}
-            </g>
 
-            {/* Asset Symbol Labels */}
-            <g style={{ fontSize: 12, fill: 'var(--tw-ink-2)' }}>
-              {barChartData.map((bar) => (
-                <text
-                  key={`lbl-${bar.symbol}`}
-                  x={bar.x + bar.w / 2}
-                  y={200}
-                  textAnchor="middle"
-                >
-                  {bar.symbol}
-                </text>
-              ))}
-            </g>
-          </svg>
+              {/* Value Labels */}
+              <g className="mono" style={{ fontSize: 12, fontWeight: 600 }}>
+                {barChartData.map((bar) => (
+                  <text
+                    key={`val-${bar.id}`}
+                    x={bar.x + bar.w / 2}
+                    y={bar.labelY}
+                    textAnchor="middle"
+                    style={{ fill: bar.isLoss ? 'var(--tw-loss)' : 'var(--tw-gain)' }}
+                  >
+                    {bar.r >= 0 ? '+' : '−'}
+                    {Math.abs(bar.r).toFixed(2)}R
+                  </text>
+                ))}
+              </g>
+
+              {/* Asset Symbol Labels */}
+              <g style={{ fontSize: 12, fill: 'var(--tw-ink-2)' }}>
+                {barChartData.map((bar) => (
+                  <text
+                    key={`lbl-${bar.id}`}
+                    x={bar.x + bar.w / 2}
+                    y={200}
+                    textAnchor="middle"
+                  >
+                    {bar.symbol}
+                  </text>
+                ))}
+              </g>
+            </svg>
+          )}
         </section>
 
         {/* ================================================================ */}
@@ -677,64 +954,70 @@ export default function RiskTerminalPage() {
             <span className="sub">share of gross R</span>
           </div>
 
-          <div className="dwrap">
-            <div style={{ position: 'relative', flex: 'none' }}>
-              <svg viewBox="0 0 180 180" aria-hidden="true" focusable="false" tabIndex={-1}>
-                <g transform="translate(90 90)" fill="none" strokeWidth="22">
-                  {donutSegments.map((seg) => (
-                    <circle
-                      key={seg.category}
-                      r="72"
-                      transform="rotate(-90)"
-                      style={{
-                        stroke: seg.color,
-                        opacity:
-                          hoveredAssetCategory === null || hoveredAssetCategory === seg.category ? 1 : 0.35,
-                        transition: 'opacity 0.2s ease, stroke-width 0.2s ease',
-                      }}
-                      strokeWidth={hoveredAssetCategory === seg.category ? 26 : 22}
-                      strokeDasharray={`${seg.dash} ${seg.totalC}`}
-                      strokeDashoffset={seg.offset}
-                      onMouseEnter={() => setHoveredAssetCategory(seg.category)}
-                      onMouseLeave={() => setHoveredAssetCategory(null)}
-                    />
-                  ))}
-                </g>
-              </svg>
-              <div className="dc select-none">
-                <span className="mono" style={{ fontSize: 22, fontWeight: 600 }}>
-                  {activeDonutInfo.label}
-                </span>
-                <span style={{ fontSize: 11, color: 'var(--tw-ink-3)' }}>
-                  {activeDonutInfo.sub}
-                </span>
+          {donutSegments.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-xs text-[var(--tw-ink-3)] py-12">
+              Close a trade to see R attribution by instrument.
+            </div>
+          ) : (
+            <div className="dwrap">
+              <div style={{ position: 'relative', flex: 'none' }}>
+                <svg viewBox="0 0 180 180" aria-hidden="true" focusable="false" tabIndex={-1}>
+                  <g transform="translate(90 90)" fill="none" strokeWidth="22">
+                    {donutSegments.map((seg) => (
+                      <circle
+                        key={seg.category}
+                        r="72"
+                        transform="rotate(-90)"
+                        style={{
+                          stroke: seg.color,
+                          opacity:
+                            hoveredAssetCategory === null || hoveredAssetCategory === seg.category ? 1 : 0.35,
+                          transition: 'opacity 0.2s ease, stroke-width 0.2s ease',
+                        }}
+                        strokeWidth={hoveredAssetCategory === seg.category ? 26 : 22}
+                        strokeDasharray={`${seg.dash} ${seg.totalC}`}
+                        strokeDashoffset={seg.offset}
+                        onMouseEnter={() => setHoveredAssetCategory(seg.category)}
+                        onMouseLeave={() => setHoveredAssetCategory(null)}
+                      />
+                    ))}
+                  </g>
+                </svg>
+                <div className="dc select-none">
+                  <span className="mono" style={{ fontSize: 22, fontWeight: 600 }}>
+                    {activeDonutInfo.label}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--tw-ink-3)' }}>
+                    {activeDonutInfo.sub}
+                  </span>
+                </div>
+              </div>
+
+              <div className="dleg select-none">
+                {donutSegments.map((item) => (
+                  <div
+                    key={item.category}
+                    className="dl select-none"
+                    style={{
+                      opacity:
+                        hoveredAssetCategory === null || hoveredAssetCategory === item.category ? 1 : 0.45,
+                    }}
+                    onMouseEnter={() => setHoveredAssetCategory(item.category)}
+                    onMouseLeave={() => setHoveredAssetCategory(null)}
+                  >
+                    <i style={{ background: item.color }} />
+                    <span>
+                      <b>{item.category}</b> {item.symbol}
+                    </span>
+                    <em className={item.isLoss ? 'loss' : ''}>
+                      {item.r >= 0 ? '+' : '−'}
+                      {Math.abs(item.r).toFixed(2)}R
+                    </em>
+                  </div>
+                ))}
               </div>
             </div>
-
-            <div className="dleg select-none">
-              {donutSegments.map((item) => (
-                <div
-                  key={item.category}
-                  className="dl select-none"
-                  style={{
-                    opacity:
-                      hoveredAssetCategory === null || hoveredAssetCategory === item.category ? 1 : 0.45,
-                  }}
-                  onMouseEnter={() => setHoveredAssetCategory(item.category)}
-                  onMouseLeave={() => setHoveredAssetCategory(null)}
-                >
-                  <i style={{ background: item.color }} />
-                  <span>
-                    <b>{item.category}</b> {item.symbol}
-                  </span>
-                  <em className={item.isLoss ? 'loss' : ''}>
-                    {item.r >= 0 ? '+' : '−'}
-                    {Math.abs(item.r).toFixed(2)}R
-                  </em>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
         </section>
 
         {/* ================================================================ */}
@@ -743,111 +1026,29 @@ export default function RiskTerminalPage() {
         <section className="tile tw-risk-rules select-none" aria-label="Rule checks">
           <div className="head flex items-center justify-between w-full select-none">
             <span className="eyebrow">Rule checks</span>
-            <span className="sub">4 on track · 2 to watch (click to configure)</span>
-          </div>
-
-          <div
-            className="rrow select-none"
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              if (dailyLossRule) openEditModal(dailyLossRule.rule);
-            }}
-          >
-            <span className="rn">Daily loss limit</span>
-            <span className="rv">0.0% of {dailyLimitPct.toFixed(1)}%</span>
-            <span className="pill ok select-none">
-              <span className="d" />
-              On track
+            <span className="sub">
+              {onTrackCount} on track · {watchCount} to watch (click to configure)
             </span>
           </div>
 
-          <div
-            className="rrow select-none"
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              if (drawdownRule) openEditModal(drawdownRule.rule);
-            }}
-          >
-            <span className="rn">Max drawdown from peak</span>
-            <span className="rv">0.0% of {drawdownLimitPct.toFixed(1)}%</span>
-            <span className="pill ok select-none">
-              <span className="d" />
-              On track
-            </span>
-          </div>
-
-          <div
-            className="rrow select-none"
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              if (tradeRiskRule) openEditModal(tradeRiskRule.rule);
-            }}
-          >
-            <span className="rn">Risk per trade</span>
-            <span className="rv">
-              {maxRiskPerTradePct.toFixed(1)}% of {maxRiskPerTradePct.toFixed(1)}%
-            </span>
-            <span className="pill w select-none">
-              <span className="d" />
-              At cap
-            </span>
-          </div>
-
-          <div
-            className="rrow select-none"
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              const r = evaluatedRules.find((x) => x.rule.ruleType === 'max_open_risk_pct');
-              if (r) openEditModal(r.rule);
-            }}
-          >
-            <span className="rn">Open risk</span>
-            <span className="rv">
-              {openRiskPct.toFixed(1)}% of {(openRiskPct * 2).toFixed(1)}%
-            </span>
-            <span className="pill ok select-none">
-              <span className="d" />
-              On track
-            </span>
-          </div>
-
-          <div
-            className="rrow select-none"
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              const r = evaluatedRules.find((x) => x.rule.ruleType === 'max_consecutive_losses');
-              if (r) openEditModal(r.rule);
-            }}
-          >
-            <span className="rn">Losing streak</span>
-            <span className="rv">1 of 3 allowed</span>
-            <span className="pill ok select-none">
-              <span className="d" />
-              On track
-            </span>
-          </div>
-
-          <div
-            className="rrow select-none"
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              const r = evaluatedRules.find((x) => x.rule.ruleType === 'min_trading_days');
-              if (r) openEditModal(r.rule);
-            }}
-          >
-            <span className="rn">Minimum trading days</span>
-            <span className="rv">2 of 4</span>
-            <span className="pill w select-none">
-              <span className="d" />
-              Behind
-            </span>
-          </div>
+          {ruleRows.map((row) => (
+            <div
+              key={row.label}
+              className="rrow select-none"
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (row.rule) openEditModal(row.rule);
+              }}
+            >
+              <span className="rn">{row.label}</span>
+              <span className="rv">{row.valueText}</span>
+              <span className={`pill ${row.status === 'ok' ? 'ok' : 'w'} select-none`}>
+                <span className="d" />
+                {row.statusLabel}
+              </span>
+            </div>
+          ))}
         </section>
 
         {/* ================================================================ */}

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { evaluateAccountRule } from '../../lib/calculations/financialEngine';
+import { filterTradesByPeriod } from '../../lib/data/periodFilter';
 import {
   ReportTabId,
   ReportComputedData,
@@ -111,22 +112,10 @@ export default function ReportsPage() {
 
   // Period + chronologically sorted closed trades
   const closedTrades = useMemo(() => {
-    let list = filteredTrades.filter((t) => t.status === 'CLOSED');
-    if (periodFilter === 'Week') {
-      const cutoff = new Date('2024-03-16T00:00:00Z').getTime();
-      const endCutoff = new Date('2024-03-23T00:00:00Z').getTime();
-      const inWindow = list.filter((t) => {
-        const ts = new Date(t.exitTime || t.entryTime || t.createdAt).getTime();
-        return ts >= cutoff && ts <= endCutoff;
-      });
-      if (inWindow.length > 0) list = inWindow;
-    } else if (periodFilter === 'Month') {
-      const cutoff = new Date('2024-03-01T00:00:00Z').getTime();
-      const inMonth = list.filter(
-        (t) => new Date(t.exitTime || t.entryTime || t.createdAt).getTime() >= cutoff
-      );
-      if (inMonth.length > 0) list = inMonth;
-    }
+    const list = filterTradesByPeriod(
+      filteredTrades.filter((t) => t.status === 'CLOSED'),
+      periodFilter
+    );
 
     return [...list].sort(
       (a, b) =>

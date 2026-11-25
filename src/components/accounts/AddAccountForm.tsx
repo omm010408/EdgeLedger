@@ -6,6 +6,7 @@ import { useTrading } from '../../context/TradingContext';
 import { SEED_FIRM_TEMPLATES } from '../../lib/data/accountRepository';
 import { computeGateState, validateRuleSetAgainstFirmCeiling } from '../../lib/calculations/gateEngine';
 import { AccountTypeCategory, DailyLossMode, TotalLossMode, EnforcementMode } from '../../lib/types/gate';
+import { AccountRule } from '../../lib/types/financial';
 import { Check, AlertTriangle, ShieldAlert, Lock, RefreshCw } from 'lucide-react';
 
 interface AddAccountFormProps {
@@ -277,9 +278,91 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
         return;
       }
 
-      // Add to TradingContext state
+      // Build exact personalized AccountRules from the user's configured limits so Accounts & Risk reflect them immediately
       const size = parseFloat(startingBalance) || 100000;
+      const newAccId = data.account?.id || `acc-${Date.now()}`;
+      const dailyNum = parseFloat(dailyLossValue) || (dailyLossMode === 'pct_day_start' ? 5 : size * 0.05);
+      const totalNum = parseFloat(totalLossValue) || 10;
+      const nowIso = new Date().toISOString();
+
+      const customRules: AccountRule[] = [
+        {
+          id: `rule-${Date.now()}-daily`,
+          accountId: newAccId,
+          ruleType: 'daily_loss_limit',
+          thresholdValue: dailyNum,
+          thresholdUnit: (dailyLossMode === 'pct_day_start' ? 'percent' : 'currency') as 'percent' | 'currency',
+          calculationMethod: 'equity_based' as const,
+          warningThresholdPct: warnThresholdPct,
+          isEnabled: true,
+          currentStatus: 'SAFE' as const,
+          currentMetricValue: 0,
+          resetFrequency: 'daily' as const,
+          applicableTimezone: dailyResetTimezone,
+          version: 1,
+          effectiveFrom: nowIso,
+        },
+        {
+          id: `rule-${Date.now()}-total`,
+          accountId: newAccId,
+          ruleType: totalLossMode === 'trailing_peak' ? 'trailing_drawdown' : 'max_overall_loss',
+          thresholdValue: totalNum,
+          thresholdUnit: 'percent' as const,
+          calculationMethod: (totalLossMode === 'trailing_peak' ? 'relative_trailing' : 'static') as 'relative_trailing' | 'static',
+          warningThresholdPct: warnThresholdPct,
+          isEnabled: true,
+          currentStatus: 'SAFE' as const,
+          currentMetricValue: 0,
+          resetFrequency: 'none' as const,
+          applicableTimezone: dailyResetTimezone,
+          version: 1,
+          effectiveFrom: nowIso,
+        },
+        ...(activeFirmTemplate?.profitTargetPct
+          ? [
+              {
+                id: `rule-${Date.now()}-target`,
+                accountId: newAccId,
+                ruleType: 'profit_target' as const,
+                thresholdValue: Math.round(size * (activeFirmTemplate.profitTargetPct / 100)),
+                thresholdUnit: 'currency' as const,
+                calculationMethod: 'static' as const,
+                warningThresholdPct: 90,
+                isEnabled: true,
+                currentStatus: 'SAFE' as const,
+                currentMetricValue: 0,
+                resetFrequency: 'none' as const,
+                applicableTimezone: dailyResetTimezone,
+                version: 1,
+                effectiveFrom: nowIso,
+              },
+            ]
+          : []),
+        ...(activeFirmTemplate?.maxRiskPerTradePct
+          ? [
+              {
+                id: `rule-${Date.now()}-risk`,
+                accountId: newAccId,
+                ruleType: 'max_risk_per_trade_pct' as const,
+                thresholdValue: activeFirmTemplate.maxRiskPerTradePct,
+                thresholdUnit: 'percent' as const,
+                calculationMethod: 'equity_based' as const,
+                warningThresholdPct: warnThresholdPct,
+                isEnabled: true,
+                currentStatus: 'SAFE' as const,
+                currentMetricValue: 0,
+                resetFrequency: 'none' as const,
+                applicableTimezone: dailyResetTimezone,
+                version: 1,
+                effectiveFrom: nowIso,
+              },
+            ]
+          : []),
+      ];
+
+      // Add to TradingContext state
       addAccount({
+        id: newAccId,
         name: data.account.label,
         brokerOrFirm: brokerOrFirm.trim(),
         accountType:
@@ -292,8 +375,10 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
         startingBalance: size,
         currentBalance: size,
         currentEquity: size,
+        highWaterMark: size,
         currency: baseCurrency,
         challengePhase: phase ? `Phase ${phase}` : 'Funded',
+        rules: customRules,
         notes: notes,
       });
 

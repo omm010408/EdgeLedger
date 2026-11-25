@@ -893,12 +893,81 @@ function generatePersonalizedRules(
   ];
 }
 
+  const applyAccountBalanceDeltas = useCallback(
+    (deltas: Map<string, number>, now: string) => {
+      if (deltas.size === 0) return;
+      let hasNonZero = false;
+      deltas.forEach((v) => {
+        if (Math.abs(v) >= 0.0001) hasNonZero = true;
+      });
+      if (!hasNonZero) return;
+
+      setAccounts((prevAccs) =>
+        prevAccs.map((acc) => {
+          const delta = deltas.get(acc.id);
+          if (!delta || Math.abs(delta) < 0.0001) return acc;
+
+          const newBal = Math.round((acc.currentBalance + delta) * 100) / 100;
+          const newEq = Math.round((acc.currentEquity + delta) * 100) / 100;
+          const newHwm = Math.round(Math.max(acc.highWaterMark, newEq) * 100) / 100;
+          const netProfit = newEq - acc.startingBalance;
+          const ddFromPeak = Math.max(0, newHwm - newEq);
+
+          const updatedRules = (acc.rules || []).map((rule) => {
+            if (rule.ruleType === 'trailing_drawdown') {
+              const evalRes = evaluateAccountRule(rule, ddFromPeak, acc.startingBalance, newEq, newHwm);
+              return { ...rule, currentMetricValue: ddFromPeak, currentStatus: evalRes.status };
+            }
+            if (rule.ruleType === 'max_overall_loss') {
+              const lossUsed = Math.max(0, acc.startingBalance - newEq);
+              const evalRes = evaluateAccountRule(rule, lossUsed, acc.startingBalance, newEq, newHwm);
+              return { ...rule, currentMetricValue: lossUsed, currentStatus: evalRes.status };
+            }
+            if (rule.ruleType === 'profit_target') {
+              const profitVal = Math.max(0, netProfit);
+              const evalRes = evaluateAccountRule(rule, profitVal, acc.startingBalance, newEq, newHwm);
+              return { ...rule, currentMetricValue: profitVal, currentStatus: evalRes.status };
+            }
+            return rule;
+          });
+
+          const updatedAcc: TradingAccount = {
+            ...acc,
+            currentBalance: newBal,
+            currentEquity: newEq,
+            highWaterMark: newHwm,
+            rules: updatedRules,
+            updatedAt: now,
+          };
+
+          emitSyncBridgeEvent({
+            entity: 'account',
+            entityId: updatedAcc.id,
+            op: 'update',
+            payload: updatedAcc as unknown as Record<string, unknown>,
+          });
+          void persistUpsertToCloud('account', updatedAcc.id, () =>
+            SupabaseService.saveAccount(updatedAcc)
+          );
+          return updatedAcc;
+        })
+      );
+    },
+    [persistUpsertToCloud]
+  );
+
   // Actions
   const addAccount = (accountData: Partial<TradingAccount>) => {
     const size = Number(accountData.accountSize) || 100000;
-    const accountId = `acc-${Date.now()}`;
+    const accountId = accountData.id || `acc-${Date.now()}`;
     const accountType = accountData.accountType || 'prop_evaluation';
     const brokerOrFirm = accountData.brokerOrFirm || 'Prop Desk';
+    const now = new Date().toISOString();
+
+    const initialRules =
+      accountData.rules && accountData.rules.length > 0
+        ? accountData.rules.map((r) => ({ ...r, accountId }))
+        : generatePersonalizedRules(accountId, accountType, brokerOrFirm, size);
 
     const newAccount: TradingAccount = {
       id: accountId,
@@ -908,18 +977,18 @@ function generatePersonalizedRules(
       accountType,
       currency: accountData.currency || 'USD',
       accountSize: size,
-      startingBalance: size,
-      currentBalance: size,
-      currentEquity: size,
-      highWaterMark: size,
+      startingBalance: Number(accountData.startingBalance) || size,
+      currentBalance: Number(accountData.currentBalance) || size,
+      currentEquity: Number(accountData.currentEquity) || size,
+      highWaterMark: Number(accountData.highWaterMark) || size,
       challengePhase: accountData.challengePhase || 'Phase 1',
-      status: 'active',
+      status: accountData.status || 'active',
       isDemo: accountData.isDemo ?? false,
       positionMatchingMode: accountData.positionMatchingMode || 'hedging',
-      rules: generatePersonalizedRules(accountId, accountType, brokerOrFirm, size),
+      rules: initialRules,
       notes: accountData.notes || '',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
 
     setAccounts((prev) => [newAccount, ...prev]);
@@ -1007,6 +1076,14 @@ function generatePersonalizedRules(
           },
         ];
 
+    const computedGross = defaultAllocations.reduce((s, a) => s + (a.realizedPnl || 0), 0);
+    const computedNet = defaultAllocations.reduce((s, a) => s + (a.netPnl || 0), 0);
+    const finalRealizedPnl = tradeData.realizedPnl ?? computedGross;
+    const finalNetPnl = tradeData.netPnl ?? computedNet;
+    const finalRealizedR =
+      tradeData.realizedR ??
+      (riskUsd > 0 ? Math.round((finalNetPnl / riskUsd) * 100) / 100 : 0);
+
     const newTrade: Trade = {
       id: tradeId,
       userId: 'user-default',
@@ -1026,14 +1103,14 @@ function generatePersonalizedRules(
       plannedRiskUsd: riskUsd, // Snapshotted permanently at entry
       plannedRiskPct: tradeData.plannedRiskPct || 1.0,
       plannedRr: tradeData.plannedRr || 2.0,
-      realizedPnl: 0,
-      netPnl: 0,
-      realizedR: 0,
-      totalCommission: 10,
-      totalSwap: 0,
-      totalFees: 0,
+      realizedPnl: finalRealizedPnl,
+      netPnl: finalNetPnl,
+      realizedR: finalRealizedR,
+      totalCommission: defaultAllocations.reduce((s, a) => s + (a.commission || 0), 0) || 10,
+      totalSwap: defaultAllocations.reduce((s, a) => s + (a.swap || 0), 0),
+      totalFees: defaultAllocations.reduce((s, a) => s + (a.fees || 0), 0),
       entryTime: tradeData.entryTime || now,
-      exitTime: tradeData.exitTime,
+      exitTime: tradeData.exitTime || (tradeData.status === 'CLOSED' ? now : undefined),
       tradeThesis: tradeData.tradeThesis || '',
       technicalBias: tradeData.technicalBias || '',
       macroBias: tradeData.macroBias || '',
@@ -1049,6 +1126,17 @@ function generatePersonalizedRules(
     };
 
     setTrades((prev) => [newTrade, ...prev]);
+
+    if (newTrade.status === 'CLOSED' || newTrade.status === 'PARTIALLY_CLOSED') {
+      const deltas = new Map<string, number>();
+      newTrade.allocations.forEach((a) => {
+        if (a.netPnl) {
+          deltas.set(a.accountId, (deltas.get(a.accountId) || 0) + a.netPnl);
+        }
+      });
+      applyAccountBalanceDeltas(deltas, now);
+    }
+
     emitSyncBridgeEvent({ entity: 'trade', entityId: newTrade.id, op: 'create', payload: newTrade as unknown as Record<string, unknown>, baseVersion: 0 });
     void persistUpsertToCloud('trade', newTrade.id, () =>
       SupabaseService.saveTrade(newTrade)
@@ -1062,7 +1150,34 @@ function generatePersonalizedRules(
       throw new Error('A closed trade cannot be reopened. Record a new trade execution instead.');
     }
     const now = new Date().toISOString();
-    // Closed trades are append-only: create a correction record instead of overwriting closed trade
+
+    // Compute per-account realized P&L delta so Accounts, Risk, Overview & Analytics stay in sync
+    const deltas = new Map<string, number>();
+    if (existing && (existing.status === 'CLOSED' || existing.status === 'PARTIALLY_CLOSED')) {
+      existing.allocations.forEach((a) => {
+        if (a.netPnl) {
+          deltas.set(a.accountId, (deltas.get(a.accountId) || 0) - a.netPnl);
+        }
+      });
+    }
+    if (updated.status === 'CLOSED' || updated.status === 'PARTIALLY_CLOSED') {
+      updated.allocations.forEach((a) => {
+        if (a.netPnl) {
+          deltas.set(a.accountId, (deltas.get(a.accountId) || 0) + a.netPnl);
+        }
+      });
+    }
+
+    const stamped: Trade = {
+      ...updated,
+      exitTime:
+        updated.status === 'CLOSED' && !updated.exitTime
+          ? now
+          : updated.exitTime,
+      updatedAt: now,
+    };
+
+    // Closed trades emit an immutable correction record alongside updating the live projection
     if (existing && existing.status === 'CLOSED') {
       emitSyncBridgeEvent({
         entity: 'trade_correction',
@@ -1071,23 +1186,36 @@ function generatePersonalizedRules(
         payload: {
           targetTradeId: existing.id,
           previousNetPnl: existing.netPnl,
-          correctedFields: { ...updated, updatedAt: now },
+          correctedFields: stamped,
         },
       });
-      return;
+    } else {
+      emitSyncBridgeEvent({
+        entity: 'trade',
+        entityId: stamped.id,
+        op: 'update',
+        payload: stamped as unknown as Record<string, unknown>,
+      });
     }
-    const stamped: Trade = {
-      ...updated,
-      updatedAt: now,
-    };
+
     setTrades((prev) => prev.map((t) => (t.id === stamped.id ? stamped : t)));
-    emitSyncBridgeEvent({ entity: 'trade', entityId: stamped.id, op: 'update', payload: stamped as unknown as Record<string, unknown> });
+    applyAccountBalanceDeltas(deltas, now);
     void persistUpsertToCloud('trade', stamped.id, () =>
       SupabaseService.saveTrade(stamped)
     );
   };
 
   const deleteTrade = (id: string) => {
+    const existing = trades.find((t) => t.id === id);
+    if (existing && (existing.status === 'CLOSED' || existing.status === 'PARTIALLY_CLOSED')) {
+      const deltas = new Map<string, number>();
+      existing.allocations.forEach((a) => {
+        if (a.netPnl) {
+          deltas.set(a.accountId, (deltas.get(a.accountId) || 0) - a.netPnl);
+        }
+      });
+      applyAccountBalanceDeltas(deltas, new Date().toISOString());
+    }
     setTrades((prev) => prev.filter((t) => t.id !== id));
     emitSyncBridgeEvent({ entity: 'trade', entityId: id, op: 'delete', payload: { id } });
     void persistDeleteToCloud('trade', id, () => SupabaseService.deleteTrade(id));

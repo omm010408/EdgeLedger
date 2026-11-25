@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { useTrading } from '../../context/TradingContext';
 import { TradingAccount, Trade } from '../../lib/types/financial';
+import { filterTradesByPeriod } from '../../lib/data/periodFilter';
 
 type CompareMode = 'net' | 'ret' | 'win';
 
@@ -32,6 +33,7 @@ export default function AnalyticsPage() {
     selectedAccount,
     trades,
     filteredTrades,
+    periodFilter,
     portfolioMetrics,
     isPnlHidden,
   } = useTrading();
@@ -57,8 +59,8 @@ export default function AnalyticsPage() {
   };
 
   const closedTrades = useMemo(
-    () => filteredTrades.filter((t) => t.status === 'CLOSED'),
-    [filteredTrades]
+    () => filterTradesByPeriod(filteredTrades, periodFilter).filter((t) => t.status === 'CLOSED'),
+    [filteredTrades, periodFilter]
   );
 
   const getScopedTradePnl = (t: Trade) =>
