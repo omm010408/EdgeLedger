@@ -10,12 +10,21 @@ interface QuickTradeModalProps {
   isOpen: boolean;
   onClose: () => void;
   editTrade?: Trade | null;
+  defaultDate?: string;
+}
+
+function toDateTimeLocalValue(iso?: string): string {
+  const d = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
   isOpen,
   onClose,
   editTrade = null,
+  defaultDate,
 }) => {
   const { accounts, selectedAccountId, instruments, strategies, addTrade, updateTrade } = useTrading();
 
@@ -28,6 +37,10 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
   const [exitPrice, setExitPrice] = useState<string>('');
   const [realizedNetInput, setRealizedNetInput] = useState<string>('');
   const [riskPct, setRiskPct] = useState<string>('1.0');
+  const [customPositionSize, setCustomPositionSize] = useState<string>('');
+  const [commissionInput, setCommissionInput] = useState<string>('');
+  const [entryTimeInput, setEntryTimeInput] = useState<string>(() => toDateTimeLocalValue());
+  const [exitTimeInput, setExitTimeInput] = useState<string>('');
   const [strategyId, setStrategyId] = useState<string>('');
   const [setupType, setSetupType] = useState<string>('');
   const [session, setSession] = useState<'Asian' | 'London' | 'London Close' | 'New York' | 'Sydney'>('London');
@@ -65,6 +78,15 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
           : ''
       );
       setRiskPct(editTrade.plannedRiskPct ? String(editTrade.plannedRiskPct) : '1.0');
+      const firstAllocSize = editTrade.allocations?.[0]?.allocatedPositionSize;
+      setCustomPositionSize(firstAllocSize ? String(firstAllocSize) : '');
+      setCommissionInput(
+        Number.isFinite(editTrade.totalCommission) ? String(editTrade.totalCommission) : ''
+      );
+      setEntryTimeInput(toDateTimeLocalValue(editTrade.entryTime || editTrade.createdAt));
+      setExitTimeInput(
+        editTrade.exitTime ? toDateTimeLocalValue(editTrade.exitTime) : toDateTimeLocalValue()
+      );
       setStrategyId(editTrade.strategyId || '');
       setSetupType(editTrade.setupType || '');
       setSession((editTrade.session as typeof session) || 'London');
@@ -84,6 +106,11 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       setExitPrice('');
       setRealizedNetInput('');
       setRiskPct('1.0');
+      setCustomPositionSize('');
+      setCommissionInput('');
+      const initialEntry = defaultDate ? `${defaultDate}T09:00` : toDateTimeLocalValue();
+      setEntryTimeInput(initialEntry);
+      setExitTimeInput(defaultDate ? `${defaultDate}T11:30` : toDateTimeLocalValue());
       setStrategyId('');
       setSetupType('');
       setSession('London');
@@ -97,6 +124,16 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       }
     }
   }, [isOpen, editTrade, selectedAccountId, accounts]);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -144,6 +181,22 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         ? Number(realizedNetInput)
         : null;
 
+    const parsedEntryIso = entryTimeInput ? new Date(entryTimeInput).toISOString() : new Date().toISOString();
+    const parsedExitIso =
+      status === 'CLOSED'
+        ? exitTimeInput
+          ? new Date(exitTimeInput).toISOString()
+          : editTrade?.exitTime || new Date().toISOString()
+        : undefined;
+    const explicitLots =
+      customPositionSize.trim() !== '' && Number.isFinite(parseFloat(customPositionSize))
+        ? Math.max(0.01, parseFloat(customPositionSize))
+        : null;
+    const explicitCommTotal =
+      commissionInput.trim() !== '' && Number.isFinite(parseFloat(commissionInput))
+        ? Math.max(0, parseFloat(commissionInput))
+        : null;
+
     const allocations = targetAccountIds.map((accId) => {
       const acc = accounts.find((a) => a.id === accId);
       const existingAlloc = editTrade?.allocations?.find((a) => a.accountId === accId);
@@ -157,8 +210,13 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         instrument: activeInstrument,
       });
 
+      const effectivePositionSize = explicitLots !== null ? explicitLots : sizeCalc.positionSize;
       const commission =
-        activeInstrument.category === 'forex' ? 7 * sizeCalc.positionSize : 15;
+        explicitCommTotal !== null
+          ? Math.round((explicitCommTotal / targetAccountIds.length) * 100) / 100
+          : activeInstrument.category === 'forex'
+            ? 7 * effectivePositionSize
+            : 15;
       let allocGross = existingAlloc?.realizedPnl || 0;
       let allocNet = existingAlloc?.netPnl || 0;
 
@@ -172,7 +230,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
             direction,
             numEntry,
             numExit,
-            sizeCalc.positionSize,
+            effectivePositionSize,
             activeInstrument,
             commission,
             0
@@ -194,11 +252,11 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
           accountId: accId,
           executionType: 'ENTRY' as const,
           price: numEntry,
-          size: sizeCalc.positionSize,
+          size: effectivePositionSize,
           commission,
           swap: 0,
           realizedPnl: 0,
-          executionTime: editTrade?.entryTime || new Date().toISOString(),
+          executionTime: parsedEntryIso,
           notes: 'Position Entry',
         },
       ];
@@ -208,7 +266,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         tradeId: editTrade?.id || '',
         accountId: accId,
         accountName: acc?.name || existingAlloc?.accountName || 'Primary Desk',
-        allocatedPositionSize: sizeCalc.positionSize,
+        allocatedPositionSize: effectivePositionSize,
         allocatedRiskUsd: sizeCalc.potentialLoss,
         allocatedRiskPct: numRisk,
         entryPrice: numEntry,
@@ -227,6 +285,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
 
     const totalRiskUsd = allocations.reduce((sum, a) => sum + a.allocatedRiskUsd, 0);
     const totalGrossPnl = allocations.reduce((sum, a) => sum + a.realizedPnl, 0);
+    const totalCommission = allocations.reduce((sum, a) => sum + a.commission, 0);
     const totalNetPnl =
       status === 'CLOSED' && explicitNetOverride !== null
         ? explicitNetOverride
@@ -254,6 +313,9 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         realizedPnl: totalGrossPnl,
         netPnl: totalNetPnl,
         realizedR: totalRealizedR,
+        totalCommission,
+        entryTime: parsedEntryIso,
+        exitTime: parsedExitIso,
         allocations,
         tradeThesis,
         isRuleCompliant: allChecklistPassed,
@@ -277,6 +339,9 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         realizedPnl: totalGrossPnl,
         netPnl: totalNetPnl,
         realizedR: totalRealizedR,
+        totalCommission,
+        entryTime: parsedEntryIso,
+        exitTime: parsedExitIso,
         tradeThesis,
         isRuleCompliant: allChecklistPassed,
         allocations,
@@ -288,7 +353,12 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-lg border border-edge-border bg-edge-surface shadow-terminal text-xs">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-edge-border bg-edge-surface-secondary/50">
@@ -364,8 +434,9 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
               </label>
               <select
                 value={status}
+                disabled={editTrade?.status === 'CLOSED'}
                 onChange={(e) => setStatus(e.target.value as TradeStatus)}
-                className="w-full px-3 py-2 rounded bg-edge-surface-secondary border border-edge-border text-white font-mono focus:border-edge-accent outline-none"
+                className="w-full px-3 py-2 rounded bg-edge-surface-secondary border border-edge-border text-white font-mono focus:border-edge-accent outline-none disabled:opacity-70"
               >
                 <option value="OPEN">OPEN (Active Position)</option>
                 <option value="CLOSED">CLOSED (Completed Trade)</option>
@@ -433,6 +504,65 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
                 onChange={(e) => setRiskPct(e.target.value)}
                 className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-accent/50 text-edge-accent font-mono focus:border-edge-accent outline-none tabular-nums"
                 required
+              />
+            </div>
+          </div>
+
+          {/* Execution Timing, Lots & Fees */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-edge-surface-secondary/40 p-3 rounded border border-edge-border/60">
+            <div>
+              <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
+                Entry Date &amp; Time
+              </label>
+              <input
+                type="datetime-local"
+                value={entryTimeInput}
+                onChange={(e) => setEntryTimeInput(e.target.value)}
+                className="w-full px-2 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono text-[11px] focus:border-edge-accent outline-none"
+              />
+            </div>
+
+            {status === 'CLOSED' && (
+              <div>
+                <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
+                  Exit Date &amp; Time
+                </label>
+                <input
+                  type="datetime-local"
+                  value={exitTimeInput}
+                  onChange={(e) => setExitTimeInput(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono text-[11px] focus:border-edge-accent outline-none"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
+                Position Size (Lots)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={customPositionSize}
+                onChange={(e) => setCustomPositionSize(e.target.value)}
+                placeholder={calcPreview ? `${calcPreview.positionSize} (auto)` : 'Auto'}
+                className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
+              />
+            </div>
+
+            <div>
+              <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
+                Commission ($)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={commissionInput}
+                onChange={(e) => setCommissionInput(e.target.value)}
+                placeholder="Auto"
+                className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
               />
             </div>
           </div>

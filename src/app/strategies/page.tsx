@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { useTrading } from '../../context/TradingContext';
-import { CheckCircle2, ArrowRight, Plus, X } from 'lucide-react';
+import { CheckCircle2, ArrowRight, Plus, X, Pencil } from 'lucide-react';
 import { Strategy } from '../../lib/data/seedData';
 import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
 import { filterTradesByPeriod } from '../../lib/data/periodFilter';
@@ -45,14 +45,16 @@ export default function StrategiesPage() {
     periodFilter,
     isPnlHidden,
     addStrategy,
+    updateStrategy,
     deleteStrategy,
   } = useTrading();
 
   const [regimeFilter, setRegimeFilter] = useState<'all' | Strategy['marketRegime']>('all');
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
 
-  // Create Strategy Form State
+  // Create / Edit Strategy Form State
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [marketType, setMarketType] = useState('Forex & Metals');
@@ -62,6 +64,7 @@ export default function StrategiesPage() {
   const [stopLossMethodology, setStopLossMethodology] = useState('');
   const [targetMethodology, setTargetMethodology] = useState('');
   const [riskRules, setRiskRules] = useState('');
+  const [checklistText, setChecklistText] = useState('');
 
   const formatSignedCurrency = (val: number) => {
     if (isPnlHidden) return `${val < 0 ? '−' : '+'}$••••••`;
@@ -74,6 +77,7 @@ export default function StrategiesPage() {
   };
 
   const resetForm = () => {
+    setEditingStrategy(null);
     setName('');
     setDescription('');
     setMarketType('Forex & Metals');
@@ -83,26 +87,75 @@ export default function StrategiesPage() {
     setStopLossMethodology('');
     setTargetMethodology('');
     setRiskRules('');
+    setChecklistText(
+      'Bias & market regime confirmed\nEntry trigger & displacement verified\nPosition size within account risk cap'
+    );
   };
 
-  const handleCreate = (e: React.FormEvent) => {
+  const openNewStrategyModal = () => {
+    resetForm();
+    setModalOpen(true);
+  };
+
+  const openEditStrategyModal = (strat: Strategy) => {
+    setEditingStrategy(strat);
+    setName(strat.name);
+    setDescription(strat.description || '');
+    setMarketType(strat.marketType || 'Forex & Metals');
+    setMarketRegime(strat.marketRegime || 'trending');
+    setEntryConditions(strat.entryConditions || '');
+    setExitConditions(strat.exitConditions || '');
+    setStopLossMethodology(strat.stopLossMethodology || '');
+    setTargetMethodology(strat.targetMethodology || '');
+    setRiskRules(strat.riskRules || '');
+    setChecklistText((strat.checklistItems || []).join('\n'));
+    setSelectedStrategy(null);
+    setModalOpen(true);
+  };
+
+  const handleSaveStrategy = (e: React.FormEvent) => {
     e.preventDefault();
-    addStrategy({
-      name: name.trim(),
-      description: description.trim(),
-      marketType: marketType.trim() || 'Multi-Asset',
-      marketRegime,
-      entryConditions: entryConditions.trim() || 'Criteria pending definition.',
-      exitConditions: exitConditions.trim() || 'Fixed 2.0R target or opposing liquidity.',
-      stopLossMethodology: stopLossMethodology.trim() || 'Structural swing invalidation.',
-      targetMethodology: targetMethodology.trim() || 'External range liquidity.',
-      riskRules: riskRules.trim() || 'Max 1.0% risk per trade.',
-      checklistItems: [
-        'Bias & market regime confirmed',
-        'Entry trigger & displacement verified',
-        'Position size within account risk cap',
-      ],
-    });
+    const parsedChecklist = checklistText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (editingStrategy) {
+      updateStrategy({
+        ...editingStrategy,
+        name: name.trim() || editingStrategy.name,
+        description: description.trim(),
+        marketType: marketType.trim() || 'Multi-Asset',
+        marketRegime,
+        entryConditions: entryConditions.trim() || 'Criteria pending definition.',
+        exitConditions: exitConditions.trim() || 'Fixed 2.0R target or opposing liquidity.',
+        stopLossMethodology: stopLossMethodology.trim() || 'Structural swing invalidation.',
+        targetMethodology: targetMethodology.trim() || editingStrategy.targetMethodology || 'External range liquidity.',
+        riskRules: riskRules.trim() || 'Max 1.0% risk per trade.',
+        checklistItems: parsedChecklist.length > 0 ? parsedChecklist : editingStrategy.checklistItems,
+        currentVersion: (editingStrategy.currentVersion || 1) + 1,
+      });
+    } else {
+      addStrategy({
+        name: name.trim(),
+        description: description.trim(),
+        marketType: marketType.trim() || 'Multi-Asset',
+        marketRegime,
+        entryConditions: entryConditions.trim() || 'Criteria pending definition.',
+        exitConditions: exitConditions.trim() || 'Fixed 2.0R target or opposing liquidity.',
+        stopLossMethodology: stopLossMethodology.trim() || 'Structural swing invalidation.',
+        targetMethodology: targetMethodology.trim() || 'External range liquidity.',
+        riskRules: riskRules.trim() || 'Max 1.0% risk per trade.',
+        checklistItems:
+          parsedChecklist.length > 0
+            ? parsedChecklist
+            : [
+                'Bias & market regime confirmed',
+                'Entry trigger & displacement verified',
+                'Position size within account risk cap',
+              ],
+      });
+    }
     setModalOpen(false);
     resetForm();
   };
@@ -205,10 +258,7 @@ export default function StrategiesPage() {
         </div>
         <button
           type="button"
-          onClick={() => {
-            resetForm();
-            setModalOpen(true);
-          }}
+          onClick={openNewStrategyModal}
           className="tw-sun-cta"
         >
           <Plus size={16} aria-hidden="true" />
@@ -318,14 +368,26 @@ export default function StrategiesPage() {
                 <span className={`tw-strat-tag ${tagClass}`}>
                   {formatRegimeLabel(strategy.marketRegime)}
                 </span>
-                <DeleteConfirmButton
-                  variant="icon"
-                  size={15}
-                  title={`Delete ${strategy.name}`}
-                  ariaLabel={`Delete ${strategy.name}`}
-                  className="!w-10 !h-10 !rounded-full !border !border-[var(--tw-line-strong)] !bg-transparent hover:!bg-[var(--tw-pill)]"
-                  onConfirm={() => deleteStrategy(strategy.id)}
-                />
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => openEditStrategyModal(strategy)}
+                    title={`Edit ${strategy.name}`}
+                    aria-label={`Edit ${strategy.name}`}
+                    className="w-10 h-10 rounded-full border border-[var(--tw-line-strong)] bg-transparent hover:bg-[var(--tw-pill)] flex items-center justify-center transition-colors"
+                    style={{ color: 'var(--tw-ink-2)' }}
+                  >
+                    <Pencil size={15} />
+                  </button>
+                  <DeleteConfirmButton
+                    variant="icon"
+                    size={15}
+                    title={`Delete ${strategy.name}`}
+                    ariaLabel={`Delete ${strategy.name}`}
+                    className="!w-10 !h-10 !rounded-full !border !border-[var(--tw-line-strong)] !bg-transparent hover:!bg-[var(--tw-pill)]"
+                    onConfirm={() => deleteStrategy(strategy.id)}
+                  />
+                </div>
               </div>
 
               <h2
@@ -433,7 +495,7 @@ export default function StrategiesPage() {
       {/* Playbook Rules Detail Modal (Light & Dark Tidewater Styled) */}
       {selectedStrategy && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-labelledby="strat-detail-title"
@@ -563,17 +625,31 @@ export default function StrategiesPage() {
                   setSelectedStrategy(null);
                 }}
               />
-              <button
-                type="button"
-                onClick={() => setSelectedStrategy(null)}
-                className="px-5 py-2 rounded-full text-sm font-semibold"
-                style={{
-                  background: 'var(--tw-hero)',
-                  color: 'var(--tw-hero-ink)',
-                }}
-              >
-                Done
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openEditStrategyModal(selectedStrategy)}
+                  className="px-4 py-2 rounded-full text-sm font-semibold inline-flex items-center gap-1.5"
+                  style={{
+                    border: '1px solid var(--tw-line-strong)',
+                    color: 'var(--tw-ink)',
+                  }}
+                >
+                  <Pencil size={13} />
+                  <span>Edit playbook</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStrategy(null)}
+                  className="px-5 py-2 rounded-full text-sm font-semibold"
+                  style={{
+                    background: 'var(--tw-hero)',
+                    color: 'var(--tw-hero-ink)',
+                  }}
+                >
+                  Done
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -582,7 +658,7 @@ export default function StrategiesPage() {
       {/* New Strategy Form Modal */}
       {modalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-labelledby="new-strat-title"
@@ -605,12 +681,15 @@ export default function StrategiesPage() {
                 className="text-lg font-bold tracking-tight"
                 style={{ color: 'var(--tw-ink)' }}
               >
-                New playbook strategy
+                {editingStrategy ? `Edit playbook · ${editingStrategy.name}` : 'New playbook strategy'}
               </h2>
               <button
                 type="button"
-                onClick={() => setModalOpen(false)}
-                aria-label="Close new strategy modal"
+                onClick={() => {
+                  setModalOpen(false);
+                  resetForm();
+                }}
+                aria-label="Close strategy modal"
                 className="w-8 h-8 rounded-full flex items-center justify-center"
                 style={{
                   border: '1px solid var(--tw-line-strong)',
@@ -621,7 +700,7 @@ export default function StrategiesPage() {
               </button>
             </div>
 
-            <form onSubmit={handleCreate} className="space-y-3.5 text-sm">
+            <form onSubmit={handleSaveStrategy} className="space-y-3.5 text-sm">
               <div>
                 <label
                   className="block font-mono text-[11px] uppercase tracking-wider mb-1"
@@ -775,13 +854,58 @@ export default function StrategiesPage() {
                 </div>
               </div>
 
+              <div>
+                <label
+                  className="block font-mono text-[11px] uppercase tracking-wider mb-1"
+                  style={{ color: 'var(--tw-warn)' }}
+                >
+                  Risk management &amp; sizing rules
+                </label>
+                <input
+                  type="text"
+                  value={riskRules}
+                  onChange={(e) => setRiskRules(e.target.value)}
+                  placeholder="Max 1.0% risk per trade, no trades within 15m of red-folder news..."
+                  className="w-full px-3.5 py-2 rounded-xl outline-none"
+                  style={{
+                    background: 'var(--tw-pill)',
+                    border: '1px solid var(--tw-line-strong)',
+                    color: 'var(--tw-ink)',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label
+                  className="block font-mono text-[11px] uppercase tracking-wider mb-1"
+                  style={{ color: 'var(--tw-ink-3)' }}
+                >
+                  Core criteria checklist (one rule per line)
+                </label>
+                <textarea
+                  rows={3}
+                  value={checklistText}
+                  onChange={(e) => setChecklistText(e.target.value)}
+                  placeholder="Bias & market regime confirmed&#10;Entry trigger & displacement verified&#10;Position size within account risk cap"
+                  className="w-full px-3.5 py-2 rounded-xl outline-none"
+                  style={{
+                    background: 'var(--tw-pill)',
+                    border: '1px solid var(--tw-line-strong)',
+                    color: 'var(--tw-ink)',
+                  }}
+                />
+              </div>
+
               <div
                 className="flex justify-end gap-2 pt-3"
                 style={{ borderTop: '1px solid var(--tw-line)' }}
               >
                 <button
                   type="button"
-                  onClick={() => setModalOpen(false)}
+                  onClick={() => {
+                    setModalOpen(false);
+                    resetForm();
+                  }}
                   className="px-4 py-2 rounded-full text-sm font-medium"
                   style={{
                     border: '1px solid var(--tw-line-strong)',
@@ -791,7 +915,7 @@ export default function StrategiesPage() {
                   Cancel
                 </button>
                 <button type="submit" className="tw-sun-cta !py-2">
-                  Save strategy
+                  {editingStrategy ? 'Save changes' : 'Save strategy'}
                 </button>
               </div>
             </form>

@@ -397,7 +397,10 @@ export default function TradesPage() {
               borderColor: 'var(--ink)',
             }}
             type="button"
-            onClick={() => setQuickTradeOpen(true)}
+            onClick={() => {
+              setEditingTrade(null);
+              setQuickTradeOpen(true);
+            }}
           >
             <Plus size={15} />
             <span>+ New execution</span>
@@ -823,6 +826,19 @@ export default function TradesPage() {
                               ? '••••••'
                               : `${trade.netPnl >= 0 ? '+' : '−'}${formatCur(trade.netPnl)}`}
                           </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingTrade(trade);
+                              setQuickTradeOpen(true);
+                            }}
+                            title="Edit execution"
+                            aria-label={`Edit ${trade.instrumentSymbol} trade`}
+                            className="p-1 rounded-md text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--pill)] transition-colors"
+                          >
+                            <Edit3 size={13} />
+                          </button>
                           <DeleteConfirmButton
                             variant="icon"
                             size={13}

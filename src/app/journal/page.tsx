@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useTrading } from '../../context/TradingContext';
 import { JournalEntry } from '../../lib/data/seedData';
-import { Plus, X, ExternalLink, ShieldAlert, Check } from 'lucide-react';
+import { Plus, X, ExternalLink, ShieldAlert, Check, Pencil } from 'lucide-react';
 import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
 
 export default function JournalPage() {
@@ -23,10 +23,12 @@ export default function JournalPage() {
   // Period Filter: Week | Month | All time
   const [period, setPeriod] = useState<'Week' | 'Month' | 'All time'>('All time');
 
-  // Modal State for New Journal Entry
+  // Modal State for New / Edit Journal Entry
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<JournalEntry | null>(null);
+  const [prefillDate, setPrefillDate] = useState<string | null>(null);
 
-  // Selected Session (defaults to latest or 2024-03-18)
+  // Selected Session (defaults to latest)
   const [selectedEntryId, setSelectedEntryId] = useState<string>(() => {
     return journalEntries[0]?.id || 'j-2024-03-18';
   });
@@ -35,6 +37,7 @@ export default function JournalPage() {
     if (typeof window === 'undefined') return;
     const dateParam = new URLSearchParams(window.location.search).get('date');
     if (dateParam) {
+      setPrefillDate(dateParam);
       const matched = journalEntries.find(
         (e) => e.entryDate === dateParam || e.id === `j-${dateParam}`
       );
@@ -46,9 +49,22 @@ export default function JournalPage() {
 
   // Filtered and Sorted entries (newest date first)
   const sortedEntries = useMemo(() => {
-    const list = [...journalEntries];
-    return list.sort((a, b) => (a.entryDate < b.entryDate ? 1 : -1));
-  }, [journalEntries]);
+    const sorted = [...journalEntries].sort((a, b) => (a.entryDate < b.entryDate ? 1 : -1));
+    if (period === 'All time' || sorted.length === 0) return sorted;
+    const windowDays = period === 'Week' ? 7 : 30;
+    const now = Date.now();
+    const recent = sorted.filter((e) => {
+      const ts = Date.parse(`${e.entryDate}T12:00:00Z`);
+      return Number.isFinite(ts) && now - ts <= windowDays * 86_400_000;
+    });
+    if (recent.length > 0) return recent;
+    const latestTs = Date.parse(`${sorted[0].entryDate}T12:00:00Z`);
+    if (!Number.isFinite(latestTs)) return sorted;
+    return sorted.filter((e) => {
+      const ts = Date.parse(`${e.entryDate}T12:00:00Z`);
+      return Number.isFinite(ts) && latestTs - ts <= windowDays * 86_400_000;
+    });
+  }, [journalEntries, period]);
 
   // Selected Entry
   const activeEntry = useMemo(() => {
@@ -176,9 +192,78 @@ export default function JournalPage() {
   const [newOvertrade, setNewOvertrade] = useState(false);
   const [newMovedSl, setNewMovedSl] = useState(false);
   const [newIgnoredRules, setNewIgnoredRules] = useState(false);
+  const [newPrematureExit, setNewPrematureExit] = useState(false);
 
-  const handleCreateEntry = (e: React.FormEvent) => {
+  const openNewEntryModal = (dateOverride?: string) => {
+    setEditingEntry(null);
+    setNewDate(dateOverride || prefillDate || new Date().toISOString().split('T')[0]);
+    setNewMood('Disciplined');
+    setNewPrepScore(9);
+    setNewExecScore(9);
+    setNewDiscScore(9);
+    setNewMacro('');
+    setNewHtf('');
+    setNewPlan('');
+    setNewSummary('');
+    setNewLesson('');
+    setNewFomo(false);
+    setNewRevenge(false);
+    setNewOvertrade(false);
+    setNewMovedSl(false);
+    setNewIgnoredRules(false);
+    setNewPrematureExit(false);
+    setModalOpen(true);
+  };
+
+  const openEditEntryModal = (entry: JournalEntry) => {
+    setEditingEntry(entry);
+    setNewDate(entry.entryDate);
+    setNewMood(entry.emotionalState);
+    setNewPrepScore(entry.preparationScore);
+    setNewExecScore(entry.executionScore);
+    setNewDiscScore(entry.disciplineScore);
+    setNewMacro(entry.macroEnvironment || '');
+    setNewHtf(entry.higherTimeframeBias || '');
+    setNewPlan(entry.tradingPlan || '');
+    setNewSummary(entry.dailySummary || '');
+    setNewLesson(entry.lessonsLearned || '');
+    setNewFomo(Boolean(entry.fomoDetected));
+    setNewRevenge(Boolean(entry.revengeTrading));
+    setNewOvertrade(Boolean(entry.overtrading));
+    setNewMovedSl(Boolean(entry.movedStopLoss));
+    setNewIgnoredRules(Boolean(entry.ignoredRules));
+    setNewPrematureExit(Boolean(entry.prematureExit));
+    setModalOpen(true);
+  };
+
+  const handleSaveEntry = (e: React.FormEvent) => {
     e.preventDefault();
+    if (editingEntry) {
+      updateJournalEntry({
+        ...editingEntry,
+        entryDate: newDate,
+        emotionalState: newMood,
+        preparationScore: newPrepScore,
+        executionScore: newExecScore,
+        disciplineScore: newDiscScore,
+        macroEnvironment: newMacro.trim() || 'Neutral macro environment; watching rates and dollar index.',
+        higherTimeframeBias: newHtf.trim() || 'Aligned with HTF market structure.',
+        tradingPlan: newPlan.trim() || 'Follow predefined entry criteria, respect risk limits.',
+        dailySummary: newSummary.trim() || 'Session completed adhering to risk parameters.',
+        lessonsLearned: newLesson.trim() || 'Process execution matters more than single-trade outcome.',
+        fomoDetected: newFomo,
+        revengeTrading: newRevenge,
+        overtrading: newOvertrade,
+        movedStopLoss: newMovedSl,
+        ignoredRules: newIgnoredRules,
+        prematureExit: newPrematureExit,
+      });
+      setSelectedEntryId(editingEntry.id);
+      setEditingEntry(null);
+      setModalOpen(false);
+      return;
+    }
+
     const entryId = `j-${newDate}-${Date.now().toString().slice(-4)}`;
     addJournalEntry({
       id: entryId,
@@ -187,17 +272,17 @@ export default function JournalPage() {
       preparationScore: newPrepScore,
       executionScore: newExecScore,
       disciplineScore: newDiscScore,
-      macroEnvironment: newMacro || 'Neutral macro environment; watching rates and dollar index.',
-      higherTimeframeBias: newHtf || 'Aligned with HTF market structure.',
-      tradingPlan: newPlan || 'Follow predefined entry criteria, respect risk limits.',
-      dailySummary: newSummary || 'Session completed adhering to risk parameters.',
-      lessonsLearned: newLesson || 'Process execution matters more than single-trade outcome.',
+      macroEnvironment: newMacro.trim() || 'Neutral macro environment; watching rates and dollar index.',
+      higherTimeframeBias: newHtf.trim() || 'Aligned with HTF market structure.',
+      tradingPlan: newPlan.trim() || 'Follow predefined entry criteria, respect risk limits.',
+      dailySummary: newSummary.trim() || 'Session completed adhering to risk parameters.',
+      lessonsLearned: newLesson.trim() || 'Process execution matters more than single-trade outcome.',
       fomoDetected: newFomo,
       revengeTrading: newRevenge,
       overtrading: newOvertrade,
       movedStopLoss: newMovedSl,
       ignoredRules: newIgnoredRules,
-      prematureExit: false,
+      prematureExit: newPrematureExit,
     });
     setSelectedEntryId(entryId);
     setModalOpen(false);
@@ -249,7 +334,7 @@ export default function JournalPage() {
           <button
             type="button"
             className="btn dark flex items-center gap-1.5"
-            onClick={() => setModalOpen(true)}
+            onClick={() => openNewEntryModal()}
           >
             <Plus size={14} />
             <span>New journal entry</span>
@@ -317,6 +402,18 @@ export default function JournalPage() {
                       ) : (
                         <span>Self-scored</span>
                       )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditEntryModal(entry);
+                        }}
+                        title="Edit journal entry"
+                        aria-label={`Edit journal entry for ${entry.entryDate}`}
+                        className="p-1 rounded hover:bg-[var(--tw-pill)] text-[var(--tw-ink-3)] hover:text-[var(--tw-ink)] transition-colors"
+                      >
+                        <Pencil size={12} />
+                      </button>
                       <DeleteConfirmButton
                         variant="icon"
                         size={13}
@@ -435,6 +532,16 @@ export default function JournalPage() {
                   <span className="text-xs text-[var(--tw-ink-2)] font-medium">
                     {linkedTrades.length > 0 ? `${linkedTrades.length} trades · ` : ''}Self-scored
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => openEditEntryModal(activeEntry)}
+                    className="btn quiet text-xs inline-flex items-center gap-1.5 hover:text-[var(--tw-ink)]"
+                    style={{ height: '28px', padding: '0 12px' }}
+                    aria-label={`Edit journal entry ${activeEntry.entryDate}`}
+                  >
+                    <Pencil size={12} />
+                    <span>Edit entry</span>
+                  </button>
                   <DeleteConfirmButton
                     variant="pill"
                     label="Delete entry"
@@ -619,7 +726,7 @@ export default function JournalPage() {
       {/* New Journal Entry Modal */}
       {modalOpen && (
         <div
-          className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-md p-4 sm:p-6 md:p-8 flex justify-center items-start pt-6 sm:pt-10 pb-16"
+          className="fixed inset-0 z-[100] overflow-y-auto bg-black/80 backdrop-blur-md p-4 sm:p-6 md:p-8 flex justify-center items-start pt-6 sm:pt-10 pb-16"
           onClick={(e) => {
             if (e.target === e.currentTarget) setModalOpen(false);
           }}
@@ -628,7 +735,7 @@ export default function JournalPage() {
             <div className="flex items-center justify-between pb-4 border-b border-[var(--tw-line)]">
               <div>
                 <h3 className="text-xl font-semibold tracking-tight text-[var(--tw-ink)]">
-                  New Journal Entry
+                  {editingEntry ? `Edit Journal Entry · ${editingEntry.entryDate}` : 'New Journal Entry'}
                 </h3>
                 <p className="text-xs text-[var(--tw-ink-2)] mt-1">
                   Record market context, gameplan, and subjective execution discipline scores.
@@ -636,14 +743,17 @@ export default function JournalPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setModalOpen(false)}
+                onClick={() => {
+                  setEditingEntry(null);
+                  setModalOpen(false);
+                }}
                 className="p-1.5 rounded-full hover:bg-[var(--tw-pill)] text-[var(--tw-ink-2)] transition-colors"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateEntry} className="mt-5 space-y-4">
+            <form onSubmit={handleSaveEntry} className="mt-5 space-y-4">
               {/* Row 1: Date & Mood */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -818,6 +928,13 @@ export default function JournalPage() {
                   >
                     <i></i>Ignored plan or rules
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewPrematureExit(!newPrematureExit)}
+                    className={`tw-journal-pf ${newPrematureExit ? 'on' : ''}`}
+                  >
+                    <i></i>Premature exit
+                  </button>
                 </div>
               </div>
 
@@ -825,7 +942,10 @@ export default function JournalPage() {
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--tw-line)]">
                 <button
                   type="button"
-                  onClick={() => setModalOpen(false)}
+                  onClick={() => {
+                    setEditingEntry(null);
+                    setModalOpen(false);
+                  }}
                   className="btn quiet text-xs px-4 py-2"
                 >
                   Cancel
@@ -834,7 +954,7 @@ export default function JournalPage() {
                   type="submit"
                   className="btn dark text-xs px-5 py-2 font-semibold"
                 >
-                  Save journal entry
+                  {editingEntry ? 'Save changes' : 'Save journal entry'}
                 </button>
               </div>
             </form>

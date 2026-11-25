@@ -2261,8 +2261,8 @@ body {
 
 .tl-lhead, .tl-lrow {
   display: grid;
-  grid-template-columns: 52px 140px minmax(0, 1fr) 150px 64px 66px 108px;
-  gap: 12px;
+  grid-template-columns: 52px 132px minmax(0, 1fr) 130px 64px 70px 140px;
+  gap: 10px;
   align-items: center;
   padding: 0 18px;
 }

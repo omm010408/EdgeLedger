@@ -3,9 +3,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useTrading } from '../../context/TradingContext';
-import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Edit3, Plus } from 'lucide-react';
 import { Trade } from '../../lib/types/financial';
 import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
+import { QuickTradeModal } from '../../components/modals/QuickTradeModal';
 
 interface DayTradeSummary {
   dateNum: number;
@@ -44,6 +45,8 @@ export default function CalendarPage() {
 
   // Calendar View Mode: Monthly, Weekly, Daily
   const [viewMode, setViewMode] = useState<'Monthly' | 'Weekly' | 'Daily'>('Monthly');
+  const [quickTradeOpen, setQuickTradeOpen] = useState(false);
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
 
   // Default to today's year, month, and day
   const [displayedYear, setDisplayedYear] = useState<number>(() => new Date().getFullYear());
@@ -724,6 +727,18 @@ export default function CalendarPage() {
                               t.realizedR || 0
                             ).toFixed(2)}R`}
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingTrade(t);
+                          setQuickTradeOpen(true);
+                        }}
+                        title="Edit trade"
+                        aria-label={`Edit ${t.instrumentSymbol} trade`}
+                        className="p-1 rounded text-[var(--tw-ink-3)] hover:text-[var(--tw-ink)] transition-colors"
+                      >
+                        <Edit3 size={12} />
+                      </button>
                       <DeleteConfirmButton
                         variant="icon"
                         size={12}
@@ -743,12 +758,36 @@ export default function CalendarPage() {
           </div>
 
           {/* Discipline Scoring Rule Box */}
-          <div className="disc">
-            <b>Discipline score: not scored.</b> No journal entry exists for this day. Scores are never estimated from P&amp;L.
-          </div>
+          {(() => {
+            const dayJournal = journalEntries.find((j) => j.entryDate === selectedDay.dateStr);
+            if (!dayJournal) {
+              return (
+                <div className="disc">
+                  <b>Discipline score: not scored.</b> No journal entry exists for this day. Scores are never estimated from P&amp;L.
+                </div>
+              );
+            }
+            return (
+              <div className="disc">
+                <b>Discipline score: {dayJournal.disciplineScore}/10</b> · Mood: {dayJournal.emotionalState}.{' '}
+                {dayJournal.dailySummary || dayJournal.lessonsLearned || 'Session journal logged.'}
+              </div>
+            );
+          })()}
 
-          {/* Links to Trade Ledger & Journal */}
+          {/* Links to Trade Ledger, New Execution & Journal */}
           <div className="flex flex-col gap-2 mt-auto">
+            <button
+              type="button"
+              onClick={() => {
+                setEditingTrade(null);
+                setQuickTradeOpen(true);
+              }}
+              className="tw-btn full text-center justify-center inline-flex items-center gap-1.5"
+            >
+              <Plus size={13} />
+              <span>Log execution for {selectedDay.dateNum} {monthName}</span>
+            </button>
             <Link
               href={`/trades?date=${selectedDay.dateStr}`}
               className="tw-btn full text-center justify-center"
@@ -759,7 +798,7 @@ export default function CalendarPage() {
               href={`/journal?date=${selectedDay.dateStr}`}
               className="tw-btn dark full text-center justify-center"
             >
-              <span>Open journal for {selectedDay.dateNum} {monthName}</span>
+              <span>Open / edit journal for {selectedDay.dateNum} {monthName}</span>
             </Link>
           </div>
         </section>
@@ -794,6 +833,16 @@ export default function CalendarPage() {
           </div>
         </section>
       </main>
+
+      <QuickTradeModal
+        isOpen={quickTradeOpen}
+        editTrade={editingTrade}
+        defaultDate={selectedDay.dateStr}
+        onClose={() => {
+          setQuickTradeOpen(false);
+          setEditingTrade(null);
+        }}
+      />
     </div>
   );
 }

@@ -15,7 +15,9 @@ import {
   Settings,
   Trash2,
   Sliders,
-  Check
+  Check,
+  Pencil,
+  X
 } from 'lucide-react';
 import { NewAccountModal } from '../../components/modals/NewAccountModal';
 import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
@@ -38,8 +40,11 @@ export default function AccountsPage() {
     portfolioMetrics,
     riskAlerts,
     isPnlHidden,
+    updateAccount,
     deleteAccount,
     toggleRule,
+    updateRule,
+    addRule,
     deleteRule
   } = useTrading();
 
@@ -53,6 +58,62 @@ export default function AccountsPage() {
 
   const [newAccountModalOpen, setNewAccountModalOpen] = useState(false);
   const [editingRuleAccount, setEditingRuleAccount] = useState<TradingAccount | null>(null);
+  const [editingAccount, setEditingAccount] = useState<TradingAccount | null>(null);
+  const [editAccName, setEditAccName] = useState('');
+  const [editAccFirm, setEditAccFirm] = useState('');
+  const [editAccType, setEditAccType] = useState<TradingAccount['accountType']>('prop_evaluation');
+  const [editAccPhase, setEditAccPhase] = useState('');
+  const [editAccCurrency, setEditAccCurrency] = useState('USD');
+  const [editAccStartBal, setEditAccStartBal] = useState('');
+  const [editAccCurrBal, setEditAccCurrBal] = useState('');
+  const [editAccCurrEq, setEditAccCurrEq] = useState('');
+  const [editAccHwm, setEditAccHwm] = useState('');
+  const [editAccNotes, setEditAccNotes] = useState('');
+  const [newRuleType, setNewRuleType] = useState<AccountRule['ruleType']>('daily_loss_limit');
+  const [newRuleThreshold, setNewRuleThreshold] = useState('5');
+  const [newRuleUnit, setNewRuleUnit] = useState<'percent' | 'currency'>('percent');
+
+  const openEditAccountModal = (acc: TradingAccount) => {
+    setEditingAccount(acc);
+    setEditAccName(acc.name);
+    setEditAccFirm(acc.brokerOrFirm);
+    setEditAccType(acc.accountType);
+    setEditAccPhase(acc.challengePhase || '');
+    setEditAccCurrency(acc.currency || 'USD');
+    setEditAccStartBal(String(acc.startingBalance));
+    setEditAccCurrBal(String(acc.currentBalance));
+    setEditAccCurrEq(String(acc.currentEquity));
+    setEditAccHwm(String(acc.highWaterMark));
+    setEditAccNotes(acc.notes || '');
+  };
+
+  const handleSaveAccountEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAccount) return;
+    const startBal = Math.max(0, parseFloat(editAccStartBal) || editingAccount.startingBalance);
+    const currBal = parseFloat(editAccCurrBal);
+    const currEq = parseFloat(editAccCurrEq);
+    const hwm = parseFloat(editAccHwm);
+    const validBal = Number.isFinite(currBal) ? currBal : editingAccount.currentBalance;
+    const validEq = Number.isFinite(currEq) ? currEq : validBal;
+    const validHwm = Number.isFinite(hwm) ? Math.max(hwm, validEq) : Math.max(editingAccount.highWaterMark, validEq);
+
+    updateAccount({
+      ...editingAccount,
+      name: editAccName.trim() || editingAccount.name,
+      brokerOrFirm: editAccFirm.trim() || editingAccount.brokerOrFirm,
+      accountType: editAccType,
+      accountSize: startBal,
+      challengePhase: editAccPhase.trim() || (editAccType === 'funded' ? 'Funded' : 'Phase 1'),
+      currency: editAccCurrency.trim() || 'USD',
+      startingBalance: startBal,
+      currentBalance: validBal,
+      currentEquity: validEq,
+      highWaterMark: validHwm,
+      notes: editAccNotes.trim() || undefined,
+    });
+    setEditingAccount(null);
+  };
 
   const activeEditingRuleAccount = useMemo(
     () => (editingRuleAccount ? accounts.find((a) => a.id === editingRuleAccount.id) || null : null),
@@ -457,6 +518,15 @@ export default function AccountsPage() {
                 </Link>
 
                 <button
+                  onClick={() => openEditAccountModal(acc)}
+                  className="w-10 h-10 rounded-full flex items-center justify-center bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)] hover:border-[var(--tw-line-strong)] transition-all cursor-pointer"
+                  title="Edit Account Details"
+                  aria-label={`Edit ${acc.name}`}
+                >
+                  <Pencil size={15} />
+                </button>
+
+                <button
                   onClick={() => setEditingRuleAccount(acc)}
                   className="w-10 h-10 rounded-full flex items-center justify-center bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)] hover:border-[var(--tw-line-strong)] transition-all cursor-pointer"
                   title="Configure Rules"
@@ -481,7 +551,7 @@ export default function AccountsPage() {
 
       {/* 4. Rule Engine Configuration Modal */}
       {activeEditingRuleAccount && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
           <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-[var(--tw-line)] bg-[var(--tw-tile)] shadow-2xl text-xs p-6 space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--tw-line)]">
               <div className="flex items-center space-x-2">
@@ -544,26 +614,125 @@ export default function AccountsPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 text-[11px] text-[var(--tw-ink-3)] pt-1 border-t border-[var(--tw-line)]/50">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] text-[var(--tw-ink-3)] pt-2 border-t border-[var(--tw-line)]/50">
                     <div>
-                      <span className="block text-[9px] uppercase font-bold text-[var(--tw-ink-2)]">Limit Threshold</span>
-                      <span className="font-semibold text-[var(--tw-ink)]">
-                        {rule.thresholdUnit === 'percent'
-                          ? `${rule.thresholdValue}%`
-                          : formatCurrency(rule.thresholdValue)}
-                      </span>
+                      <label className="block text-[9px] uppercase font-bold text-[var(--tw-ink-2)] mb-1">
+                        Limit Threshold ({rule.thresholdUnit === 'percent' ? '%' : '$'})
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        defaultValue={rule.thresholdValue}
+                        key={`thr-${rule.id}-${rule.thresholdValue}`}
+                        onBlur={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (Number.isFinite(v) && v >= 0 && v !== rule.thresholdValue) {
+                            updateRule(activeEditingRuleAccount.id, { ...rule, thresholdValue: v });
+                          }
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-[var(--tw-tile)] border border-[var(--tw-line)] text-[var(--tw-ink)] font-semibold outline-none focus:border-[var(--tw-hero-line)]"
+                      />
                     </div>
                     <div>
-                      <span className="block text-[9px] uppercase font-bold text-[var(--tw-ink-2)]">Calculation Method</span>
-                      <span className="font-semibold text-[var(--tw-ink)]">{rule.calculationMethod}</span>
+                      <label className="block text-[9px] uppercase font-bold text-[var(--tw-ink-2)] mb-1">
+                        Calculation Method
+                      </label>
+                      <select
+                        value={rule.calculationMethod}
+                        onChange={(e) =>
+                          updateRule(activeEditingRuleAccount.id, {
+                            ...rule,
+                            calculationMethod: e.target.value as AccountRule['calculationMethod'],
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-[var(--tw-tile)] border border-[var(--tw-line)] text-[var(--tw-ink)] font-semibold outline-none focus:border-[var(--tw-hero-line)]"
+                      >
+                        <option value="equity_based">equity_based</option>
+                        <option value="balance_based">balance_based</option>
+                        <option value="relative_trailing">relative_trailing</option>
+                        <option value="static">static</option>
+                      </select>
                     </div>
                     <div>
-                      <span className="block text-[9px] uppercase font-bold text-[var(--tw-ink-2)]">Warning Buffer</span>
-                      <span className="font-semibold text-[var(--tw-warn)]">{rule.warningThresholdPct}%</span>
+                      <label className="block text-[9px] uppercase font-bold text-[var(--tw-ink-2)] mb-1">
+                        Warning Buffer (%)
+                      </label>
+                      <input
+                        type="number"
+                        min="10"
+                        max="99"
+                        defaultValue={rule.warningThresholdPct}
+                        key={`warn-${rule.id}-${rule.warningThresholdPct}`}
+                        onBlur={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (Number.isFinite(v) && v >= 10 && v <= 99 && v !== rule.warningThresholdPct) {
+                            updateRule(activeEditingRuleAccount.id, { ...rule, warningThresholdPct: v });
+                          }
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-[var(--tw-tile)] border border-[var(--tw-line)] text-[var(--tw-warn)] font-semibold outline-none focus:border-[var(--tw-hero-line)]"
+                      />
                     </div>
                   </div>
                 </div>
               ))}
+
+              {/* Add New Rule Row */}
+              <div className="p-3.5 rounded-2xl border border-dashed border-[var(--tw-line-strong)] bg-[var(--tw-pill)]/30 space-y-2.5">
+                <span className="block text-[10px] uppercase font-bold text-[var(--tw-ink-2)]">
+                  + Add Governance Rule
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                  <select
+                    value={newRuleType}
+                    onChange={(e) => setNewRuleType(e.target.value as AccountRule['ruleType'])}
+                    className="sm:col-span-2 px-2.5 py-1.5 rounded-lg bg-[var(--tw-tile)] border border-[var(--tw-line)] text-[var(--tw-ink)]"
+                  >
+                    <option value="daily_loss_limit">Daily loss limit</option>
+                    <option value="trailing_drawdown">Trailing drawdown</option>
+                    <option value="max_overall_loss">Max overall loss</option>
+                    <option value="profit_target">Profit target</option>
+                    <option value="max_risk_per_trade_pct">Max risk per trade %</option>
+                    <option value="max_open_risk_pct">Max open risk %</option>
+                    <option value="max_consecutive_losses">Max consecutive losses</option>
+                    <option value="min_trading_days">Min trading days</option>
+                  </select>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={newRuleThreshold}
+                    onChange={(e) => setNewRuleThreshold(e.target.value)}
+                    placeholder="Threshold"
+                    className="px-2.5 py-1.5 rounded-lg bg-[var(--tw-tile)] border border-[var(--tw-line)] text-[var(--tw-ink)]"
+                  />
+                  <div className="flex gap-1.5">
+                    <select
+                      value={newRuleUnit}
+                      onChange={(e) => setNewRuleUnit(e.target.value as 'percent' | 'currency')}
+                      className="flex-1 px-2 py-1.5 rounded-lg bg-[var(--tw-tile)] border border-[var(--tw-line)] text-[var(--tw-ink)]"
+                    >
+                      <option value="percent">%</option>
+                      <option value="currency">$</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = parseFloat(newRuleThreshold);
+                        if (!Number.isFinite(val) || val <= 0) return;
+                        addRule(activeEditingRuleAccount.id, {
+                          ruleType: newRuleType,
+                          thresholdValue: val,
+                          thresholdUnit: newRuleUnit,
+                          calculationMethod: newRuleType === 'trailing_drawdown' ? 'relative_trailing' : 'equity_based',
+                          resetFrequency: newRuleType === 'daily_loss_limit' ? 'daily' : 'none',
+                        });
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-[var(--tw-ink)] text-[var(--tw-tile)] font-bold hover:opacity-90"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="pt-2 flex justify-end">
@@ -574,6 +743,192 @@ export default function AccountsPage() {
                 Close &amp; Apply
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Edit Account Details Modal */}
+      {editingAccount && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setEditingAccount(null);
+          }}
+        >
+          <div className="relative w-full max-w-xl max-h-[88vh] overflow-y-auto rounded-3xl border border-[var(--tw-line-strong)] bg-[var(--tw-tile)] shadow-2xl p-6 space-y-5 text-[var(--tw-ink)]">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--tw-line)]">
+              <div>
+                <h2 className="text-lg font-bold tracking-tight text-[var(--tw-ink)]">
+                  Edit account · {editingAccount.name}
+                </h2>
+                <p className="text-xs text-[var(--tw-ink-2)] mt-0.5">
+                  Changes sync across Overview, Risk, Analytics, Header, and Trades.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingAccount(null)}
+                aria-label="Close edit account modal"
+                className="w-8 h-8 rounded-full bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)] flex items-center justify-center"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAccountEdit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--tw-ink-2)] mb-1">
+                    Desk / Account Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editAccName}
+                    onChange={(e) => setEditAccName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] outline-none focus:border-[var(--tw-hero-line)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--tw-ink-2)] mb-1">
+                    Broker / Prop Firm
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editAccFirm}
+                    onChange={(e) => setEditAccFirm(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] outline-none focus:border-[var(--tw-hero-line)]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--tw-ink-2)] mb-1">
+                    Account Type
+                  </label>
+                  <select
+                    value={editAccType}
+                    onChange={(e) => setEditAccType(e.target.value as TradingAccount['accountType'])}
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] outline-none focus:border-[var(--tw-hero-line)]"
+                  >
+                    <option value="prop_evaluation">Prop Evaluation</option>
+                    <option value="prop_verification">Prop Verification</option>
+                    <option value="funded">Funded</option>
+                    <option value="instant_funding">Instant Funding</option>
+                    <option value="personal">Personal / Live</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--tw-ink-2)] mb-1">
+                    Phase / Stage
+                  </label>
+                  <input
+                    type="text"
+                    value={editAccPhase}
+                    onChange={(e) => setEditAccPhase(e.target.value)}
+                    placeholder="Phase 1 / Funded"
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] outline-none focus:border-[var(--tw-hero-line)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--tw-ink-2)] mb-1">
+                    Currency
+                  </label>
+                  <input
+                    type="text"
+                    value={editAccCurrency}
+                    onChange={(e) => setEditAccCurrency(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] font-mono outline-none focus:border-[var(--tw-hero-line)]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--tw-ink-2)] mb-1">
+                    Starting Balance
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={editAccStartBal}
+                    onChange={(e) => setEditAccStartBal(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] font-mono outline-none focus:border-[var(--tw-hero-line)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--tw-ink-2)] mb-1">
+                    Current Balance
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={editAccCurrBal}
+                    onChange={(e) => setEditAccCurrBal(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] font-mono outline-none focus:border-[var(--tw-hero-line)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--tw-ink-2)] mb-1">
+                    Current Equity
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={editAccCurrEq}
+                    onChange={(e) => setEditAccCurrEq(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] font-mono outline-none focus:border-[var(--tw-hero-line)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--tw-ink-2)] mb-1">
+                    High-Water Mark
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={editAccHwm}
+                    onChange={(e) => setEditAccHwm(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] font-mono outline-none focus:border-[var(--tw-hero-line)]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-[var(--tw-ink-2)] mb-1">
+                  Account Notes
+                </label>
+                <textarea
+                  rows={2}
+                  value={editAccNotes}
+                  onChange={(e) => setEditAccNotes(e.target.value)}
+                  placeholder="Optional desk rules, payout cadence, or account notes..."
+                  className="w-full px-3 py-2 rounded-xl bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink)] outline-none focus:border-[var(--tw-hero-line)] resize-none"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-[var(--tw-line)] flex justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingAccount(null)}
+                  className="px-4 py-2 rounded-full border border-[var(--tw-line)] text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)] font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-full bg-[var(--tw-ink)] text-[var(--tw-tile)] font-bold hover:opacity-90 shadow-sm"
+                >
+                  Save account changes
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

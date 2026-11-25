@@ -53,8 +53,8 @@ export const DeleteConfirmButton: React.FC<DeleteConfirmButtonProps> = ({
         onClick={handleClick}
         onBlur={() => setConfirming(false)}
         title={confirming ? 'Click again to confirm deletion' : title}
-        aria-label={ariaLabel || title}
-        className={`inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold transition-all cursor-pointer border ${
+        aria-label={confirming ? confirmLabel : ariaLabel || title}
+        className={`inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer border ${
           confirming
             ? 'bg-[var(--tw-loss)] text-white border-[var(--tw-loss)] shadow-sm'
             : 'bg-transparent text-[var(--tw-loss)] border-[var(--tw-loss)]/40 hover:bg-[var(--tw-loss)]/15'
@@ -73,8 +73,8 @@ export const DeleteConfirmButton: React.FC<DeleteConfirmButtonProps> = ({
         onClick={handleClick}
         onBlur={() => setConfirming(false)}
         title={confirming ? 'Click again to confirm deletion' : title}
-        aria-label={ariaLabel || title}
-        className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[11px] font-semibold transition-all cursor-pointer border ${
+        aria-label={confirming ? confirmLabel : ariaLabel || title}
+        className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer border ${
           confirming
             ? 'bg-[var(--tw-loss)] text-white border-[var(--tw-loss)] shadow-sm'
             : 'bg-[var(--tw-pill)] text-[var(--tw-ink-2)] border-[var(--tw-line)] hover:text-[var(--tw-loss)] hover:border-[var(--tw-loss)]/60'

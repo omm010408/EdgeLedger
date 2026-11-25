@@ -1420,8 +1420,16 @@ function generatePersonalizedRules(
   };
 
   const updateJournalEntry = (updated: JournalEntry) => {
+    const dqScore = calculateDecisionQualityScore({
+      discipline: updated.disciplineScore,
+      riskManagement: updated.riskManagementScore ?? 8,
+      execution: updated.executionScore,
+      preparation: updated.preparationScore,
+      emotionalControl: updated.emotionalControlScore ?? 8,
+    });
     const stamped: JournalEntry = {
       ...updated,
+      decisionQualityScore: dqScore,
       updatedAt: new Date().toISOString(),
     };
     setJournalEntries((prev) => prev.map((j) => (j.id === stamped.id ? stamped : j)));
