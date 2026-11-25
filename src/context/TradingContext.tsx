@@ -116,6 +116,18 @@ interface TradingContextType {
   deleteRule: (accountId: string, ruleId: string) => void;
 
   importTrades: (newTrades: Trade[]) => void;
+  importBackupState: (backup: {
+    accounts?: TradingAccount[];
+    trades?: Trade[];
+    strategies?: Strategy[];
+    journalEntries?: JournalEntry[];
+    riskAlerts?: RiskAlert[];
+  }) => {
+    accounts: number;
+    trades: number;
+    strategies: number;
+    journalEntries: number;
+  };
   resetToDemoData: () => void;
   clearDemoData: () => void;
   clearAllUserData: () => void;
@@ -1531,6 +1543,68 @@ function generatePersonalizedRules(
     });
   };
 
+  const importBackupState = (backup: {
+    accounts?: TradingAccount[];
+    trades?: Trade[];
+    strategies?: Strategy[];
+    journalEntries?: JournalEntry[];
+    riskAlerts?: RiskAlert[];
+  }) => {
+    const newAccounts = (Array.isArray(backup.accounts) ? backup.accounts : []).filter(
+      (a) => a && a.id && !accounts.some((cur) => cur.id === a.id)
+    );
+    const newTrades = (Array.isArray(backup.trades) ? backup.trades : []).filter(
+      (t) => t && t.id && !trades.some((cur) => cur.id === t.id)
+    );
+    const newStrategies = (Array.isArray(backup.strategies) ? backup.strategies : []).filter(
+      (s) => s && s.id && !strategies.some((cur) => cur.id === s.id)
+    );
+    const newJournal = (Array.isArray(backup.journalEntries) ? backup.journalEntries : []).filter(
+      (j) => j && j.id && !journalEntries.some((cur) => cur.id === j.id)
+    );
+    const newAlerts = (Array.isArray(backup.riskAlerts) ? backup.riskAlerts : []).filter(
+      (al) => al && al.id && !riskAlerts.some((cur) => cur.id === al.id)
+    );
+
+    if (newAccounts.length > 0) {
+      setAccounts((prev) => [...newAccounts, ...prev]);
+      newAccounts.forEach((a) => {
+        void persistUpsertToCloud('account', a.id, () => SupabaseService.saveAccount(a));
+      });
+    }
+    if (newTrades.length > 0) {
+      setTrades((prev) => [...newTrades, ...prev]);
+      newTrades.forEach((t) => {
+        void persistUpsertToCloud('trade', t.id, () => SupabaseService.saveTrade(t));
+      });
+    }
+    if (newStrategies.length > 0) {
+      setStrategies((prev) => [...newStrategies, ...prev]);
+      newStrategies.forEach((s) => {
+        void persistUpsertToCloud('strategy', s.id, () => SupabaseService.saveStrategy(s));
+      });
+    }
+    if (newJournal.length > 0) {
+      setJournalEntries((prev) => [...newJournal, ...prev]);
+      newJournal.forEach((j) => {
+        void persistUpsertToCloud('journal', j.id, () => SupabaseService.saveJournalEntry(j));
+      });
+    }
+    if (newAlerts.length > 0) {
+      setRiskAlerts((prev) => [...newAlerts, ...prev]);
+      newAlerts.forEach((al) => {
+        void persistUpsertToCloud('alert', al.id, () => SupabaseService.saveAlert(al));
+      });
+    }
+
+    return {
+      accounts: newAccounts.length,
+      trades: newTrades.length,
+      strategies: newStrategies.length,
+      journalEntries: newJournal.length,
+    };
+  };
+
   const resetToDemoData = () => {
     setAccounts(SEED_ACCOUNTS);
     setTrades(SEED_TRADES);
@@ -1691,6 +1765,7 @@ function generatePersonalizedRules(
         toggleRule,
         deleteRule,
         importTrades,
+        importBackupState,
         resetToDemoData,
         clearDemoData,
         clearAllUserData,

@@ -3,7 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTrading } from '../../context/TradingContext';
 import { getSupabaseDetails, testSupabaseConnection } from '../../lib/supabase/client';
-import { Trade } from '../../lib/types/financial';
+import { Trade, TradingAccount } from '../../lib/types/financial';
+import { JournalEntry, RiskAlert, Strategy } from '../../lib/data/seedData';
 
 type SettingsTabId = 'db' | 'br' | 'ct' | 'bk';
 
@@ -29,7 +30,9 @@ export default function SettingsPage() {
     accounts,
     trades,
     strategies,
-    importTrades,
+    journalEntries,
+    riskAlerts,
+    importBackupState,
     isCloudConfigured,
     syncStatus,
     lastSyncedAt,
@@ -230,13 +233,14 @@ export default function SettingsPage() {
   }, [instruments, contractCategory]);
 
   const handleExportFullState = () => {
-    showToast('Preparing JSON backup…');
     const fullState = {
       timestamp: new Date().toISOString(),
-      version: '1.0.0',
+      version: '1.1.0',
       accounts,
       trades,
       strategies,
+      journalEntries,
+      riskAlerts,
       instruments,
     };
     const blob = new Blob([JSON.stringify(fullState, null, 2)], {
@@ -248,6 +252,9 @@ export default function SettingsPage() {
     link.download = `EdgeLedger_Backup_${new Date().toISOString().split('T')[0]}.json`;
     link.click();
     URL.revokeObjectURL(url);
+    showToast(
+      `Exported ${accounts.length} accounts, ${trades.length} trades, ${strategies.length} strategies & ${journalEntries.length} journal entries`
+    );
   };
 
   const handleRestoreBackupFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -256,12 +263,23 @@ export default function SettingsPage() {
     if (!file) return;
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text) as { trades?: Trade[] };
-      if (Array.isArray(parsed.trades) && parsed.trades.length > 0) {
-        importTrades(parsed.trades);
-        showToast(`Restored ${parsed.trades.length} trades from backup`);
+      const parsed = JSON.parse(text) as {
+        accounts?: TradingAccount[];
+        trades?: Trade[];
+        strategies?: Strategy[];
+        journalEntries?: JournalEntry[];
+        riskAlerts?: RiskAlert[];
+      };
+      const counts = importBackupState(parsed);
+      const parts: string[] = [];
+      if (counts.accounts > 0) parts.push(`${counts.accounts} accounts`);
+      if (counts.trades > 0) parts.push(`${counts.trades} trades`);
+      if (counts.strategies > 0) parts.push(`${counts.strategies} strategies`);
+      if (counts.journalEntries > 0) parts.push(`${counts.journalEntries} journal entries`);
+      if (parts.length > 0) {
+        showToast(`Restored ${parts.join(', ')} from backup`);
       } else {
-        showToast('Backup parsed, no trades found to import');
+        showToast('Backup verified — all included records already exist locally');
       }
     } catch {
       showToast('Invalid JSON backup file');
@@ -361,8 +379,8 @@ export default function SettingsPage() {
               <div>
                 <span className="tw-eyebrow !mb-0 !text-[11px]">Portfolio records</span>
                 <strong>
-                  {accounts.length > 0 || trades.length > 0
-                    ? `${accounts.length} desks · ${trades.length} trades`
+                  {accounts.length > 0 || trades.length > 0 || strategies.length > 0 || journalEntries.length > 0
+                    ? `${accounts.length} desks · ${trades.length} trades · ${strategies.length} strats · ${journalEntries.length} journal`
                     : 'Blank portfolio'}
                 </strong>
               </div>
@@ -662,7 +680,7 @@ export default function SettingsPage() {
               Backup &amp; restore
             </h2>
             <p className="text-sm m-0 leading-relaxed" style={{ color: 'var(--tw-ink-2)' }}>
-              Export a complete JSON backup, or restore executions from a saved JSON backup file.
+              Export a complete JSON backup including all accounts, trades, strategies, and journal entries ({accounts.length} accounts · {trades.length} trades · {strategies.length} strategies · {journalEntries.length} journal entries), or restore from a saved backup file.
             </p>
 
             <input
