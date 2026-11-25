@@ -1,0 +1,59 @@
+# ==============================================================================
+# EDGELEDGER AI - .gitignore
+# Multi-tier protection for weights, datasets, journals, and local secrets
+# ==============================================================================
+
+# Python Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+
+# Testing & Type Checking
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Sensitive Information, Keys & Local Environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.token
+*secret*
+*credentials*
+
+# Model Weights & Checkpoints (Heavy Binaries)
+*.bin
+*.pt
+*.pth
+*.safetensors
+*.onnx
+*.ckpt
+model/checkpoints/
+model/lora_adapters/
+models/
+# Ignore heavy GGUF files except the tracked project placeholder
+model/*.gguf
+!model/edgeledger-trained.gguf
+
+# Notebook Checkpoints
+.ipynb_checkpoints/
+
+# System / IDE Files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

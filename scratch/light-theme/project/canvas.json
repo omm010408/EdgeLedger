@@ -1,0 +1,240 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "AccountsTidewater.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Accounts, Tidewater (light)",
+      "w": 1440,
+      "x": 0,
+      "y": 3800
+    },
+    "AccountsTidewaterDark.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Accounts, Tidewater (dark)",
+      "w": 1440,
+      "x": 1818,
+      "y": 3800
+    },
+    "AddAccountTidewater.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Add account, Tidewater (light)",
+      "w": 1440,
+      "x": 0,
+      "y": 8480
+    },
+    "AddAccountTidewaterDark.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Add account, Tidewater (dark)",
+      "w": 1440,
+      "x": 1818,
+      "y": 8480
+    },
+    "CalendarTidewater.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Calendar, Tidewater (light)",
+      "w": 1440,
+      "x": 0,
+      "y": 4960
+    },
+    "CalendarTidewaterDark.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Calendar, Tidewater (dark)",
+      "w": 1440,
+      "x": 1818,
+      "y": 4960
+    },
+    "JournalTidewater.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Journal, Tidewater (light)",
+      "w": 1440,
+      "x": 0,
+      "y": 9660
+    },
+    "JournalTidewaterDark.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Journal, Tidewater (dark)",
+      "w": 1440,
+      "x": 1818,
+      "y": 9660
+    },
+    "PrivacyTidewater.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Hide and unhide P&L, Tidewater (light)",
+      "w": 1440,
+      "x": 0,
+      "y": 12313
+    },
+    "PrivacyTidewaterDark.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Hide and unhide P&L, Tidewater (dark)",
+      "w": 1440,
+      "x": 1818,
+      "y": 12477
+    },
+    "ReportsTidewater.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Reports, Tidewater (light)",
+      "w": 1440,
+      "x": 0,
+      "y": 11047
+    },
+    "ReportsTidewaterDark.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Reports, Tidewater (dark)",
+      "w": 1440,
+      "x": 1818,
+      "y": 11047
+    },
+    "Tidewater.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Bento, Tidewater (light)",
+      "w": 1440,
+      "x": 0,
+      "y": 2620
+    },
+    "TidewaterDark.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Bento, Tidewater (dark, high contrast)",
+      "w": 1440,
+      "x": 1818,
+      "y": 2620
+    },
+    "TradeEntryTidewater.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Record execution, Tidewater (light)",
+      "w": 1440,
+      "x": 0,
+      "y": 7300
+    },
+    "TradeEntryTidewaterDark.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Record execution, Tidewater (dark)",
+      "w": 1440,
+      "x": 1818,
+      "y": 7300
+    },
+    "TradeLedgerTidewater.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Trade ledger, Tidewater (light)",
+      "w": 1440,
+      "x": 0,
+      "y": 6120
+    },
+    "TradeLedgerTidewaterDark.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Trade ledger, Tidewater (dark)",
+      "w": 1440,
+      "x": 1818,
+      "y": 6120
+    },
+    "RiskTidewater.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Risk and exposure, Tidewater (light)",
+      "w": 1440,
+      "x": 0,
+      "y": 13657
+    },
+    "RiskTidewaterDark.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Risk and exposure, Tidewater (dark)",
+      "w": 1440,
+      "x": 1818,
+      "y": 13657
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-23T12:41:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "noteOrder": [
+    "title",
+    "bento"
+  ],
+  "notes": {
+    "bento": {
+      "kind": "title1",
+      "maxW": 1840,
+      "text": "Bento directions",
+      "w": 240,
+      "x": 0,
+      "y": 2480
+    },
+    "title": {
+      "kind": "title1",
+      "maxW": 1840,
+      "text": "EdgeLedger, redesigned",
+      "w": 240,
+      "x": 0,
+      "y": -260
+    }
+  },
+  "order": [
+    "Tidewater.dc.html",
+    "TidewaterDark.dc.html",
+    "AccountsTidewater.dc.html",
+    "AccountsTidewaterDark.dc.html",
+    "CalendarTidewater.dc.html",
+    "CalendarTidewaterDark.dc.html",
+    "TradeLedgerTidewater.dc.html",
+    "TradeLedgerTidewaterDark.dc.html",
+    "TradeEntryTidewater.dc.html",
+    "TradeEntryTidewaterDark.dc.html",
+    "AddAccountTidewater.dc.html",
+    "AddAccountTidewaterDark.dc.html",
+    "JournalTidewater.dc.html",
+    "JournalTidewaterDark.dc.html",
+    "ReportsTidewater.dc.html",
+    "ReportsTidewaterDark.dc.html",
+    "PrivacyTidewater.dc.html",
+    "PrivacyTidewaterDark.dc.html",
+    "RiskTidewater.dc.html",
+    "RiskTidewaterDark.dc.html"
+  ],
+  "pages": [],
+  "title": "EdgeLedger Dashboard Redesign"
+}

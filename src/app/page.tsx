@@ -150,6 +150,114 @@ export default function OverviewPage() {
     };
   };
 
+  // Live derived metrics for Overview tiles (One Data Model)
+  const instrumentBreakdown = useMemo(() => {
+    const map = new Map<string, { symbol: string; count: number; netPnl: number }>();
+    closedTrades.forEach((t) => {
+      const existing = map.get(t.instrumentSymbol) || {
+        symbol: t.instrumentSymbol,
+        count: 0,
+        netPnl: 0,
+      };
+      existing.count += 1;
+      existing.netPnl += t.netPnl;
+      map.set(t.instrumentSymbol, existing);
+    });
+    const list = Array.from(map.values()).sort((a, b) => Math.abs(b.netPnl) - Math.abs(a.netPnl));
+    const totalAbs = list.reduce((sum, item) => sum + Math.abs(item.netPnl), 0) || 1;
+    const colors = ['var(--tw-s1)', 'var(--tw-s2)', 'var(--tw-s3)', 'var(--tw-gain)'];
+    return list.map((item, idx) => ({
+      ...item,
+      sharePct: (Math.abs(item.netPnl) / totalAbs) * 100,
+      color: item.netPnl < 0 ? 'var(--tw-loss)' : colors[idx % colors.length],
+    }));
+  }, [closedTrades]);
+
+  const weekDays = useMemo(() => {
+    const baseDates = [
+      { day: 16, dateKey: '2024-03-16' },
+      { day: 17, dateKey: '2024-03-17' },
+      { day: 18, dateKey: '2024-03-18' },
+      { day: 19, dateKey: '2024-03-19' },
+      { day: 20, dateKey: '2024-03-20' },
+      { day: 21, dateKey: '2024-03-21' },
+      { day: 22, dateKey: '2024-03-22' },
+    ];
+    return baseDates.map(({ day, dateKey }) => {
+      const dayTrades = activeTrades.filter((t) => (t.entryTime || t.createdAt).startsWith(dateKey));
+      const dayClosed = dayTrades.filter((t) => t.status === 'CLOSED');
+      const dayOpen = dayTrades.filter((t) => t.status === 'OPEN' || t.status === 'PARTIALLY_CLOSED');
+      const netPnl = dayClosed.reduce((sum, t) => sum + t.netPnl, 0);
+      return { day, dateKey, dayTrades, dayClosed, dayOpen, netPnl };
+    });
+  }, [activeTrades]);
+
+  const rankedByR = useMemo(() => {
+    return [...closedTrades].sort((a, b) => (b.realizedR || 0) - (a.realizedR || 0)).slice(0, 4);
+  }, [closedTrades]);
+
+  const maxAbsR = useMemo(() => {
+    const vals = rankedByR.map((t) => Math.abs(t.realizedR || 0));
+    return Math.max(3, ...vals);
+  }, [rankedByR]);
+
+  const recentExecutions = useMemo(() => {
+    return [...activeTrades]
+      .sort((a, b) => new Date(b.entryTime || b.createdAt).getTime() - new Date(a.entryTime || a.createdAt).getTime())
+      .slice(0, 5);
+  }, [activeTrades]);
+
+  const bestClosedTrade = useMemo(() => {
+    if (closedTrades.length === 0) return null;
+    return [...closedTrades].sort((a, b) => b.netPnl - a.netPnl)[0];
+  }, [closedTrades]);
+
+  const worstClosedTrade = useMemo(() => {
+    if (closedTrades.length === 0) return null;
+    return [...closedTrades].sort((a, b) => a.netPnl - b.netPnl)[0];
+  }, [closedTrades]);
+
+  const openRiskStats = useMemo(() => {
+    const startingBal = selectedAccount
+      ? selectedAccount.startingBalance
+      : accounts.reduce((sum, a) => sum + a.startingBalance, 0);
+    const totalBal = startingBal + capitalStats.netProfit;
+    const openRisk = openTrades.reduce((sum, t) => sum + (t.plannedRiskUsd || 0), 0);
+    const closedRisks = closedTrades.map((t) => t.plannedRiskUsd || 0).filter((v) => v > 0);
+    const minRisk = closedRisks.length > 0 ? Math.min(...closedRisks) : 0;
+    const maxRisk = closedRisks.length > 0 ? Math.max(...closedRisks) : 0;
+    return {
+      openRisk,
+      openRiskPct: totalBal > 0 ? (openRisk / totalBal) * 100 : 0,
+      worstLossPnl: worstClosedTrade && worstClosedTrade.netPnl < 0 ? worstClosedTrade.netPnl : 0,
+      worstLossPct:
+        startingBal > 0 && worstClosedTrade && worstClosedTrade.netPnl < 0
+          ? (Math.abs(worstClosedTrade.netPnl) / startingBal) * 100
+          : 0,
+      minRisk,
+      maxRisk,
+    };
+  }, [accounts, selectedAccount, capitalStats.netProfit, openTrades, closedTrades, worstClosedTrade]);
+
+  const winRateSegments = useMemo(() => {
+    const circumference = 2 * Math.PI * 46; // ~289.03
+    if (closedTrades.length === 0) return [];
+    const gap = closedTrades.length > 1 ? 6 : 0;
+    const slotAngle = 360 / closedTrades.length;
+    const segLen = Math.max(8, circumference / closedTrades.length - gap);
+    return closedTrades.map((t, i) => ({
+      id: t.id,
+      dash: `${segLen.toFixed(1)} ${(circumference - segLen).toFixed(1)}`,
+      angle: -90 + i * slotAngle,
+      color: t.netPnl >= 0 ? 'var(--tw-gain)' : 'var(--tw-loss)',
+      title: `Trade ${i + 1}, ${t.instrumentSymbol} ${t.direction.toLowerCase()}, ${new Date(
+        t.entryTime
+      ).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })}: ${
+        t.netPnl >= 0 ? 'win' : 'loss'
+      }, ${(t.realizedR || 0) >= 0 ? '+' : '−'}${Math.abs(t.realizedR || 0).toFixed(2)}R`,
+    }));
+  }, [closedTrades]);
+
   // Open trade details for surveillance tile
   const primaryOpenTrade = openTrades[0] || null;
 
@@ -327,46 +435,19 @@ export default function OverviewPage() {
             r="46"
             style={{ fill: 'none', stroke: 'var(--tw-ring-track)', strokeWidth: 12 }}
           />
-          <circle
-            cx="60"
-            cy="60"
-            r="46"
-            transform="rotate(-90 60 60)"
-            strokeDasharray="64 225"
-            style={{ fill: 'none', stroke: 'var(--tw-gain)', strokeWidth: 12 }}
-          >
-            <title>Trade 1, XAUUSD buy, 18 Mar: win, +2.48R</title>
-          </circle>
-          <circle
-            cx="60"
-            cy="60"
-            r="46"
-            transform="rotate(0 60 60)"
-            strokeDasharray="64 225"
-            style={{ fill: 'none', stroke: 'var(--tw-gain)', strokeWidth: 12 }}
-          >
-            <title>Trade 2, EURUSD buy, 18 Mar: win, +1.64R</title>
-          </circle>
-          <circle
-            cx="60"
-            cy="60"
-            r="46"
-            transform="rotate(90 60 60)"
-            strokeDasharray="64 225"
-            style={{ fill: 'none', stroke: 'var(--tw-gain)', strokeWidth: 12 }}
-          >
-            <title>Trade 3, BTCUSD buy, 19 Mar: win, +2.97R</title>
-          </circle>
-          <circle
-            cx="60"
-            cy="60"
-            r="46"
-            transform="rotate(180 60 60)"
-            strokeDasharray="64 225"
-            style={{ fill: 'none', stroke: 'var(--tw-loss)', strokeWidth: 12 }}
-          >
-            <title>Trade 4, BTCUSD sell, 19 Mar: loss, −0.29R</title>
-          </circle>
+          {winRateSegments.map((seg) => (
+            <circle
+              key={seg.id}
+              cx="60"
+              cy="60"
+              r="46"
+              transform={`rotate(${seg.angle} 60 60)`}
+              strokeDasharray={seg.dash}
+              style={{ fill: 'none', stroke: seg.color, strokeWidth: 12 }}
+            >
+              <title>{seg.title}</title>
+            </circle>
+          ))}
           <text
             x="60"
             y="68"
@@ -401,7 +482,8 @@ export default function OverviewPage() {
         </div>
         <div>
           <span className="tw-pill">
-            Average R +{periodFilter === 'Week' ? '1.70' : capitalStats.avgR.toFixed(2)}R
+            Average R {capitalStats.avgR >= 0 ? '+' : '−'}
+            {Math.abs(capitalStats.avgR).toFixed(2)}R
           </span>
         </div>
       </section>
@@ -415,97 +497,85 @@ export default function OverviewPage() {
             <path d="M0 40C90 18 170 56 280 36S460 16 560 38V84H0Z" />
           </svg>
         </div>
-        <div>
-          <div className="tw-lbl">Net P&amp;L by day, 16–22 Mar</div>
-          <div className="tw-sub tw-s12" style={{ marginTop: '2px' }}>
-            Bubble area shows net result. A dashed ring marks an open trade.
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px' }}>
+          <div>
+            <div className="tw-lbl">Net P&amp;L by day, 16–22 Mar 2024</div>
+            <div className="tw-sub tw-s12" style={{ marginTop: '2px' }}>
+              Click a day to filter Trade ledger. Dashed ring marks an open trade.
+            </div>
           </div>
+          <Link className="tw-link" href="/calendar" style={{ whiteSpace: 'nowrap' }}>
+            Calendar
+          </Link>
         </div>
         <div className="tw-days" role="list">
-          <div className="tw-day has-tip" role="listitem" tabIndex={0}>
-            <div className="tw-bwrap">
-              <span className="tw-bub empty" />
-            </div>
-            <div className="tw-dl">
-              <div className="tw-d">16</div>
-              <div className="tw-v none">No trades</div>
-            </div>
-            <div className="tip">
-              <b>16 Mar, no trades</b>
-            </div>
-          </div>
-          <div className="tw-day has-tip" role="listitem" tabIndex={0}>
-            <div className="tw-bwrap">
-              <span className="tw-bub empty" />
-            </div>
-            <div className="tw-dl">
-              <div className="tw-d">17</div>
-              <div className="tw-v none">No trades</div>
-            </div>
-            <div className="tip">
-              <b>17 Mar, no trades</b>
-            </div>
-          </div>
-          <div className="tw-day has-tip" role="listitem" tabIndex={0}>
-            <div className="tw-bwrap">
-              <span className="tw-bub strong" style={{ width: '64px', height: '64px' }} />
-            </div>
-            <div className="tw-dl">
-              <div className="tw-d">18</div>
-              <div className="tw-v">{isPnlHidden ? '+$••••' : '+$4,115'}</div>
-            </div>
-            <div className="tip">
-              <b>18 Mar, {isPnlHidden ? '+$••••.••' : '+$4,115.00'}</b>2 trades: XAUUSD and EURUSD, both won
-            </div>
-          </div>
-          <div className="tw-day has-tip" role="listitem" tabIndex={0}>
-            <div className="tw-bwrap">
-              <span className="tw-bub mid" style={{ width: '54px', height: '54px' }} />
-            </div>
-            <div className="tw-dl">
-              <div className="tw-d">19</div>
-              <div className="tw-v">{isPnlHidden ? '+$••••' : '+$2,956'}</div>
-            </div>
-            <div className="tip">
-              <b>19 Mar, {isPnlHidden ? '+$••••.••' : '+$2,956.00'}</b>2 trades: BTCUSD win and loss
-            </div>
-          </div>
-          <div className="tw-day has-tip" role="listitem" tabIndex={0}>
-            <div className="tw-bwrap">
-              <span className="tw-bub open" />
-            </div>
-            <div className="tw-dl">
-              <div className="tw-d">20</div>
-              <div className="tw-v">Open</div>
-            </div>
-            <div className="tip">
-              <b>20 Mar, open trade</b>XAUUSD sell at 2,712.0. Floating P&amp;L is not in totals.
-            </div>
-          </div>
-          <div className="tw-day has-tip" role="listitem" tabIndex={0}>
-            <div className="tw-bwrap">
-              <span className="tw-bub empty" />
-            </div>
-            <div className="tw-dl">
-              <div className="tw-d">21</div>
-              <div className="tw-v none">No trades</div>
-            </div>
-            <div className="tip">
-              <b>21 Mar, no trades</b>
-            </div>
-          </div>
-          <div className="tw-day has-tip" role="listitem" tabIndex={0}>
-            <div className="tw-bwrap">
-              <span className="tw-bub empty" />
-            </div>
-            <div className="tw-dl">
-              <div className="tw-d">22</div>
-              <div className="tw-v none">No trades</div>
-            </div>
-            <div className="tip">
-              <b>22 Mar, no trades</b>
-            </div>
-          </div>
+          {weekDays.map((wd) => {
+            const hasClosed = wd.dayClosed.length > 0;
+            const hasOpen = wd.dayOpen.length > 0;
+            const bubbleSize = hasClosed
+              ? Math.max(36, Math.min(64, Math.round((Math.abs(wd.netPnl) / 4200) * 64)))
+              : 0;
+            const bubbleClass = hasClosed
+              ? wd.netPnl >= 2500
+                ? 'strong'
+                : wd.netPnl >= 0
+                ? 'mid'
+                : 'loss'
+              : hasOpen
+              ? 'open'
+              : 'empty';
+            const syms = Array.from(new Set(wd.dayTrades.map((t) => t.instrumentSymbol))).join(' and ');
+
+            return (
+              <Link
+                key={wd.dateKey}
+                href={wd.dayTrades.length > 0 ? `/trades?date=${wd.dateKey}` : `/calendar?date=${wd.dateKey}`}
+                className="tw-day has-tip"
+                role="listitem"
+              >
+                <div className="tw-bwrap">
+                  <span
+                    className={`tw-bub ${bubbleClass}`}
+                    style={hasClosed ? { width: `${bubbleSize}px`, height: `${bubbleSize}px` } : undefined}
+                  />
+                </div>
+                <div className="tw-dl">
+                  <div className="tw-d">{wd.day}</div>
+                  <div className={`tw-v ${!hasClosed && !hasOpen ? 'none' : ''}`}>
+                    {hasClosed
+                      ? isPnlHidden
+                        ? '+$••••'
+                        : `${wd.netPnl >= 0 ? '+' : '−'}$${formatInt(Math.abs(wd.netPnl))}`
+                      : hasOpen
+                      ? 'Open'
+                      : 'No trades'}
+                  </div>
+                </div>
+                <div className="tip">
+                  {hasClosed ? (
+                    <>
+                      <b>
+                        {wd.day} Mar,{' '}
+                        {isPnlHidden
+                          ? '••••••'
+                          : `${wd.netPnl >= 0 ? '+' : '−'}${formatCur(Math.abs(wd.netPnl))}`}
+                      </b>
+                      {wd.dayClosed.length} trade{wd.dayClosed.length === 1 ? '' : 's'}: {syms}
+                    </>
+                  ) : hasOpen ? (
+                    <>
+                      <b>{wd.day} Mar, open trade</b>
+                      {syms} floating position
+                    </>
+                  ) : (
+                    <>
+                      <b>{wd.day} Mar, no trades</b>Click to open calendar
+                    </>
+                  )}
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </section>
 
@@ -558,47 +628,60 @@ export default function OverviewPage() {
       {/* 7. INSTRUMENT SHARE TILE: Split Bar & Legend (Cols 1-4, Row 3)      */}
       {/* ------------------------------------------------------------------ */}
       <section className="tw-tile tw-inst" aria-label="Share of net P&L by instrument">
-        <div className="tw-lbl">Share of net P&amp;L by instrument</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+          <div className="tw-lbl">Share of net P&amp;L by instrument</div>
+          <Link className="tw-link" href="/accounts">
+            Desks
+          </Link>
+        </div>
         <div
           className="tw-split"
           role="img"
-          aria-label="BTCUSD 41.8 percent, XAUUSD 35.1 percent, EURUSD 23.1 percent"
+          aria-label="Share of net P&L across traded instruments"
         >
-          <span style={{ width: '41.8%', background: 'var(--tw-s1)', boxShadow: 'inset -3px 0 0 var(--tw-tile)' }} />
-          <span style={{ width: '35.1%', background: 'var(--tw-s2)', boxShadow: 'inset -3px 0 0 var(--tw-tile)' }} />
-          <span style={{ width: '23.1%', background: 'var(--tw-s3)' }} />
+          {instrumentBreakdown.length > 0 ? (
+            instrumentBreakdown.map((item, idx) => (
+              <span
+                key={item.symbol}
+                style={{
+                  width: `${item.sharePct.toFixed(1)}%`,
+                  background: item.color,
+                  boxShadow:
+                    idx < instrumentBreakdown.length - 1
+                      ? 'inset -3px 0 0 var(--tw-tile)'
+                      : undefined,
+                }}
+              />
+            ))
+          ) : (
+            <span style={{ width: '100%', background: 'var(--tw-track)' }} />
+          )}
         </div>
         <ul className="tw-legend">
-          <li>
-            <i style={{ background: 'var(--tw-s1)' }} />
-            <span>
-              BTCUSD<span className="tw-sub"> 2 trades</span>
-            </span>
-            <span style={{ fontWeight: 600 }}>{isPnlHidden ? '+$••••.••' : '+$2,956.00'}</span>
-            <span className="tw-sub" style={{ textAlign: 'right' }}>
-              41.8%
-            </span>
-          </li>
-          <li>
-            <i style={{ background: 'var(--tw-s2)' }} />
-            <span>
-              XAUUSD<span className="tw-sub"> 2 trades</span>
-            </span>
-            <span style={{ fontWeight: 600 }}>{isPnlHidden ? '+$••••.••' : '+$2,480.00'}</span>
-            <span className="tw-sub" style={{ textAlign: 'right' }}>
-              35.1%
-            </span>
-          </li>
-          <li>
-            <i style={{ background: 'var(--tw-s3)' }} />
-            <span>
-              EURUSD<span className="tw-sub"> 1 trade</span>
-            </span>
-            <span style={{ fontWeight: 600 }}>{isPnlHidden ? '+$••••.••' : '+$1,635.00'}</span>
-            <span className="tw-sub" style={{ textAlign: 'right' }}>
-              23.1%
-            </span>
-          </li>
+          {instrumentBreakdown.length > 0 ? (
+            instrumentBreakdown.map((item) => (
+              <li key={item.symbol}>
+                <i style={{ background: item.color }} />
+                <span>
+                  {item.symbol}
+                  <span className="tw-sub">
+                    {' '}
+                    {item.count} trade{item.count === 1 ? '' : 's'}
+                  </span>
+                </span>
+                <span style={{ fontWeight: 600 }} className={item.netPnl < 0 ? 'tw-neg' : ''}>
+                  {isPnlHidden
+                    ? '••••••'
+                    : `${item.netPnl >= 0 ? '+' : '−'}${formatCur(Math.abs(item.netPnl))}`}
+                </span>
+                <span className="tw-sub" style={{ textAlign: 'right' }}>
+                  {item.sharePct.toFixed(1)}%
+                </span>
+              </li>
+            ))
+          ) : (
+            <li className="tw-sub">No closed instruments in current period.</li>
+          )}
         </ul>
       </section>
 
@@ -608,32 +691,53 @@ export default function OverviewPage() {
       <section className="tw-tile tw-opos" aria-label="Open position and risk">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div className="tw-lbl">Open position</div>
-          <span className="tw-pill tw-riskpill">Risk alert</span>
+          <Link
+            href={selectedAccountId !== 'ALL' ? `/risk?accountId=${selectedAccountId}` : '/risk'}
+            className="tw-pill tw-riskpill"
+          >
+            Risk alert →
+          </Link>
         </div>
         <div>
           <div className="tw-ticket">
             {primaryOpenTrade
               ? `${primaryOpenTrade.instrumentSymbol} ${primaryOpenTrade.direction.toLowerCase()}`
-              : 'XAUUSD sell'}
+              : 'No active position'}
           </div>
           <div className="tw-sub" style={{ marginTop: '4px' }}>
-            Opened 20 Mar at 2,712.0. Floating P&amp;L is not in totals.
+            {primaryOpenTrade
+              ? `Opened ${new Date(primaryOpenTrade.entryTime).toLocaleDateString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  timeZone: 'UTC',
+                })} at ${primaryOpenTrade.entryPrice.toLocaleString('en-US')}. Floating P&L is excluded from totals.`
+              : 'All tracked positions are currently flat.'}
           </div>
         </div>
         <dl className="tw-facts">
           <div>
             <dt>Open risk</dt>
-            <dd>$600.00</dd>
-            <small>0.33% of balance</small>
+            <dd>{formatCur(openRiskStats.openRisk)}</dd>
+            <small>{openRiskStats.openRiskPct.toFixed(2)}% of balance</small>
           </div>
           <div>
             <dt>Largest loss</dt>
-            <dd className="tw-neg">−$314.00</dd>
-            <small>0.18% of start</small>
+            <dd className="tw-neg">
+              {openRiskStats.worstLossPnl < 0
+                ? isPnlHidden
+                  ? '−$••••'
+                  : `−${formatCur(Math.abs(openRiskStats.worstLossPnl))}`
+                : '$0.00'}
+            </dd>
+            <small>{openRiskStats.worstLossPct.toFixed(2)}% of start</small>
           </div>
           <div>
             <dt>Typical risk</dt>
-            <dd>$1,000–1,100</dd>
+            <dd>
+              {openRiskStats.minRisk > 0
+                ? `$${formatInt(openRiskStats.minRisk)}–${formatInt(openRiskStats.maxRisk)}`
+                : '$0'}
+            </dd>
             <small>per trade</small>
           </div>
         </dl>
@@ -646,54 +750,55 @@ export default function OverviewPage() {
         <div className="tw-lbl">R per closed trade</div>
         <div className="tw-sub">The dotted line marks break-even at 0R. Hover a row for details.</div>
         <div className="tw-rows">
-          <div className="tw-rrow has-tip" tabIndex={0}>
-            <div>
-              <div className="tw-rv tw-pos">+2.97R</div>
-              <div className="tw-sub tw-s12">BTCUSD, 19 Mar</div>
+          {rankedByR.length > 0 ? (
+            rankedByR.map((trade) => {
+              const rVal = trade.realizedR || 0;
+              const isGain = rVal >= 0;
+              const widthPct = Math.min(50, (Math.abs(rVal) / maxAbsR) * 50);
+              const dateLabel = new Date(trade.entryTime).toLocaleDateString('en-GB', {
+                day: 'numeric',
+                month: 'short',
+                timeZone: 'UTC',
+              });
+              return (
+                <Link
+                  key={trade.id}
+                  href={`/trades?tradeId=${trade.id}`}
+                  className="tw-rrow has-tip"
+                >
+                  <div>
+                    <div className={`tw-rv ${isGain ? 'tw-pos' : 'tw-neg'}`}>
+                      {isGain ? '+' : '−'}
+                      {Math.abs(rVal).toFixed(2)}R
+                    </div>
+                    <div className="tw-sub tw-s12">
+                      {trade.instrumentSymbol}, {dateLabel}
+                    </div>
+                  </div>
+                  <div className="tw-track">
+                    <span
+                      className={`tw-bar ${isGain ? 'up' : 'dn'}`}
+                      style={{ width: `${widthPct.toFixed(1)}%` }}
+                    />
+                  </div>
+                  <div className="tip">
+                    <b>
+                      {trade.instrumentSymbol} {trade.direction.toLowerCase()}, {dateLabel}
+                    </b>
+                    {isPnlHidden
+                      ? '••••••'
+                      : `${trade.netPnl >= 0 ? '+' : '−'}${formatCur(Math.abs(trade.netPnl))}`}
+                    , or {isGain ? '+' : '−'}
+                    {Math.abs(rVal).toFixed(2)}R
+                  </div>
+                </Link>
+              );
+            })
+          ) : (
+            <div className="tw-sub" style={{ padding: '16px 0' }}>
+              No closed trades recorded for this filter.
             </div>
-            <div className="tw-track">
-              <span className="tw-bar up" style={{ width: '49.5%' }} />
-            </div>
-            <div className="tip">
-              <b>BTCUSD buy, 19 Mar</b>+$3,270.00, or +2.97R
-            </div>
-          </div>
-          <div className="tw-rrow has-tip" tabIndex={0}>
-            <div>
-              <div className="tw-rv tw-pos">+2.48R</div>
-              <div className="tw-sub tw-s12">XAUUSD, 18 Mar</div>
-            </div>
-            <div className="tw-track">
-              <span className="tw-bar up" style={{ width: '41.3%' }} />
-            </div>
-            <div className="tip">
-              <b>XAUUSD buy, 18 Mar</b>+$2,480.00, or +2.48R
-            </div>
-          </div>
-          <div className="tw-rrow has-tip" tabIndex={0}>
-            <div>
-              <div className="tw-rv tw-pos">+1.64R</div>
-              <div className="tw-sub tw-s12">EURUSD, 18 Mar</div>
-            </div>
-            <div className="tw-track">
-              <span className="tw-bar up" style={{ width: '27.3%' }} />
-            </div>
-            <div className="tip">
-              <b>EURUSD buy, 18 Mar</b>+$1,635.00, or +1.64R
-            </div>
-          </div>
-          <div className="tw-rrow has-tip" tabIndex={0}>
-            <div>
-              <div className="tw-rv tw-neg">−0.29R</div>
-              <div className="tw-sub tw-s12">BTCUSD, 19 Mar</div>
-            </div>
-            <div className="tw-track">
-              <span className="tw-bar dn" style={{ width: '4.8%' }} />
-            </div>
-            <div className="tip">
-              <b>BTCUSD sell, 19 Mar</b>−$314.00, or −0.29R
-            </div>
-          </div>
+          )}
         </div>
       </section>
 
@@ -723,63 +828,104 @@ export default function OverviewPage() {
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td className="s">XAUUSD</td>
-              <td>
-                <span className="tw-side sell">Sell</span>
-              </td>
-              <td>20 Mar</td>
-              <td className="r">Open</td>
-              <td className="r">—</td>
-            </tr>
-            <tr>
-              <td className="s">BTCUSD</td>
-              <td>
-                <span className="tw-side sell">Sell</span>
-              </td>
-              <td>19 Mar</td>
-              <td className="r tw-neg">{isPnlHidden ? '••••••' : '−$314.00'}</td>
-              <td className="r tw-neg">−0.29R</td>
-            </tr>
-            <tr>
-              <td className="s">BTCUSD</td>
-              <td>
-                <span className="tw-side buy">Buy</span>
-              </td>
-              <td>19 Mar</td>
-              <td className="r tw-pos">{isPnlHidden ? '••••••' : '+$3,270.00'}</td>
-              <td className="r tw-pos">+2.97R</td>
-            </tr>
-            <tr>
-              <td className="s">XAUUSD</td>
-              <td>
-                <span className="tw-side buy">Buy</span>
-              </td>
-              <td>18 Mar</td>
-              <td className="r tw-pos">{isPnlHidden ? '••••••' : '+$2,480.00'}</td>
-              <td className="r tw-pos">+2.48R</td>
-            </tr>
-            <tr>
-              <td className="s">EURUSD</td>
-              <td>
-                <span className="tw-side buy">Buy</span>
-              </td>
-              <td>18 Mar</td>
-              <td className="r tw-pos">{isPnlHidden ? '••••••' : '+$1,635.00'}</td>
-              <td className="r tw-pos">+1.64R</td>
-            </tr>
+            {recentExecutions.length > 0 ? (
+              recentExecutions.map((trade) => {
+                const isClosed = trade.status === 'CLOSED';
+                const dateLabel = new Date(trade.entryTime).toLocaleDateString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  timeZone: 'UTC',
+                });
+                const rVal = trade.realizedR || 0;
+                return (
+                  <tr key={trade.id}>
+                    <td className="s">
+                      <Link href={`/trades?tradeId=${trade.id}`} className="hover:underline">
+                        {trade.instrumentSymbol}
+                      </Link>
+                    </td>
+                    <td>
+                      <span className={`tw-side ${trade.direction === 'BUY' ? 'buy' : 'sell'}`}>
+                        {trade.direction === 'BUY' ? 'Buy' : 'Sell'}
+                      </span>
+                    </td>
+                    <td>{dateLabel}</td>
+                    <td
+                      className={`r ${
+                        !isClosed ? '' : trade.netPnl >= 0 ? 'tw-pos' : 'tw-neg'
+                      }`}
+                    >
+                      {!isClosed
+                        ? 'Open'
+                        : isPnlHidden
+                        ? '••••••'
+                        : `${trade.netPnl >= 0 ? '+' : '−'}${formatCur(Math.abs(trade.netPnl))}`}
+                    </td>
+                    <td
+                      className={`r ${
+                        !isClosed ? '' : rVal >= 0 ? 'tw-pos' : 'tw-neg'
+                      }`}
+                    >
+                      {!isClosed
+                        ? '—'
+                        : `${rVal >= 0 ? '+' : '−'}${Math.abs(rVal).toFixed(2)}R`}
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={5} className="tw-sub" style={{ textAlign: 'center', padding: '16px 0' }}>
+                  No executions found for current filter.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
         <dl className="tw-facts tw-exfoot">
           <div>
             <dt>Best closed trade</dt>
-            <dd className="tw-pos">{isPnlHidden ? '+$••••.••' : '+$3,270.00'}</dd>
-            <small>BTCUSD, 19 Mar</small>
+            <dd className="tw-pos">
+              {bestClosedTrade
+                ? isPnlHidden
+                  ? '+$••••.••'
+                  : `+${formatCur(Math.abs(bestClosedTrade.netPnl))}`
+                : '$0.00'}
+            </dd>
+            <small>
+              {bestClosedTrade
+                ? `${bestClosedTrade.instrumentSymbol}, ${new Date(
+                    bestClosedTrade.entryTime
+                  ).toLocaleDateString('en-GB', {
+                    day: 'numeric',
+                    month: 'short',
+                    timeZone: 'UTC',
+                  })}`
+                : 'No closed sample'}
+            </small>
           </div>
           <div>
             <dt>Worst closed trade</dt>
-            <dd className="tw-neg">{isPnlHidden ? '−$••••.••' : '−$314.00'}</dd>
-            <small>BTCUSD, 19 Mar</small>
+            <dd className={worstClosedTrade && worstClosedTrade.netPnl < 0 ? 'tw-neg' : 'tw-pos'}>
+              {worstClosedTrade
+                ? isPnlHidden
+                  ? '••••••'
+                  : `${worstClosedTrade.netPnl >= 0 ? '+' : '−'}${formatCur(
+                      Math.abs(worstClosedTrade.netPnl)
+                    )}`
+                : '$0.00'}
+            </dd>
+            <small>
+              {worstClosedTrade
+                ? `${worstClosedTrade.instrumentSymbol}, ${new Date(
+                    worstClosedTrade.entryTime
+                  ).toLocaleDateString('en-GB', {
+                    day: 'numeric',
+                    month: 'short',
+                    timeZone: 'UTC',
+                  })}`
+                : 'No closed sample'}
+            </small>
           </div>
         </dl>
       </section>

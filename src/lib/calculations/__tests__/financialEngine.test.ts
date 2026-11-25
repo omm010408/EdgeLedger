@@ -149,4 +149,18 @@ describe('Financial Calculation Engine Tests (EDGELEDGER Revised)', () => {
     expect(stats.winRate).toBe(50.0);
     expect(stats.lossRate).toBe(50.0);
   });
+
+  it('excludes unclosed OPEN positions from realized Average R and net profit (+1.83R mean across 4 closed)', () => {
+    const ledgerWithOpen = [
+      { status: 'CLOSED', netPnl: 2880, realizedR: 2.88 },
+      { status: 'CLOSED', netPnl: 1235, realizedR: 2.47 },
+      { status: 'CLOSED', netPnl: -314, realizedR: -1.0 },
+      { status: 'CLOSED', netPnl: 3270, realizedR: 2.97 },
+      { status: 'OPEN', netPnl: 0, realizedR: 0 },
+    ];
+    const stats = calculateTradingStatistics(ledgerWithOpen);
+    expect(stats.totalTrades).toBe(4);
+    expect(stats.netProfit).toBe(7071);
+    expect(stats.averageR).toBe(1.83);
+  });
 });

@@ -1,0 +1,16 @@
+{
+  "prop_firm_framework": {
+    "account_tier": "Funded 100k",
+    "daily_loss_limit_pct": 4.0,
+    "max_trailing_drawdown_pct": 8.0,
+    "max_risk_per_trade_pct": 0.5,
+    "max_concurrent_open_risk_pct": 1.5,
+    "min_risk_reward_ratio": 2.0,
+    "weekend_holding_allowed": false,
+    "high_impact_news_rules": {
+      "restricted_minutes_before": 5,
+      "restricted_minutes_after": 5,
+      "events": ["NFP", "FOMC Rate Decision", "CPI"]
+    }
+  }
+}

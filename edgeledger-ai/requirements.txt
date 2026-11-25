@@ -1,0 +1,28 @@
+# ==============================================================================
+# EDGELEDGER AI - Essential Initial Dependencies
+# ==============================================================================
+# Kept lightweight intentionally during initialization phase.
+# Heavy ML/Deep Learning dependencies are documented below and deferred.
+
+# Configuration & Data Validation
+pyyaml>=6.0.1
+pydantic>=2.7.0
+python-dotenv>=1.0.1
+
+# HTTP / API Client (for local Ollama communication)
+httpx>=0.27.0
+
+# Utilities
+tqdm>=4.66.4
+typing-extensions>=4.11.0
+
+# ------------------------------------------------------------------------------
+# Future / Optional Phase Dependencies (Uncomment when entering training phase)
+# ------------------------------------------------------------------------------
+# torch>=2.2.0
+# transformers>=4.40.0
+# peft>=0.10.0
+# datasets>=2.18.0
+# trl>=0.8.6
+# bitsandbytes>=0.43.1
+# accelerate>=0.29.3

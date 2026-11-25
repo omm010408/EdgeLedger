@@ -1,0 +1,63 @@
+# EDGELEDGER AI - Future Fine-Tuning & Adaptation Settings
+# Integrated with dataset/, training/, and model/ architecture
+
+paths:
+  dataset_dir: "dataset"
+  training_dir: "training"
+  model_dir: "model"
+  validation_file: "training/validation.jsonl"
+  target_gguf: "model/edgeledger-trained.gguf"
+
+dataset_sources:
+  - "dataset/macro_analysis.jsonl"
+  - "dataset/price_action.jsonl"
+  - "dataset/risk_management.jsonl"
+  - "dataset/psychology.jsonl"
+  - "dataset/trade_reviews.jsonl"
+
+training:
+  base_model: "Qwen/Qwen2.5-7B-Instruct"
+  output_dir: "model/checkpoints"
+  adapter_dir: "model/lora_adapters"
+  export_gguf_path: "model/edgeledger-trained.gguf"
+  
+  # Method: QLoRA (Quantized Low-Rank Adaptation)
+  method: "qlora"
+  
+  quantization:
+    load_in_4bit: true
+    bnb_4bit_quant_type: "nf4"
+    bnb_4bit_use_double_quant: true
+    bnb_4bit_compute_dtype: "bfloat16"
+
+  peft_lora:
+    r: 16
+    lora_alpha: 32
+    lora_dropout: 0.05
+    bias: "none"
+    task_type: "CAUSAL_LM"
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+      - "gate_proj"
+      - "up_proj"
+      - "down_proj"
+
+  hyperparameters:
+    num_train_epochs: 3
+    per_device_train_batch_size: 2
+    per_device_eval_batch_size: 2
+    gradient_accumulation_steps: 4
+    learning_rate: 0.0002
+    warmup_ratio: 0.05
+    weight_decay: 0.01
+    lr_scheduler_type: "cosine"
+    optim: "paged_adamw_8bit"
+    max_seq_length: 4096
+    logging_steps: 10
+    save_steps: 100
+    eval_steps: 50
+    fp16: false
+    bf16: true

@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EdgeLedger trade ledger, light</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&amp;family=JetBrains+Mono:wght@400..700&amp;display=swap">
+<style>
+:root{color-scheme:light;--bg:#EDF4F2;--tile:#FFFFFF;--line:#C5D7D3;--line-strong:#758B86;--ink:#0E1B1C;--ink-2:#3F5553;--ink-3:#566967;--pill:#E6EEEB;--track:#E4EDEA;--ring-track:#E2ECE9;--ring-empty:#9DB3AE;--hero:#0D4A4A;--hero-ink:#FFFFFF;--hero-2:#CDEBE3;--hero-line:#8FE6CF;--hero-rule:rgba(255,255,255,0.22);--hero-chip:rgba(143,230,207,0.2);--sun:#F6C744;--sun-ink:#1A1400;--sun-disc:#FBDB7A;--aqua:#D5F0E6;--aqua-ink:#0B2E2A;--aqua-chip:#FFFFFF;--gain:#13784E;--loss:#B3263E;--warn:#8F4305;--warn-bg:rgba(143,67,5,0.07);--warn-line:rgba(143,67,5,0.4);--s1:#2A78D6;--s2:#EB6834;--s3:#6250D6;--b1:#13784E;--b2:#7CC7A4;--buy-bg:#E1EBFB;--buy-ink:#1F4F95;--sell-bg:#E6EEEB;--sell-ink:#3F5553;--wave:#E8F2EF;--ripple:#D0E2DE;--focus:#0D4A4A;--shadow:0 1px 2px rgba(14,27,28,0.05),0 8px 20px -14px rgba(14,27,28,0.14);--c:var(--ink-2);--aqua-num:#0B6B47}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg)}
+.board{width:100%;height:1080px;overflow:hidden;display:flex;flex-direction:column;padding:24px 32px 28px;background:var(--bg);color:var(--ink);font-family:'Instrument Sans',Inter,ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:20px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+button{font:inherit;color:inherit}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+
+.top{display:flex;align-items:center;gap:28px;height:56px;flex:none}
+.brand{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;letter-spacing:-0.01em}
+.mark{display:grid;place-items:center;width:32px;height:32px;border-radius:58% 42% 46% 54% / 52% 48% 52% 48%;background:var(--hero);color:var(--hero-ink);font-size:15px;font-weight:700;line-height:1}
+.nav{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.nav a{display:inline-flex;align-items:center;height:32px;padding:0 14px;border-radius:999px;color:var(--ink-2);font-weight:500;text-decoration:none}
+.nav a[aria-current="page"]{background:var(--tile);color:var(--ink);font-weight:600;box-shadow:inset 0 0 0 1px var(--line-strong)}
+.tools{margin-left:auto;display:flex;align-items:center;gap:10px}
+.alert{display:inline-flex;align-items:center;height:32px;padding:0 13px;border-radius:999px;background:var(--warn-bg);box-shadow:inset 0 0 0 1px var(--warn-line);color:var(--warn);font-size:13px;font-weight:600;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border-radius:999px;border:1px solid var(--line-strong);background:var(--tile);color:var(--ink);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--ink)}
+.btn.dark{background:var(--ink);border-color:var(--ink);color:var(--tile);font-weight:600}
+.btn.quiet{color:var(--ink-2)}
+kbd{padding:3px 6px;border-radius:6px;background:var(--pill);color:var(--ink-2);font-size:12px;font-weight:600}
+.seg{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.seg button{height:28px;padding:0 14px;border:0;border-radius:999px;background:transparent;color:var(--ink-2);font-size:13px;font-weight:500;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--tile);font-weight:600}
+
+.titlerow{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-top:26px;flex:none}
+.titlerow h1{margin:0;font-size:36px;line-height:40px;font-weight:600;letter-spacing:-0.03em}
+.titlerow p{margin:8px 0 0;color:var(--ink-2);font-size:15px;line-height:22px}
+.controls{display:flex;gap:10px;align-items:center}
+
+.grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:256px minmax(0,1fr);gap:16px;margin-top:20px}
+.tile{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column;padding:22px 24px;border-radius:32px;background:var(--tile);border:1px solid var(--line)}
+.lbl{font-size:13px;line-height:18px;font-weight:600;color:var(--ink-2)}
+.sub{font-size:13px;line-height:18px;color:var(--ink-3)}
+.foot{margin-top:auto;font-size:12px;line-height:16px;color:var(--ink-3)}
+.pill{display:inline-flex;align-items:center;height:26px;padding:0 12px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.gain{color:var(--gain)}
+.loss{color:var(--loss)}
+.warn{color:var(--warn)}
+
+/* Summary row */
+.hero{grid-column:1 / 5;grid-row:1;border:0;border-radius:44px;background:var(--hero);color:var(--hero-ink);padding:22px 26px 20px}
+.hero .lbl{color:var(--hero-2)}
+.big{margin-top:8px;font-size:50px;line-height:52px;font-weight:600;letter-spacing:-0.045em;white-space:nowrap;font-family:'JetBrains Mono',ui-monospace,monospace}
+.delta{display:flex;align-items:center;gap:10px;margin-top:8px;font-size:13px;color:var(--hero-2)}
+.delta .pill{height:26px;padding:0 11px;background:var(--hero-chip);color:var(--hero-ink)}
+.spark{display:block;flex:none;width:100%;height:44px;margin-top:auto}
+.spark .area{fill:var(--hero-line);opacity:.14}
+.spark .line{fill:none;stroke:var(--hero-line);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.spark .dot{fill:var(--hero-line)}
+.spark .dot.last{fill:var(--hero-ink);stroke:var(--hero-line);stroke-width:2}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0 0;padding-top:12px;border-top:1px solid var(--hero-rule)}
+.stats dt{font-size:12px;line-height:16px;color:var(--hero-2)}
+.stats dd{margin:3px 0 0;font-size:16px;line-height:20px;font-weight:600;white-space:nowrap}
+
+.best{grid-column:5 / 9;grid-row:1;background:var(--sun);border:0;color:var(--sun-ink);padding:22px 24px}
+.best .lbl,.best .sub{color:var(--sun-ink)}
+.pair{display:grid;gap:10px;margin-top:12px;flex:1;align-content:center}
+.pr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px 14px;border-radius:18px;background:color-mix(in srgb,var(--sun-ink) 8%,transparent)}
+.pr .k{font-size:12px;letter-spacing:.06em;font-weight:600;text-transform:uppercase;opacity:.8}
+.pr .v{font-size:14px;font-weight:600;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pr .r{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:24px;font-weight:600;letter-spacing:-0.02em;white-space:nowrap}
+
+.setups{grid-column:9 / 13;grid-row:1;background:var(--aqua);border:0;color:var(--aqua-ink);padding:22px 24px}
+.setups .lbl,.setups .sub{color:var(--aqua-ink)}
+.stack{display:flex;height:14px;border-radius:99px;overflow:hidden;margin-top:14px;gap:3px}
+.stack i{display:block;height:100%}
+.legend{display:grid;gap:9px;margin-top:14px}
+.lg{display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:center;font-size:13px}
+.lg i{width:12px;height:12px;border-radius:4px;display:block}
+.lg span:last-child{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:600}
+.setups .foot{color:var(--aqua-ink)}
+
+/* Ledger */
+.ledger{grid-column:1 / 10;grid-row:2;padding:0;overflow:hidden}
+.filters{display:flex;gap:8px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
+.search{flex:1;min-width:0;height:36px;display:flex;align-items:center;padding:0 14px;border-radius:999px;background:var(--pill);color:var(--ink-3);font-size:13px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:var(--tile);color:var(--ink-2);font-size:12px;font-weight:600;white-space:nowrap;cursor:pointer}
+.chip b{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:600;color:var(--ink-3)}
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--tile)}
+.chip[aria-pressed="true"] b{color:var(--tile)}
+.lhead,.lrow{display:grid;grid-template-columns:52px 150px minmax(0,1fr) 160px 64px 66px 108px;gap:12px;align-items:center;padding:0 18px}
+.lhead{height:34px;font-size:12px;line-height:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);border-bottom:1px solid var(--line)}
+.lbody{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.dayh{display:flex;justify-content:space-between;align-items:center;padding:8px 18px;background:var(--pill);font-size:12px;font-weight:600;color:var(--ink-2);border-bottom:1px solid var(--line)}
+.dayh .mono{font-size:12px}
+.lrow{flex:1;min-height:52px;max-height:72px;border-bottom:1px solid var(--line);cursor:pointer;position:relative}
+.lrow:hover{background:color-mix(in srgb,var(--ink) 3%,transparent)}
+.lrow[aria-selected="true"]{background:color-mix(in srgb,var(--sun) 16%,transparent)}
+.lrow[aria-selected="true"]::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:3px;background:var(--sun)}
+.date{font-size:12px;color:var(--ink-2);line-height:16px}
+.asset b{display:block;font-size:14px;font-weight:600;line-height:18px}
+.asset .dir{margin-top:4px;height:20px;padding:0 8px;font-size:12px}
+.dir{display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.06em;white-space:nowrap}
+.dir.buy{background:var(--buy-bg);color:var(--buy-ink)}
+.dir.sell{background:var(--sell-bg);color:var(--sell-ink)}
+.setup b{display:block;font-size:14px;font-weight:600;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.setup small{display:block;font-size:12px;line-height:16px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rbar{position:relative;height:8px;border-radius:99px;background:var(--pill)}
+.rbar .ax{position:absolute;left:50%;top:-4px;bottom:-4px;width:1px;background:var(--ink-3)}
+.rbar .bar{position:absolute;top:0;bottom:0;border-radius:99px}
+.rbar .bar.pos{background:var(--gain)}
+.rbar .bar.neg{background:var(--loss)}
+.rbar .open{position:absolute;left:50%;top:-3px;width:10px;height:14px;margin-left:-5px;border-radius:4px;border:1.5px dashed var(--warn)}
+.num{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:14px;font-weight:600;text-align:right;white-space:nowrap}
+.status{display:inline-flex;justify-self:start;align-items:center;height:22px;padding:0 8px;border-radius:6px;background:var(--pill);color:var(--ink-2);font-size:12px;font-weight:700;letter-spacing:.06em}
+.status.open{background:var(--warn-bg);color:var(--warn)}
+
+/* Selected execution */
+.detail{grid-column:10 / 13;grid-row:2;padding:20px 22px}
+.dh{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.dh h2{margin:6px 0 0;font-size:24px;line-height:28px;font-weight:600;letter-spacing:-0.02em}
+.dh .sub{margin-top:4px}
+.ladder{display:block;width:100%;height:auto;margin-top:12px}
+.ladder .zl{fill:var(--loss);opacity:.12}
+.ladder .zg{fill:var(--gain);opacity:.12}
+.ladder .lsl{stroke:var(--loss);stroke-width:1.5}
+.ladder .ltp{stroke:var(--gain);stroke-width:1.5}
+.ladder .lent{stroke:var(--ink);stroke-width:2;stroke-dasharray:5 4}
+.ladder .lt{font:600 12px 'JetBrains Mono',ui-monospace,monospace;fill:var(--ink-2)}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.kv div{padding:9px 11px;border-radius:14px;background:var(--pill)}
+.kv dt{font-size:12px;line-height:14px;color:var(--ink-3)}
+.kv dd{margin:2px 0 0;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:14px;font-weight:600;white-space:nowrap}
+.alloc{margin-top:10px;font-size:12px;line-height:16px;color:var(--ink-2)}
+.scale{margin-top:10px;padding:10px 12px;border-radius:14px;border:1px dashed var(--line-strong);font-size:12px;line-height:16px;color:var(--ink-3)}
+.dact{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:auto;padding-top:12px}
+.dact .btn{width:100%}
+.lfoot{flex:none;display:flex;justify-content:space-between;gap:16px;padding:12px 28px;border-top:1px solid var(--line);font-size:12px;line-height:16px;color:var(--ink-3)}
+/*linked*/a{color:inherit;text-decoration:none}
+/* Unified Light Elevation, Interaction, Scrollbar, Empty & Reduced Motion Polish */
+.tile{border:1px solid var(--line);box-shadow:var(--shadow)}
+.hero,.sunt,.mint,.best,.setups,.capital,.alerts,.trend{box-shadow:var(--shadow)}
+::selection{background:var(--hero-line);color:var(--ink)}
+input,textarea,select{caret-color:var(--focus)}
+button,a,.btn,.chip,.pill,.seg button,.tabs button,.lrow,.sess,.cat,.acct{transition:background-color 175ms ease,border-color 175ms ease,color 175ms ease,box-shadow 175ms ease,transform 175ms ease}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.btn:active,.seg button:active,.tabs button:active,.chip:active{transform:translateY(1px)}
+button:disabled,.btn:disabled,.chip:disabled{opacity:.48;cursor:not-allowed;pointer-events:none}
+table tbody tr{transition:background-color 165ms ease}
+table tbody tr:hover{background:color-mix(in srgb,var(--ink) 4%,transparent)}
+table thead th{position:sticky;top:0;background:var(--tile);z-index:1}
+.lbody::-webkit-scrollbar,.scroll-y::-webkit-scrollbar{width:8px;height:8px}
+.lbody::-webkit-scrollbar-track,.scroll-y::-webkit-scrollbar-track{background:var(--bg)}
+.lbody::-webkit-scrollbar-thumb,.scroll-y::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:999px}
+.lbody::-webkit-scrollbar-thumb:hover,.scroll-y::-webkit-scrollbar-thumb:hover{background:var(--ink-3)}
+.empty-state,.zero-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:24px;border-radius:20px;border:1px dashed var(--line-strong);background:var(--pill);color:var(--ink-2);text-align:center}
+.loading-shimmer{background:linear-gradient(90deg,var(--pill) 25%,var(--track) 50%,var(--pill) 75%);border-radius:12px}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms !important;animation-iteration-count:1 !important;transition-duration:0.01ms !important;scroll-behavior:auto !important}}
+</style>
+</helmet>
+
+<div class="board">
+  <header class="top">
+    <div class="brand"><span class="mark" aria-hidden="true">E</span>EdgeLedger</div>
+    <nav class="nav" aria-label="Primary">
+      <a href="Tidewater.dc.html">Overview</a>
+      <a href="AccountsTidewater.dc.html">Accounts</a>
+      <a href="TradeLedgerTidewater.dc.html" aria-current="page">Trades</a>
+      <a href="CalendarTidewater.dc.html">Calendar</a>
+      <a href="JournalTidewater.dc.html">Journal</a>
+      <a href="RiskTidewater.dc.html">Risk</a>
+      <a href="ReportsTidewater.dc.html">Reports</a>
+    </nav>
+    <div class="tools">
+      <span class="alert">1 risk alert</span>
+      <a class="btn" href="TradeLedgerTidewaterDark.dc.html">Dark</a>
+      <button class="btn quiet" type="button">Search <kbd>⌘K</kbd></button>
+    </div>
+  </header>
+
+  <div class="titlerow">
+    <div>
+      <h1>Trade execution ledger</h1>
+      <p>Each row is one logical order. Select a row to inspect its levels and exits.</p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Period">
+        <button type="button" aria-pressed="true">Week</button>
+        <button type="button" aria-pressed="false">Month</button>
+        <button type="button" aria-pressed="false">All time</button>
+      </div>
+      <button class="btn" type="button">All accounts, 3</button>
+      <button class="btn dark" type="button">+ New execution</button>
+    </div>
+  </div>
+
+  <main class="grid">
+
+    <section class="tile hero" aria-label="Realized R in view">
+      <div class="lbl">Realized R, closed trades in view</div>
+      <div class="big">+7.32R</div>
+      <div class="delta"><span class="pill">+$7,071.00</span>net P&amp;L after costs</div>
+      <svg class="spark" viewBox="0 0 300 58" preserveAspectRatio="none" role="img" aria-label="Cumulative R by trade: 2.88, 5.35, 4.35, 7.32">
+        <path class="area" d="M0 38 L100 22.6 L200 28.8 L300 10.3 L300 58 L0 58 Z"></path>
+        <path class="line" d="M0 38 L100 22.6 L200 28.8 L300 10.3"></path>
+        <circle class="dot" cx="0" cy="38" r="3"></circle>
+        <circle class="dot" cx="100" cy="22.6" r="3"></circle>
+        <circle class="dot" cx="200" cy="28.8" r="3"></circle>
+        <circle class="dot last" cx="300" cy="10.3" r="4"></circle>
+      </svg>
+      <dl class="stats">
+        <div><dt>Closed</dt><dd>4</dd></div>
+        <div><dt>Win rate</dt><dd>75.0%</dd></div>
+        <div><dt>Avg R</dt><dd>+1.83R</dd></div>
+      </dl>
+    </section>
+
+    <section class="tile best" aria-label="Best and worst trade">
+      <div class="lbl">Best and worst in view</div>
+      <div class="sub">Ranked by realized R</div>
+      <div class="pair">
+        <div class="pr"><div><div class="k">Best</div><div class="v">BTCUSD buy · 19 Mar</div></div><div class="r">+2.97R</div></div>
+        <div class="pr"><div><div class="k">Worst</div><div class="v">EURUSD buy · 19 Mar</div></div><div class="r">−1.00R</div></div>
+      </div>
+    </section>
+
+    <section class="tile setups" aria-label="Setups in view">
+      <div class="lbl">Setups in view</div>
+      <div class="sub">5 executions across 3 setups</div>
+      <div class="stack" aria-hidden="true">
+        <i style="width:60%;background:var(--aqua-ink)"></i>
+        <i style="width:20%;background:color-mix(in srgb,var(--aqua-ink) 55%,transparent)"></i>
+        <i style="width:20%;background:color-mix(in srgb,var(--aqua-ink) 28%,transparent)"></i>
+      </div>
+      <div class="legend">
+        <div class="lg"><i style="background:var(--aqua-ink)"></i><span>London Liquidity Sweep</span><span>3</span></div>
+        <div class="lg"><i style="background:color-mix(in srgb,var(--aqua-ink) 55%,transparent)"></i><span>NY Session FVG</span><span>1</span></div>
+        <div class="lg"><i style="background:color-mix(in srgb,var(--aqua-ink) 28%,transparent)"></i><span>HTF Orderflow</span><span>1</span></div>
+      </div>
+    </section>
+
+    <section class="tile ledger" aria-label="Trade execution list">
+      <div class="filters">
+        <div class="search">Search asset, setup, strategy, or tag</div>
+        <button class="chip" type="button" aria-pressed="true">All <b>5</b></button>
+        <button class="chip" type="button" aria-pressed="false">Open <b>1</b></button>
+        <button class="chip" type="button" aria-pressed="false">Wins <b>3</b></button>
+        <button class="chip" type="button" aria-pressed="false">Losses <b>1</b></button>
+      </div>
+
+      <div class="lhead" role="row">
+        <span>Date</span><span>Asset</span><span>Setup</span><span>R vs stop</span><span style="text-align:right">R</span><span>Status</span><span style="text-align:right">Net P&amp;L</span>
+      </div>
+
+      <div class="lbody" role="grid">
+        <div class="dayh"><span>Wed 18 Mar · 2 closed</span><span class="mono gain">+$4,115.00</span></div>
+        <div class="lrow" role="row">
+          <span class="date">18 Mar<br>London</span>
+          <span class="asset"><b>XAUUSD</b><span class="dir buy">↗ BUY</span></span>
+          <span class="setup"><b>London Liquidity Sweep</b><small>Asian Low Sweep + FVG</small></span>
+          <span class="rbar"><i class="ax"></i><i class="bar pos" style="left:50%;width:48%"></i></span>
+          <span class="num" style="text-align:right;color:var(--ink)">+2.88R</span>
+          <span><span class="status">CLOSED</span></span>
+          <span class="num gain">+$2,880.00</span>
+        </div>
+        <div class="lrow" role="row">
+          <span class="date">18 Mar<br>New York</span>
+          <span class="asset"><b>US30</b><span class="dir sell">↘ SELL</span></span>
+          <span class="setup"><b title="NY Session FVG Continuation">NY Session FVG Cont…</b><small>Displacement Breakout</small></span>
+          <span class="rbar"><i class="ax"></i><i class="bar pos" style="left:50%;width:41.2%"></i></span>
+          <span class="num" style="text-align:right;color:var(--ink)">+2.47R</span>
+          <span><span class="status">CLOSED</span></span>
+          <span class="num gain">+$1,235.00</span>
+        </div>
+
+        <div class="dayh"><span>Thu 19 Mar · 2 closed</span><span class="mono gain">+$2,956.00</span></div>
+        <div class="lrow" role="row">
+          <span class="date">19 Mar<br>London</span>
+          <span class="asset"><b>EURUSD</b><span class="dir buy">↗ BUY</span></span>
+          <span class="setup"><b>London Liquidity Sweep</b><small>Liquidity Grab</small></span>
+          <span class="rbar"><i class="ax"></i><i class="bar neg" style="left:33.3%;width:16.7%"></i></span>
+          <span class="num loss" style="text-align:right">−1.00R</span>
+          <span><span class="status">CLOSED</span></span>
+          <span class="num loss">−$314.00</span>
+        </div>
+        <div class="lrow" role="row">
+          <span class="date">19 Mar<br>New York</span>
+          <span class="asset"><b>BTCUSD</b><span class="dir buy">↗ BUY</span></span>
+          <span class="setup"><b title="HTF Orderflow &amp; Orderblock Tap">HTF Orderflow &amp; Ord…</b><small>4H Orderblock Tap</small></span>
+          <span class="rbar"><i class="ax"></i><i class="bar pos" style="left:50%;width:49.5%"></i></span>
+          <span class="num" style="text-align:right;color:var(--ink)">+2.97R</span>
+          <span><span class="status">CLOSED</span></span>
+          <span class="num gain">+$3,270.00</span>
+        </div>
+
+        <div class="dayh"><span>Fri 20 Mar · 1 open</span><span class="mono warn">Active</span></div>
+        <div class="lrow" role="row" aria-selected="true">
+          <span class="date">20 Mar<br>London</span>
+          <span class="asset"><b>XAUUSD</b><span class="dir sell">↘ SELL</span></span>
+          <span class="setup"><b>London Liquidity Sweep</b><small>Asian High Sweep</small></span>
+          <span class="rbar"><i class="open"></i></span>
+          <span class="num" style="text-align:right;color:var(--ink-3)">—</span>
+          <span><span class="status open">OPEN</span></span>
+          <span class="num warn">Active</span>
+        </div>
+      </div>
+
+      <div class="lfoot">
+        <span>5 executions, grouped by day. R is measured against the planned stop.</span>
+        <span>Times in ruleset timezone (UTC)</span>
+      </div>
+    </section>
+
+    <section class="tile detail" aria-label="Selected execution, XAUUSD sell 20 March">
+      <div class="dh">
+        <div>
+          <div class="lbl">Selected execution</div>
+          <h2>XAUUSD sell</h2>
+          <div class="sub">20 Mar · 15M · London</div>
+        </div>
+        <span class="status open">OPEN</span>
+      </div>
+
+      <svg class="ladder" viewBox="0 -8 330 158" role="img" aria-label="Price ladder: stop 2,718, entry 2,712, target 2,694">
+        <rect class="zl" x="0" y="10" width="330" height="32.5"></rect>
+        <rect class="zg" x="0" y="42.5" width="330" height="97.5"></rect>
+        <line class="lsl" x1="0" x2="330" y1="10" y2="10"></line>
+        <line class="lent" x1="0" x2="330" y1="42.5" y2="42.5"></line>
+        <line class="ltp" x1="0" x2="330" y1="140" y2="140"></line>
+        <text class="lt" x="8" y="6">Stop 2,718.00</text>
+        <text class="lt" x="8" y="37">Entry 2,712.00</text>
+        <text class="lt" x="8" y="134">Target 2,694.00</text>
+        <text class="lt" x="322" y="37" text-anchor="end">6 pts</text>
+        <text class="lt" x="322" y="134" text-anchor="end">18 pts</text>
+      </svg>
+
+      <dl class="kv">
+        <div><dt>Stop distance</dt><dd>6.00 pts</dd></div>
+        <div><dt>Target distance</dt><dd>18.00 pts</dd></div>
+        <div><dt>Planned R:R</dt><dd>1 : 3</dd></div>
+        <div><dt>Realized R</dt><dd>Not yet</dd></div>
+      </dl>
+      <div class="alloc">Allocated to FTMO Challenge 50K</div>
+      <div class="scale">Scale-outs: none logged. Log a partial exit to track R taken.</div>
+
+      <div class="dact">
+        <button class="btn" type="button">Log partial exit</button>
+        <button class="btn dark" type="button">Log full exit</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

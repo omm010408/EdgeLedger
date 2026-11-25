@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "edgeledger-ai"
+version = "0.1.0"
+description = "Private, personalized trading intelligence system and specialized AI trading assistant."
+readme = "README.md"
+authors = [{ name = "EDGELEDGER" }]
+license = { text = "Proprietary" }
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0.1",
+    "pydantic>=2.7.0",
+    "python-dotenv>=1.0.1",
+    "httpx>=0.27.0",
+    "tqdm>=4.66.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "black>=24.4.2",
+    "flake8>=7.0.0",
+    "mypy>=1.10.0",
+]
+training = [
+    "torch>=2.2.0",
+    "transformers>=4.40.0",
+    "peft>=0.10.0",
+    "datasets>=2.18.0",
+    "trl>=0.8.6",
+    "bitsandbytes>=0.43.1",
+    "accelerate>=0.29.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

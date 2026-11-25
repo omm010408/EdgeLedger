@@ -21,6 +21,8 @@ import {
   Plus
 } from 'lucide-react';
 import { useTrading } from '../../context/TradingContext';
+import { EdgeLedgerLogo } from '../ui/EdgeLedgerLogo';
+import { SyncStatusChip } from '../sync/SyncStatusChip';
 
 interface NavItem {
   name: string;
@@ -59,8 +61,8 @@ export const Sidebar: React.FC<{ onOpenQuickTrade?: () => void }> = ({ onOpenQui
       <div className="flex items-center justify-between h-14 px-3 border-b border-edge-border">
         {!collapsed && (
           <Link href="/" className="flex items-center space-x-2.5">
-            <div className="w-7 h-7 rounded bg-edge-accent/15 border border-edge-accent/40 flex items-center justify-center text-edge-accent font-mono font-bold text-sm">
-              EL
+            <div className="flex items-center justify-center text-edge-accent">
+              <EdgeLedgerLogo size={26} />
             </div>
             <div className="flex flex-col">
               <span className="font-mono text-sm font-bold tracking-wider text-edge-text-primary uppercase">
@@ -74,8 +76,8 @@ export const Sidebar: React.FC<{ onOpenQuickTrade?: () => void }> = ({ onOpenQui
         )}
         {collapsed && (
           <div className="w-full flex justify-center">
-            <div className="w-7 h-7 rounded bg-edge-accent/15 border border-edge-accent/40 flex items-center justify-center text-edge-accent font-mono font-bold text-xs">
-              EL
+            <div className="flex items-center justify-center text-edge-accent">
+              <EdgeLedgerLogo size={24} />
             </div>
           </div>
         )}
@@ -143,20 +145,8 @@ export const Sidebar: React.FC<{ onOpenQuickTrade?: () => void }> = ({ onOpenQui
       </nav>
 
       {/* System Status Footer */}
-      <div className="p-3 border-t border-edge-border text-[11px] font-mono text-edge-text-muted">
-        {!collapsed ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <span className="w-2 h-2 rounded-full bg-edge-profit animate-pulse" />
-              <span>TERMINAL SYNCED</span>
-            </div>
-            <span className="text-[10px] text-edge-text-muted">v1.0.4</span>
-          </div>
-        ) : (
-          <div className="flex justify-center" title="Risk Engine Active">
-            <span className="w-2 h-2 rounded-full bg-edge-profit" />
-          </div>
-        )}
+      <div className="p-3 border-t border-edge-border">
+        <SyncStatusChip collapsed={collapsed} />
       </div>
     </aside>
   );

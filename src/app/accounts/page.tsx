@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import Link from 'next/link';
 import { useTrading } from '../../context/TradingContext';
 import {
   Wallet,
@@ -17,6 +18,7 @@ import {
   Check
 } from 'lucide-react';
 import { NewAccountModal } from '../../components/modals/NewAccountModal';
+import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
 import { TradingAccount, AccountRule } from '../../lib/types/financial';
 
 const ACCOUNT_LINE_COLORS = [
@@ -35,12 +37,27 @@ export default function AccountsPage() {
     trades,
     portfolioMetrics,
     riskAlerts,
+    isPnlHidden,
     deleteAccount,
-    toggleRule
+    toggleRule,
+    deleteRule
   } = useTrading();
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const accId = new URLSearchParams(window.location.search).get('accountId');
+    if (accId && accounts.some((a) => a.id === accId)) {
+      setSelectedAccountId(accId);
+    }
+  }, [accounts, setSelectedAccountId]);
 
   const [newAccountModalOpen, setNewAccountModalOpen] = useState(false);
   const [editingRuleAccount, setEditingRuleAccount] = useState<TradingAccount | null>(null);
+
+  const activeEditingRuleAccount = useMemo(
+    () => (editingRuleAccount ? accounts.find((a) => a.id === editingRuleAccount.id) || null : null),
+    [accounts, editingRuleAccount]
+  );
 
   // Dynamic Portfolio Equity & Capital Share
   const portfolioSummary = useMemo(() => {
@@ -143,10 +160,16 @@ export default function AccountsPage() {
             </div>
 
             <div className="mt-2 text-4xl sm:text-6xl font-bold font-mono tracking-tight text-white flex items-baseline">
-              <span>{formatCurrency(portfolioSummary.totalEquity).split('.')[0]}</span>
-              <span className="text-2xl sm:text-3xl font-medium ml-1" style={{ color: 'var(--tw-hero-2)' }}>
-                .{formatCurrency(portfolioSummary.totalEquity).split('.')[1]}
-              </span>
+              {isPnlHidden ? (
+                <span>$••••••</span>
+              ) : (
+                <>
+                  <span>{formatCurrency(portfolioSummary.totalEquity).split('.')[0]}</span>
+                  <span className="text-2xl sm:text-3xl font-medium ml-1" style={{ color: 'var(--tw-hero-2)' }}>
+                    .{formatCurrency(portfolioSummary.totalEquity).split('.')[1]}
+                  </span>
+                </>
+              )}
             </div>
 
             <div className="mt-3 flex items-center gap-2 text-xs sm:text-sm">
@@ -154,7 +177,9 @@ export default function AccountsPage() {
                 className="inline-flex items-center px-3 py-1 rounded-full text-xs font-mono font-bold"
                 style={{ background: 'var(--tw-hero-chip)', color: 'var(--tw-hero-ink)' }}
               >
-                {portfolioSummary.netGain >= 0 ? '+' : ''}{formatCurrency(portfolioSummary.netGain)} ({portfolioSummary.gainPct >= 0 ? '+' : ''}{portfolioSummary.gainPct.toFixed(1)}%)
+                {isPnlHidden
+                  ? '+$••••.•• (•••%)'
+                  : `${portfolioSummary.netGain >= 0 ? '+' : ''}${formatCurrency(portfolioSummary.netGain)} (${portfolioSummary.gainPct >= 0 ? '+' : ''}${portfolioSummary.gainPct.toFixed(1)}%)`}
               </span>
               <span style={{ color: 'var(--tw-hero-2)' }}>
                 across a {formatCurrency(portfolioSummary.totalStart)} start
@@ -335,7 +360,7 @@ export default function AccountsPage() {
                 <div>
                   <div className="text-xs text-[var(--tw-ink-2)]">Equity</div>
                   <div className="text-xl sm:text-2xl font-bold text-[var(--tw-ink)] mt-1 tabular-nums">
-                    {formatCurrency(acc.currentEquity)}
+                    {isPnlHidden ? '$••••••' : formatCurrency(acc.currentEquity)}
                   </div>
                   <small className="text-[11px] text-[var(--tw-ink-3)] block mt-1">
                     Start {formatCurrency(acc.startingBalance)}
@@ -345,10 +370,12 @@ export default function AccountsPage() {
                 <div className="text-right">
                   <div className="text-xs text-[var(--tw-ink-2)]">Net gain</div>
                   <div className={`text-base sm:text-lg font-bold mt-1 tabular-nums ${netProfit >= 0 ? 'text-[var(--tw-gain)]' : 'text-[var(--tw-loss)]'}`}>
-                    {netProfit >= 0 ? '+' : ''}{formatCurrency(netProfit)} ({returnPct >= 0 ? '+' : ''}{returnPct.toFixed(1)}%)
+                    {isPnlHidden
+                      ? '••••••'
+                      : `${netProfit >= 0 ? '+' : ''}${formatCurrency(netProfit)} (${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%)`}
                   </div>
                   <small className="text-[11px] text-[var(--tw-ink-3)] block mt-1">
-                    Drawdown {currentDdPct.toFixed(1)}%, {formatCurrency(currentDd)}
+                    Drawdown {currentDdPct.toFixed(1)}%, {isPnlHidden ? '$•••' : formatCurrency(currentDd)}
                   </small>
                 </div>
               </div>
@@ -420,6 +447,15 @@ export default function AccountsPage() {
                   )}
                 </button>
 
+                <Link
+                  href={`/risk?accountId=${acc.id}`}
+                  onClick={() => setSelectedAccountId(acc.id)}
+                  className="px-3 h-10 rounded-full flex items-center justify-center bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)] hover:border-[var(--tw-line-strong)] transition-all text-xs font-medium"
+                  title="Inspect Desk Risk & Exposure"
+                >
+                  Risk
+                </Link>
+
                 <button
                   onClick={() => setEditingRuleAccount(acc)}
                   className="w-10 h-10 rounded-full flex items-center justify-center bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)] hover:border-[var(--tw-line-strong)] transition-all cursor-pointer"
@@ -429,14 +465,14 @@ export default function AccountsPage() {
                   <Settings size={15} />
                 </button>
 
-                <button
-                  onClick={() => deleteAccount(acc.id)}
-                  className="w-10 h-10 rounded-full flex items-center justify-center bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink-3)] hover:text-[var(--tw-loss)] hover:border-[var(--tw-loss)] transition-all cursor-pointer"
-                  title="Archive Account"
-                  aria-label={`Remove ${acc.name}`}
-                >
-                  <Trash2 size={15} />
-                </button>
+                <DeleteConfirmButton
+                  variant="icon"
+                  size={15}
+                  title="Delete Account"
+                  ariaLabel={`Remove ${acc.name}`}
+                  className="min-w-10 h-10 rounded-full bg-[var(--tw-pill)] border border-[var(--tw-line)]"
+                  onConfirm={() => deleteAccount(acc.id)}
+                />
               </div>
             </div>
           );
@@ -444,14 +480,14 @@ export default function AccountsPage() {
       </div>
 
       {/* 4. Rule Engine Configuration Modal */}
-      {editingRuleAccount && (
+      {activeEditingRuleAccount && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
           <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-[var(--tw-line)] bg-[var(--tw-tile)] shadow-2xl text-xs p-6 space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--tw-line)]">
               <div className="flex items-center space-x-2">
                 <ShieldCheck size={18} className="text-[var(--tw-gain)]" />
                 <h2 className="font-mono text-sm font-bold tracking-wider text-[var(--tw-ink)] uppercase">
-                  RULE ENGINE SURVEILLANCE: {editingRuleAccount.name}
+                  RULE ENGINE SURVEILLANCE: {activeEditingRuleAccount.name}
                 </h2>
               </div>
               <button
@@ -467,7 +503,7 @@ export default function AccountsPage() {
             </p>
 
             <div className="space-y-3 font-mono">
-              {editingRuleAccount.rules.map((rule) => (
+              {activeEditingRuleAccount.rules.map((rule) => (
                 <div
                   key={rule.id}
                   className="p-3.5 rounded-2xl border border-[var(--tw-line)] bg-[var(--tw-pill)]/60 space-y-2.5"
@@ -477,26 +513,35 @@ export default function AccountsPage() {
                       <input
                         type="checkbox"
                         checked={rule.isEnabled}
-                        onChange={() => toggleRule(editingRuleAccount.id, rule.id)}
+                        onChange={() => toggleRule(activeEditingRuleAccount.id, rule.id)}
                         className="rounded border-[var(--tw-line)] text-[var(--tw-gain)] focus:ring-0 cursor-pointer"
                       />
                       <span className="font-bold text-[var(--tw-ink)] uppercase text-xs">
                         {rule.ruleType.replace(/_/g, ' ')}
                       </span>
                     </div>
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        rule.currentStatus === 'SAFE'
-                          ? 'bg-[var(--tw-aqua)] text-[var(--tw-aqua-ink)]'
-                          : rule.currentStatus === 'WARNING'
-                          ? 'bg-[var(--tw-warn-bg)] text-[var(--tw-warn)]'
-                          : rule.currentStatus === 'BREACHED'
-                          ? 'bg-[var(--tw-loss)]/15 text-[var(--tw-loss)]'
-                          : 'bg-[var(--tw-tile)] text-[var(--tw-ink-2)]'
-                      }`}
-                    >
-                      {rule.currentStatus}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          rule.currentStatus === 'SAFE'
+                            ? 'bg-[var(--tw-aqua)] text-[var(--tw-aqua-ink)]'
+                            : rule.currentStatus === 'WARNING'
+                            ? 'bg-[var(--tw-warn-bg)] text-[var(--tw-warn)]'
+                            : rule.currentStatus === 'BREACHED'
+                            ? 'bg-[var(--tw-loss)]/15 text-[var(--tw-loss)]'
+                            : 'bg-[var(--tw-tile)] text-[var(--tw-ink-2)]'
+                        }`}
+                      >
+                        {rule.currentStatus}
+                      </span>
+                      <DeleteConfirmButton
+                        variant="icon"
+                        size={13}
+                        title="Delete rule"
+                        ariaLabel={`Delete ${rule.ruleType} rule`}
+                        onConfirm={() => deleteRule(activeEditingRuleAccount.id, rule.id)}
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-3 text-[11px] text-[var(--tw-ink-3)] pt-1 border-t border-[var(--tw-line)]/50">

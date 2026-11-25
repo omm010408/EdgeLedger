@@ -23,6 +23,7 @@ export interface Strategy {
   currentVersion: number;
   isActive: boolean;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface JournalEntry {
@@ -50,6 +51,7 @@ export interface JournalEntry {
   prematureExit: boolean;
   ignoredRules: boolean;
   isLocked?: boolean;
+  updatedAt?: string;
 }
 
 export interface RiskAlert {
@@ -181,9 +183,9 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
     currency: 'USD',
     accountSize: 100000,
     startingBalance: 100000,
-    currentBalance: 105420,
-    currentEquity: 105420,
-    highWaterMark: 106800,
+    currentBalance: 106150,
+    currentEquity: 106150,
+    highWaterMark: 106150,
     challengePhase: 'Funded Live',
     status: 'active',
     isDemo: false,
@@ -216,7 +218,7 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
         warningThresholdPct: 80,
         isEnabled: true,
         currentStatus: 'SAFE',
-        currentMetricValue: 1380, // HWM 106800 - 105420 = 1380
+        currentMetricValue: 0, // Equity equals all-time high $106,150
         resetFrequency: 'none',
         applicableTimezone: 'America/New_York'
       },
@@ -259,9 +261,9 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
     currency: 'USD',
     accountSize: 50000,
     startingBalance: 50000,
-    currentBalance: 53280,
-    currentEquity: 53280,
-    highWaterMark: 53280,
+    currentBalance: 51235,
+    currentEquity: 51235,
+    highWaterMark: 51235,
     challengePhase: 'Phase 1 ($5,000 Target)',
     status: 'active',
     isDemo: false,
@@ -308,7 +310,7 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
         warningThresholdPct: 90,
         isEnabled: true,
         currentStatus: 'SAFE',
-        currentMetricValue: 3280, // $3280 reached of $5000
+        currentMetricValue: 1235, // $1,235 closed profit toward $5,000 target
         resetFrequency: 'none',
         applicableTimezone: 'Europe/Prague'
       },
@@ -337,9 +339,9 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
     currency: 'USD',
     accountSize: 25000,
     startingBalance: 25000,
-    currentBalance: 27150,
-    currentEquity: 27150,
-    highWaterMark: 27150,
+    currentBalance: 24686,
+    currentEquity: 24686,
+    highWaterMark: 25000,
     challengePhase: 'Personal Capital',
     status: 'active',
     isDemo: false,
@@ -386,7 +388,7 @@ export const SEED_ACCOUNTS: TradingAccount[] = [
         warningThresholdPct: 80,
         isEnabled: true,
         currentStatus: 'SAFE',
-        currentMetricValue: 0,
+        currentMetricValue: 314,
         resetFrequency: 'none',
         applicableTimezone: 'UTC'
       },

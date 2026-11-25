@@ -14,7 +14,11 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
     pathname === '/' ||
     pathname === '/calendar' ||
     pathname === '/journal' ||
-    pathname === '/risk';
+    pathname === '/risk' ||
+    pathname === '/reports' ||
+    pathname === '/strategies' ||
+    pathname === '/analytics' ||
+    pathname === '/settings';
 
   const [quickTradeOpen, setQuickTradeOpen] = useState(false);
   const [newAccountOpen, setNewAccountOpen] = useState(false);
@@ -57,7 +61,19 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
     >
       {isStaticBoard ? (
         /* Full Tidewater Board Canvas (Overview, Calendar, Journal, and Risk) */
-        <div className={`tw-board ${pathname === '/calendar' || pathname === '/journal' || pathname === '/risk' ? 'tw-board-static' : ''}`}>
+        <div
+          className={`tw-board ${
+            pathname === '/calendar' || pathname === '/journal' ? 'tw-board-static' : ''
+          } ${
+            pathname === '/risk' ||
+            pathname === '/reports' ||
+            pathname === '/strategies' ||
+            pathname === '/analytics' ||
+            pathname === '/settings'
+              ? 'tw-board-scrollable'
+              : ''
+          }`}
+        >
           {/* Ambient Tidal Ripple in top-right */}
           <svg className="tw-ripple" viewBox="0 0 600 600" aria-hidden="true">
             <circle cx="300" cy="300" r="120" />
@@ -81,7 +97,7 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
       ) : (
         /* Standard Pages (Trades, Accounts, Journal, Risk, Reports, Settings) */
         <>
-          <div className="w-full max-w-[1440px] mx-auto px-7 relative">
+          <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-7 relative overflow-x-clip">
             <svg className="tw-ripple" viewBox="0 0 600 600" aria-hidden="true">
               <circle cx="300" cy="300" r="120" />
               <circle cx="300" cy="300" r="200" />
@@ -97,30 +113,9 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
             />
           </div>
 
-          <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-8 py-6 overflow-x-hidden">
+          <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-8 pt-6 pb-10 overflow-x-hidden">
             {children}
           </main>
-
-          {/* Institutional Regulatory & Risk Disclaimer Footer */}
-          <footer className="w-full py-5 px-4 sm:px-8 border-t border-[#34544F] bg-[#0B1415]/60 text-xs font-mono text-[#A9C1BD]">
-            <div className="max-w-[1600px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
-              <div className="flex items-center space-x-2">
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ background: 'var(--tw-hero-line)' }}
-                />
-                <p className="font-sans text-xs text-[#CFE2DE]">
-                  <span className="font-mono font-bold text-white uppercase mr-1">DISCLAIMER:</span>
-                  EDGELEDGER is a quantitative trading performance intelligence and record-keeping tool. It does not provide investment, financial, legal, or tax advice, nor does it guarantee compliance with third-party prop-firm terms.
-                </p>
-              </div>
-              <div className="shrink-0 flex items-center space-x-3 text-[11px] text-[#A9C1BD]">
-                <span>Press <kbd className="px-1.5 py-0.5 rounded-md bg-[#13211F] border border-[#34544F] text-[#9BF3DF] font-mono">⌘K</kbd> for command palette</span>
-                <span>•</span>
-                <span>v1.3.0 Institutional Bento</span>
-              </div>
-            </div>
-          </footer>
         </>
       )}
 

@@ -1,0 +1,91 @@
+# EDGELEDGER AI - Model & Inference Configuration
+project_name: "EDGELEDGER AI"
+version: "0.1.0"
+environment: "development"
+
+# Integrated Architecture Paths
+paths:
+  dataset_dir: "dataset"
+  training_dir: "training"
+  model_dir: "model"
+  evaluation_dir: "evaluation"
+  target_gguf: "model/edgeledger-trained.gguf"
+  validation_file: "training/validation.jsonl"
+  test_results_file: "evaluation/test_results.json"
+
+# Default Model & Inference Settings
+model:
+  # Target architecture: Qwen family
+  default_family: "qwen"
+  default_model_name: "qwen2.5:7b-instruct"
+  gguf_artifact: "model/edgeledger-trained.gguf"
+  context_window: 8192
+  temperature: 0.2          # Lower temperature for rigorous risk & structure adherence
+  top_p: 0.9
+  max_tokens: 2048
+  repetition_penalty: 1.1
+
+# Inference Engine Configuration
+inference:
+  # Backend options: 'ollama' (primary local) or 'huggingface' (fine-tuned / direct)
+  default_backend: "ollama"
+  
+  ollama:
+    base_url: "http://localhost:11434"
+    model_tag: "qwen2.5:7b-instruct"
+    custom_model_tag: "edgeledger-ai"
+    timeout_seconds: 120
+    stream_response: true
+
+  huggingface:
+    model_id: "Qwen/Qwen2.5-7B-Instruct"
+    device: "auto"           # auto, cuda, mps, cpu
+    load_in_4bit: true      # QLoRA / 4-bit quantization
+    load_in_8bit: false
+    trust_remote_code: false
+
+# Asset & Instrument Focus
+instruments:
+  primary:
+    - symbol: "XAUUSD"
+      name: "Gold / US Dollar"
+      asset_class: "Commodities / FX"
+      tick_size: 0.01
+      session_preference: ["London", "New York"]
+    - symbol: "US30"
+      name: "Dow Jones Industrial Average CFD"
+      asset_class: "Indices"
+      tick_size: 1.0
+      session_preference: ["New York"]
+    - symbol: "SPX500"
+      name: "S&P 500 Index CFD"
+      asset_class: "Indices"
+      tick_size: 0.1
+      session_preference: ["New York"]
+    - symbol: "BTCUSD"
+      name: "Bitcoin / US Dollar"
+      asset_class: "Crypto"
+      tick_size: 0.5
+      session_preference: ["24/7", "London-NY Overlap"]
+
+# Trading Intelligence Knowledge Modules
+modules:
+  macro_analysis:
+    enabled: true
+    dataset_file: "dataset/macro_analysis.jsonl"
+  price_action:
+    enabled: true
+    dataset_file: "dataset/price_action.jsonl"
+  risk_management:
+    enabled: true
+    dataset_file: "dataset/risk_management.jsonl"
+    max_daily_drawdown_pct: 4.0
+    max_total_drawdown_pct: 8.0
+    max_risk_per_trade_pct: 1.0
+    minimum_rr_ratio: 2.0
+  psychology:
+    enabled: true
+    dataset_file: "dataset/psychology.jsonl"
+  trade_reviews:
+    enabled: true
+    dataset_file: "dataset/trade_reviews.jsonl"

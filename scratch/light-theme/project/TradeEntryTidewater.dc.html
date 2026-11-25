@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EdgeLedger record execution, light</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400..700&display=swap">
+<style>
+:root{color-scheme:light;--bg:#EDF4F2;--tile:#FFFFFF;--line:#C5D7D3;--line-strong:#758B86;--ink:#0E1B1C;--ink-2:#3F5553;--ink-3:#566967;--pill:#E6EEEB;--track:#E4EDEA;--ring-track:#E2ECE9;--ring-empty:#9DB3AE;--hero:#0D4A4A;--hero-ink:#FFFFFF;--hero-2:#CDEBE3;--hero-line:#8FE6CF;--hero-rule:rgba(255,255,255,0.22);--hero-chip:rgba(143,230,207,0.2);--sun:#F6C744;--sun-ink:#1A1400;--sun-disc:#FBDB7A;--aqua:#D5F0E6;--aqua-ink:#0B2E2A;--aqua-chip:#FFFFFF;--gain:#13784E;--loss:#B3263E;--warn:#8F4305;--warn-bg:rgba(143,67,5,0.07);--warn-line:rgba(143,67,5,0.4);--s1:#2A78D6;--s2:#EB6834;--s3:#6250D6;--b1:#13784E;--b2:#7CC7A4;--buy-bg:#E1EBFB;--buy-ink:#1F4F95;--sell-bg:#E6EEEB;--sell-ink:#3F5553;--wave:#E8F2EF;--ripple:#D0E2DE;--focus:#0D4A4A;--shadow:0 1px 2px rgba(14,27,28,0.05),0 8px 20px -14px rgba(14,27,28,0.14);--c:var(--ink-2);--aqua-num:#0B6B47}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg)}
+.board{width:100%;height:1080px;overflow:hidden;display:flex;flex-direction:column;padding:24px 32px 28px;background:var(--bg);color:var(--ink);font-family:'Instrument Sans',Inter,ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:20px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+button,input,select,textarea{font:inherit;color:inherit}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+
+.top{display:flex;align-items:center;gap:28px;height:56px;flex:none}
+.brand{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;letter-spacing:-0.01em}
+.mark{display:grid;place-items:center;width:32px;height:32px;border-radius:58% 42% 46% 54% / 52% 48% 52% 48%;background:var(--hero);color:var(--hero-ink);font-size:15px;font-weight:700;line-height:1}
+.nav{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.nav a{display:inline-flex;align-items:center;height:32px;padding:0 14px;border-radius:999px;color:var(--ink-2);font-weight:500;text-decoration:none}
+.nav a[aria-current="page"]{background:var(--tile);color:var(--ink);font-weight:600;box-shadow:inset 0 0 0 1px var(--line-strong)}
+.tools{margin-left:auto;display:flex;align-items:center;gap:10px}
+.alert{display:inline-flex;align-items:center;height:32px;padding:0 13px;border-radius:999px;background:var(--warn-bg);box-shadow:inset 0 0 0 1px var(--warn-line);color:var(--warn);font-size:13px;font-weight:600;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border-radius:999px;border:1px solid var(--line-strong);background:var(--tile);color:var(--ink);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--ink)}
+.btn.dark{background:var(--ink);border-color:var(--ink);color:var(--tile);font-weight:600}
+.btn.quiet{color:var(--ink-2)}
+kbd{padding:3px 6px;border-radius:6px;background:var(--pill);color:var(--ink-2);font-size:12px;font-weight:600}
+.steps{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.steps span{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:999px;color:var(--ink-2);font-size:13px;font-weight:500;white-space:nowrap}
+.steps span b{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;font-weight:600;width:18px;height:18px;border-radius:999px;display:inline-grid;place-items:center;background:var(--tile);color:var(--ink-2)}
+.steps span[aria-current="step"]{background:var(--ink);color:var(--tile);font-weight:600}
+.steps span[aria-current="step"] b{background:var(--sun);color:var(--sun-ink)}
+
+.titlerow{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-top:26px;flex:none}
+.titlerow h1{margin:0;font-size:36px;line-height:40px;font-weight:600;letter-spacing:-0.03em}
+.titlerow p{margin:8px 0 0;color:var(--ink-2);font-size:15px;line-height:22px}
+.controls{display:flex;gap:10px;align-items:center}
+
+.grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:318px 262px minmax(0,1fr);gap:16px;margin-top:20px}
+.tile{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column;padding:20px 22px;border-radius:32px;background:var(--tile);border:1px solid var(--line)}
+.lbl{font-size:13px;line-height:18px;font-weight:600;color:var(--ink-2)}
+.sub{font-size:12px;line-height:16px;color:var(--ink-3)}
+.thead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.pill{display:inline-flex;align-items:center;height:26px;padding:0 12px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.gain{color:var(--gain)}
+.loss{color:var(--loss)}
+.warn{color:var(--warn)}
+
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field > .lbl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;color:var(--ink-3)}
+.input{height:42px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 14px;border-radius:14px;background:var(--pill);border:1px solid var(--line-strong);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;min-width:0}
+.input.sl{color:var(--loss)}
+.input.tp{color:var(--gain)}
+.input.risk{color:var(--warn)}
+.input.plain{font-family:'Instrument Sans',Inter,sans-serif;font-weight:500;font-size:14px}
+.chev{color:var(--ink-3);font-size:12px}
+.row{display:grid;gap:10px}
+.r1{grid-template-columns:minmax(0,1.1fr) minmax(0,1.6fr) minmax(0,.9fr)}
+.r2{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:12px}
+.dirseg{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:999px;background:var(--pill);height:42px}
+.dirseg button{border:0;border-radius:999px;background:transparent;color:var(--ink-2);font-size:12px;font-weight:700;letter-spacing:.06em;cursor:pointer;white-space:nowrap}
+.dirseg button[aria-pressed="true"].buy{background:color-mix(in srgb,var(--gain) 16%,transparent);color:var(--gain);box-shadow:inset 0 0 0 1px var(--gain)}
+.dirseg button[aria-pressed="true"].sell{background:color-mix(in srgb,var(--loss) 16%,transparent);color:var(--loss);box-shadow:inset 0 0 0 1px var(--loss)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:999px;background:var(--pill);font-size:12px;color:var(--ink-2);white-space:nowrap}
+.chip b{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:600;color:var(--ink)}
+.flag{margin-top:10px;padding:8px 12px;border-radius:14px;background:var(--warn-bg);color:var(--warn);font-size:12px;line-height:16px;font-weight:500}
+
+/* Plan and ladder */
+.plan{grid-column:1 / 7;grid-row:1}
+.ladderT{grid-column:7 / 13;grid-row:1;background:var(--sun);border:0;color:var(--sun-ink)}
+.ladderT .lbl,.ladderT .sub{color:var(--sun-ink)}
+.ladder{display:block;width:100%;height:auto;flex:1;min-height:0}
+.ladder .zg{fill:var(--gain);opacity:.18}
+.ladder .zl{fill:var(--loss);opacity:.18}
+.ladder .ltp{stroke:var(--gain);stroke-width:1.5}
+.ladder .lsl{stroke:var(--loss);stroke-width:1.5}
+.ladder .lent{stroke:var(--sun-ink);stroke-width:2;stroke-dasharray:5 4}
+.ladder .lt{font:600 12px 'JetBrains Mono',ui-monospace,monospace;fill:var(--sun-ink)}
+.ladder .lts{font:500 12px 'Instrument Sans',sans-serif;fill:var(--sun-ink);opacity:.85}
+.rr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.rr div{padding:8px 10px;border-radius:14px;background:var(--tile);color:var(--ink);border:1px solid color-mix(in srgb,var(--sun-ink) 22%,transparent)}
+.rr dt{font-size:12px;line-height:14px;opacity:.8}
+.rr dd{margin:2px 0 0;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:14px;font-weight:600;white-space:nowrap}
+
+/* Allocation and risk */
+.alloc{grid-column:1 / 9;grid-row:2}
+.accts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;flex:1;min-height:0}
+.acct{position:relative;display:flex;flex-direction:column;justify-content:space-between;padding:14px;border-radius:22px;background:var(--pill);border:1px solid var(--line);min-width:0}
+.acct.on{background:color-mix(in srgb,var(--sun) 16%,var(--tile));border-color:var(--sun);box-shadow:inset 0 0 0 1px var(--sun)}
+.acct.prev{border:1.5px dashed var(--line-strong);background:transparent}
+.acct .nm{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:26px}
+.acct .eq{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;color:var(--ink-2);margin-top:4px;white-space:nowrap}
+.acct .big{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:24px;line-height:28px;font-weight:600;letter-spacing:-0.02em;margin-top:10px;white-space:nowrap}
+.acct .big small{font-size:12px;font-weight:600;color:var(--ink-3);margin-left:4px;letter-spacing:0}
+.acct .tag{font-size:12px;line-height:14px;color:var(--ink-3);margin-top:4px}
+.acct.on .tag{color:var(--ink-2)}
+.tick{position:absolute;top:12px;right:12px;width:20px;height:20px;border-radius:999px;border:1.5px solid var(--line-strong);display:grid;place-items:center}
+.acct.on .tick{background:var(--sun);border-color:var(--sun);color:var(--sun-ink)}
+.tick svg{width:12px;height:12px}
+.total{display:flex;justify-content:space-between;gap:12px;margin-top:10px;font-size:12px;color:var(--ink-2)}
+.total b{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:600;color:var(--ink)}
+
+.risk{grid-column:9 / 13;grid-row:2}
+.meter{position:relative;height:12px;border-radius:99px;background:var(--pill);margin-top:8px}
+.meter .fill{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:var(--hero)}
+.meter .mk{position:absolute;top:-5px;bottom:-5px;width:2px;border-radius:2px;background:var(--ink)}
+.scale2{display:flex;justify-content:space-between;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;color:var(--ink-3);margin-top:6px}
+.stackr{display:flex;height:14px;border-radius:99px;overflow:hidden;margin-top:14px;gap:3px}
+.stackr i{display:block;height:100%}
+.rl{display:grid;gap:8px;margin-top:12px}
+.rl div{display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:center;font-size:12px;color:var(--ink-2)}
+.rl i{width:12px;height:12px;border-radius:4px;display:block}
+.rl .dash{background:transparent;border:1.5px dashed var(--line-strong)}
+.rl span:last-child{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:600;color:var(--ink)}
+.totalr{margin-top:auto;display:flex;justify-content:space-between;align-items:baseline;padding-top:10px;border-top:1px solid var(--line)}
+.totalr span:first-child{font-size:12px;color:var(--ink-2)}
+.totalr span:last-child{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:18px;font-weight:600;letter-spacing:-0.02em}
+
+/* Checklist and thesis */
+.check{grid-column:1 / 7;grid-row:3}
+.cl{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}
+.cl label{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:14px;background:var(--pill);font-size:13px;cursor:pointer}
+.cl label.done{background:color-mix(in srgb,var(--gain) 12%,transparent)}
+.cl input{width:16px;height:16px;margin:0;accent-color:var(--hero)}
+.progress{height:6px;border-radius:99px;background:var(--pill);overflow:hidden;margin-top:12px}
+.progress i{display:block;height:100%;width:50%;background:var(--hero);border-radius:99px}
+.note{margin-top:auto;padding-top:10px;font-size:12px;line-height:16px;color:var(--ink-3)}
+.thesis{grid-column:7 / 13;grid-row:3}
+.area{flex:1;min-height:0;padding:12px 14px;border-radius:18px;background:var(--pill);border:1px solid var(--line);color:var(--ink-3);font-size:14px;line-height:22px}
+.actionbar{display:flex;justify-content:flex-end;gap:10px;margin-top:12px}
+/*linked*/a{color:inherit;text-decoration:none}
+/* Unified Light Elevation, Interaction, Scrollbar, Empty & Reduced Motion Polish */
+.tile{border:1px solid var(--line);box-shadow:var(--shadow)}
+.hero,.sunt,.mint,.best,.setups,.capital,.alerts,.trend{box-shadow:var(--shadow)}
+::selection{background:var(--hero-line);color:var(--ink)}
+input,textarea,select{caret-color:var(--focus)}
+button,a,.btn,.chip,.pill,.seg button,.tabs button,.lrow,.sess,.cat,.acct{transition:background-color 175ms ease,border-color 175ms ease,color 175ms ease,box-shadow 175ms ease,transform 175ms ease}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.btn:active,.seg button:active,.tabs button:active,.chip:active{transform:translateY(1px)}
+button:disabled,.btn:disabled,.chip:disabled{opacity:.48;cursor:not-allowed;pointer-events:none}
+table tbody tr{transition:background-color 165ms ease}
+table tbody tr:hover{background:color-mix(in srgb,var(--ink) 4%,transparent)}
+table thead th{position:sticky;top:0;background:var(--tile);z-index:1}
+.lbody::-webkit-scrollbar,.scroll-y::-webkit-scrollbar{width:8px;height:8px}
+.lbody::-webkit-scrollbar-track,.scroll-y::-webkit-scrollbar-track{background:var(--bg)}
+.lbody::-webkit-scrollbar-thumb,.scroll-y::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:999px}
+.lbody::-webkit-scrollbar-thumb:hover,.scroll-y::-webkit-scrollbar-thumb:hover{background:var(--ink-3)}
+.empty-state,.zero-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:24px;border-radius:20px;border:1px dashed var(--line-strong);background:var(--pill);color:var(--ink-2);text-align:center}
+.loading-shimmer{background:linear-gradient(90deg,var(--pill) 25%,var(--track) 50%,var(--pill) 75%);border-radius:12px}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms !important;animation-iteration-count:1 !important;transition-duration:0.01ms !important;scroll-behavior:auto !important}}
+</style>
+</helmet>
+
+<div class="board">
+  <header class="top">
+    <div class="brand"><span class="mark" aria-hidden="true">E</span>EdgeLedger</div>
+    <nav class="nav" aria-label="Primary">
+      <a href="Tidewater.dc.html">Overview</a>
+      <a href="AccountsTidewater.dc.html">Accounts</a>
+      <a href="TradeLedgerTidewater.dc.html" aria-current="page">Trades</a>
+      <a href="CalendarTidewater.dc.html">Calendar</a>
+      <a href="JournalTidewater.dc.html">Journal</a>
+      <a href="RiskTidewater.dc.html">Risk</a>
+      <a href="ReportsTidewater.dc.html">Reports</a>
+    </nav>
+    <div class="tools">
+      <span class="alert">1 risk alert</span>
+      <a class="btn" href="TradeEntryTidewaterDark.dc.html">Dark</a>
+      <button class="btn quiet" type="button">Search <kbd>⌘K</kbd></button>
+    </div>
+  </header>
+
+  <div class="titlerow">
+    <div>
+      <h1>Record new execution</h1>
+      <p>One logical order, sized per account from its own equity. Previews update before you commit.</p>
+    </div>
+    <div class="controls">
+      <div class="steps" role="list" aria-label="Steps">
+        <span role="listitem"><b>1</b>Plan</span>
+        <span role="listitem" aria-current="step"><b>2</b>Size</span>
+        <span role="listitem"><b>3</b>Confirm</span>
+      </div>
+      <button class="btn quiet" type="button">Cancel</button>
+      <button class="btn dark" type="button">Record execution</button>
+    </div>
+  </div>
+
+  <main class="grid">
+
+    <section class="tile plan" aria-label="Plan">
+      <div class="thead"><span class="lbl">Plan</span><span class="sub">Prices in instrument units</span></div>
+      <div class="row r1">
+        <div class="field"><span class="lbl">Instrument</span><div class="input plain"><span>XAUUSD · Gold</span><span class="chev">▼</span></div></div>
+        <div class="field"><span class="lbl">Direction</span>
+          <div class="dirseg" role="group" aria-label="Direction">
+            <button class="buy" type="button" aria-pressed="true">↗ BUY</button>
+            <button class="sell" type="button" aria-pressed="false">↘ SELL</button>
+          </div>
+        </div>
+        <div class="field"><span class="lbl">Status</span><div class="input plain"><span>Open, active</span><span class="chev">▼</span></div></div>
+      </div>
+      <div class="row r2">
+        <div class="field"><span class="lbl">Entry</span><div class="input"><span>2710.00</span></div></div>
+        <div class="field"><span class="lbl">Stop loss</span><div class="input sl"><span>2704.00</span></div></div>
+        <div class="field"><span class="lbl">Take profit</span><div class="input tp"><span>2728.00</span></div></div>
+        <div class="field"><span class="lbl">Risk per account</span><div class="input risk"><span>1.0</span><span class="chev">%</span></div></div>
+      </div>
+      <div class="chips">
+        <span class="chip">Setup <b>Fair Value Gap Retest</b></span>
+        <span class="chip">Session <b>London 08:00 UTC</b></span>
+        <span class="chip">Timeframe <b>15M</b></span>
+      </div>
+      <div class="flag">No strategy linked. Link one so this execution counts in strategy stats.</div>
+    </section>
+
+    <section class="tile ladderT" aria-label="Price ladder">
+      <div class="thead" style="margin-bottom:8px"><span class="lbl">Price ladder</span><span class="pill" style="background:var(--sun-ink);color:var(--sun)">R:R 1 : 3</span></div>
+      <svg class="ladder" viewBox="0 -6 600 196" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Buy ladder: target 2,728, entry 2,710, stop 2,704">
+        <rect class="zg" x="0" y="14" width="600" height="112.5"/>
+        <rect class="zl" x="0" y="126.5" width="600" height="37.5"/>
+        <line class="ltp" x1="0" x2="600" y1="14" y2="14"/>
+        <line class="lent" x1="0" x2="600" y1="126.5" y2="126.5"/>
+        <line class="lsl" x1="0" x2="600" y1="164" y2="164"/>
+        <text class="lt" x="10" y="9">Target 2,728.00</text>
+        <text class="lts" x="590" y="9" text-anchor="end">+18.00 pts</text>
+        <text class="lt" x="10" y="120">Entry 2,710.00</text>
+        <text class="lts" x="590" y="120" text-anchor="end">Planned</text>
+        <text class="lt" x="10" y="158">Stop 2,704.00</text>
+        <text class="lts" x="590" y="158" text-anchor="end">−6.00 pts</text>
+      </svg>
+      <dl class="rr">
+        <div><dt>Risk</dt><dd class="loss">−$1,050</dd></div>
+        <div><dt>Reward</dt><dd class="gain">+$3,150</dd></div>
+        <div><dt>Stop</dt><dd>6.00 pts</dd></div>
+      </dl>
+    </section>
+
+    <section class="tile alloc" aria-label="Allocate across accounts">
+      <div class="thead"><span class="lbl">Allocate across accounts</span><span class="sub">1 of 3 selected. Unselected accounts show a preview.</span></div>
+      <div class="accts">
+        <div class="acct on" role="checkbox" aria-checked="true" tabindex="0">
+          <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
+          <div><div class="nm">Apex Trader Funded 1</div><div class="eq">Equity $105,420.00</div></div>
+          <div><div class="big">1.75<small>lots</small></div><div class="tag">Risks $1,050.00 at 1.0%</div></div>
+        </div>
+        <div class="acct prev" role="checkbox" aria-checked="false" tabindex="0">
+          <span class="tick"></span>
+          <div><div class="nm">FTMO Challenge 50K</div><div class="eq">Equity $53,280.00</div></div>
+          <div><div class="big">0.89<small>lots</small></div><div class="tag">Preview, not allocated</div></div>
+        </div>
+        <div class="acct prev" role="checkbox" aria-checked="false" tabindex="0">
+          <span class="tick"></span>
+          <div><div class="nm">IC Markets Raw ECN</div><div class="eq">Equity $27,150.00</div></div>
+          <div><div class="big">0.45<small>lots</small></div><div class="tag">Preview, not allocated</div></div>
+        </div>
+      </div>
+      <div class="total"><span>Total if all three are allocated</span><b>3.09 lots · $1,854.30 at risk</b></div>
+    </section>
+
+    <section class="tile risk" aria-label="Risk meter">
+      <div class="thead"><span class="lbl">Risk per account</span><span class="pill" style="background:var(--pill);color:var(--ink-2)">Uniform 1.0%</span></div>
+      <div class="meter" role="img" aria-label="Risk 1.0% of equity on a 0 to 2 percent scale"><div class="fill" style="width:50%"></div><div class="mk" style="left:calc(50% - 1px)"></div></div>
+      <div class="scale2"><span>0%</span><span>1.0%</span><span>2.0%</span></div>
+      <div class="stackr" aria-hidden="true">
+        <i style="width:56.6%;background:var(--hero)"></i>
+        <i style="width:28.7%;background:color-mix(in srgb,var(--hero) 40%,transparent)"></i>
+        <i style="width:14.7%;background:color-mix(in srgb,var(--hero) 22%,transparent)"></i>
+      </div>
+      <div class="rl">
+        <div><i style="background:var(--hero)"></i><span>Apex, allocated</span><span>$1,050.00</span></div>
+        <div><i class="dash"></i><span>FTMO, preview</span><span>$532.80</span></div>
+        <div><i class="dash"></i><span>IC Markets, preview</span><span>$271.50</span></div>
+      </div>
+      <div class="totalr"><span>Potential loss if stopped</span><span class="loss">−$1,050.00</span></div>
+    </section>
+
+    <section class="tile check" aria-label="Pre-trade checklist">
+      <div class="thead"><span class="lbl">Pre-trade checklist</span><span class="pill" style="background:var(--pill);color:var(--ink-2)">3 of 6 confirmed</span></div>
+      <div class="cl">
+        <label class="done"><input type="checkbox" checked> Risk below account limit</label>
+        <label><input type="checkbox"> HTF bias aligned</label>
+        <label class="done"><input type="checkbox" checked> No high-impact news</label>
+        <label><input type="checkbox"> Valid setup trigger</label>
+        <label class="done"><input type="checkbox" checked> Zero FOMO or impatience</label>
+        <label><input type="checkbox"> Technical invalidation stop</label>
+      </div>
+      <div class="progress" aria-hidden="true"><i></i></div>
+      <div class="note">Unchecked items are stored with the execution for review.</div>
+    </section>
+
+    <section class="tile thesis" aria-label="Trade thesis">
+      <div class="thead"><span class="lbl">Thesis and technical bias</span><span class="sub">Optional. Saved to the journal.</span></div>
+      <div class="area">Reasoning, confluence, key price level, market structure…</div>
+      <div class="actionbar"><button class="btn quiet" type="button">Save draft</button><button class="btn dark" type="button">Record execution</button></div>
+    </section>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

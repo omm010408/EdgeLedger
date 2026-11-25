@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EdgeLedger risk, light</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&amp;family=JetBrains+Mono:wght@400..700&amp;display=swap">
+<style>
+:root{color-scheme:light;--bg:#EDF4F2;--tile:#FFFFFF;--line:#C5D7D3;--line-strong:#758B86;--ink:#0E1B1C;--ink-2:#3F5553;--ink-3:#566967;--pill:#E6EEEB;--track:#E4EDEA;--ring-track:#E2ECE9;--ring-empty:#9DB3AE;--hero:#0D4A4A;--hero-ink:#FFFFFF;--hero-2:#CDEBE3;--hero-line:#8FE6CF;--hero-rule:rgba(255,255,255,0.22);--hero-chip:rgba(143,230,207,0.2);--sun:#F6C744;--sun-ink:#1A1400;--sun-disc:#FBDB7A;--aqua:#D5F0E6;--aqua-ink:#0B2E2A;--aqua-chip:#FFFFFF;--gain:#13784E;--loss:#B3263E;--warn:#8F4305;--warn-bg:rgba(143,67,5,0.07);--warn-line:rgba(143,67,5,0.4);--s1:#2A78D6;--s2:#EB6834;--s3:#6250D6;--b1:#13784E;--b2:#7CC7A4;--buy-bg:#E1EBFB;--buy-ink:#1F4F95;--sell-bg:#E6EEEB;--sell-ink:#3F5553;--wave:#E8F2EF;--ripple:#D0E2DE;--focus:#0D4A4A;--shadow:0 1px 2px rgba(14,27,28,0.05),0 8px 20px -14px rgba(14,27,28,0.14);--c:var(--ink-2);--aqua-num:#0B6B47}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg)}
+.board{width:100%;height:1080px;overflow:hidden;display:flex;flex-direction:column;padding:20px 32px 24px;background:var(--bg);color:var(--ink);font-family:'Instrument Sans',Inter,ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:20px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+button{font:inherit;color:inherit}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+
+/* Header */
+.top{display:flex;align-items:center;gap:22px;height:56px;flex:none}
+.brand{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;letter-spacing:-0.01em;white-space:nowrap}
+.mark{display:grid;place-items:center;width:32px;height:32px;border-radius:58% 42% 46% 54% / 52% 48% 52% 48%;background:var(--hero);color:var(--hero-ink);font-size:15px;font-weight:700;line-height:1}
+.nav{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.nav a{display:inline-flex;align-items:center;height:32px;padding:0 13px;border-radius:999px;color:var(--ink-2);font-weight:500;text-decoration:none;white-space:nowrap}
+.nav a[aria-current="page"]{background:var(--tile);color:var(--ink);font-weight:600;box-shadow:inset 0 0 0 1px var(--line-strong)}
+.tools{margin-left:auto;display:flex;align-items:center;gap:8px}
+.alert{display:inline-flex;align-items:center;height:34px;padding:0 13px;border-radius:999px;background:var(--warn-bg);box-shadow:inset 0 0 0 1px var(--warn-line);color:var(--warn);font-size:13px;font-weight:600;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:38px;padding:0 16px;border-radius:999px;border:1px solid var(--line-strong);background:var(--tile);color:var(--ink);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn.dark{background:var(--ink);border-color:var(--ink);color:var(--tile);font-weight:600}
+.btn.quiet{color:var(--ink-2)}
+kbd{padding:3px 6px;border-radius:6px;background:var(--pill);color:var(--ink-2);font-size:12px;font-weight:600}
+
+.titlerow{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-top:18px;flex:none}
+.titlerow h1{margin:0;font-size:34px;line-height:40px;font-weight:600;letter-spacing:-0.03em}
+.titlerow p{margin:6px 0 0;color:var(--ink-2);font-size:15px;line-height:22px}
+.controls{display:flex;gap:8px;align-items:center}
+.seg{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.seg button{height:30px;padding:0 14px;border:0;border-radius:999px;background:transparent;color:var(--ink-2);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--tile);font-weight:600}
+
+/* Tiles */
+.grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px}
+.tile{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column;padding:20px 22px;border-radius:32px;background:var(--tile);border:1px solid var(--line);overflow:hidden}
+.head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex:none}
+.eyebrow{font-size:12px;line-height:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.sub{font-size:12px;line-height:16px;color:var(--ink-3);white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 11px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;flex:none}
+.pill.ok{background:color-mix(in srgb,var(--gain) 14%,transparent);color:var(--gain)}
+.pill.w{background:var(--warn-bg);color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn-line)}
+.pill .d{width:7px;height:7px;border-radius:50%;background:currentColor}
+.gain{color:var(--gain)}
+.loss{color:var(--loss)}
+.warn{color:var(--warn)}
+
+/* Hero: risk status ring */
+.hero{grid-column:1 / 5;grid-row:1 / 3;background:var(--hero);color:var(--hero-ink);border:0;border-radius:44px;padding:24px 26px 20px}
+.hero .eyebrow{color:var(--hero-2)}
+.hero .pill{background:var(--hero-line);color:var(--hero)}
+.ring{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;margin-top:8px}
+.ring svg{width:min(230px,100%);height:auto;aspect-ratio:1;display:block}
+.rc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.rc b{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:44px;line-height:46px;font-weight:600;letter-spacing:-0.03em}
+.rc span{margin-top:4px;font-size:13px;color:var(--hero-2)}
+.rsub{margin:6px 0 0;font-size:13px;line-height:19px;color:var(--hero-2)}
+.rstats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--hero-rule)}
+.rstats span{display:block;font-size:12px;line-height:16px;color:var(--hero-2)}
+.rstats b{display:block;margin-top:4px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:16px;line-height:20px;font-weight:600;white-space:nowrap}
+
+/* Limit usage meters */
+.meters{grid-column:5 / 10;grid-row:1;padding:18px 22px}
+.mrow{margin-top:12px}
+.mrow+.mrow{margin-top:14px}
+.mtop{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.mn{font-size:13px;line-height:18px;font-weight:600;color:var(--ink)}
+.mv{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;line-height:16px;color:var(--ink-2);white-space:nowrap}
+.meter{height:9px;margin-top:7px;border-radius:999px;background:var(--track);overflow:hidden}
+.meter i{display:block;height:100%;border-radius:999px}
+.mGain i{background:linear-gradient(90deg,var(--gain),color-mix(in srgb,var(--gain) 60%,var(--hero-line)))}
+.mCap i{background:linear-gradient(90deg,var(--sun),var(--s2))}
+.mOpen i{background:linear-gradient(90deg,var(--s3),color-mix(in srgb,var(--s3) 55%,var(--s1)))}
+
+/* Alerts (sun) */
+.alerts{grid-column:10 / 13;grid-row:1;background:var(--sun);border:0;color:var(--sun-ink);padding:18px 20px}
+.alerts .eyebrow{color:var(--sun-ink);opacity:.8}
+.alerts .big{margin-top:8px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:30px;line-height:34px;font-weight:600;letter-spacing:-0.03em}
+.al{display:flex;gap:12px;align-items:flex-start;margin-top:12px;padding-top:12px;border-top:1px solid color-mix(in srgb,var(--sun-ink) 18%,transparent)}
+.ai{display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;background:var(--sun-ink);color:var(--sun);font-size:13px;font-weight:700;line-height:1}
+.al b{display:block;font-size:13px;line-height:18px;font-weight:600}
+.al p{margin:3px 0 0;font-size:12px;line-height:16px;color:color-mix(in srgb,var(--sun-ink) 80%,transparent)}
+
+/* Rule checks */
+.rules{grid-column:1 / 7;grid-row:3;padding:18px 22px}
+.rrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;align-items:center;height:34px;border-top:1px solid var(--line)}
+.rrow:first-of-type{border-top:0}
+.rn{font-size:13px;line-height:18px;color:var(--ink);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rv{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;color:var(--ink-2);white-space:nowrap}
+
+/* R distribution */
+.rdist{grid-column:5 / 10;grid-row:2;padding:18px 22px 14px}
+.rdist svg{flex:1;min-height:0;width:100%;margin-top:6px;display:block}
+
+/* Asset donut */
+.assets{grid-column:10 / 13;grid-row:2;padding:18px 22px}
+.dwrap{display:flex;align-items:center;gap:16px;margin-top:8px;flex:1;min-height:0}
+.dwrap svg{width:136px;height:136px;flex:none}
+.dc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.dleg{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.dl{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px;line-height:16px;color:var(--ink-2)}
+.dl i{width:9px;height:9px;border-radius:3px}
+.dl b{color:var(--ink);font-weight:600}
+.dl em{font-style:normal;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;color:var(--ink);white-space:nowrap}
+
+/* What-if */
+.stress{grid-column:7 / 13;grid-row:3;padding:18px 22px}
+.sx{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.sx div{padding:12px 14px;border-radius:20px;background:var(--pill)}
+.sx span{display:block;font-size:12px;line-height:16px;color:var(--ink-2);font-weight:600}
+.sx b{display:block;margin-top:4px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:20px;line-height:24px;font-weight:600;letter-spacing:-0.02em;white-space:nowrap}
+.sx small{display:block;margin-top:2px;font-size:12px;line-height:14px;color:var(--ink-3);white-space:nowrap}
+.sx .c1 b{color:var(--loss)}
+.sx .c2 b{color:var(--warn)}
+.sx .c3 b{color:var(--s1)}
+.bl{margin-top:14px}
+.bh{display:flex;justify-content:space-between;font-size:12px;line-height:16px;color:var(--ink-2);margin-bottom:7px}
+.blocks{display:flex;gap:5px}
+.blk{flex:1;height:14px;border-radius:6px;background:color-mix(in srgb,var(--sun) 14%,var(--tile));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--sun) 60%,var(--tile))}
+.blocks.thin .blk{height:10px;border-radius:4px;background:color-mix(in srgb,var(--s3) 14%,var(--tile));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--s3) 55%,var(--tile))}
+/*linked*/a{color:inherit;text-decoration:none}
+/* Unified Light Elevation, Interaction, Scrollbar, Empty & Reduced Motion Polish */
+.tile{border:1px solid var(--line);box-shadow:var(--shadow)}
+.hero,.sunt,.mint,.best,.setups,.capital,.alerts,.trend{box-shadow:var(--shadow)}
+::selection{background:var(--hero-line);color:var(--ink)}
+input,textarea,select{caret-color:var(--focus)}
+button,a,.btn,.chip,.pill,.seg button,.tabs button,.lrow,.sess,.cat,.acct{transition:background-color 175ms ease,border-color 175ms ease,color 175ms ease,box-shadow 175ms ease,transform 175ms ease}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.btn:active,.seg button:active,.tabs button:active,.chip:active{transform:translateY(1px)}
+button:disabled,.btn:disabled,.chip:disabled{opacity:.48;cursor:not-allowed;pointer-events:none}
+table tbody tr{transition:background-color 165ms ease}
+table tbody tr:hover{background:color-mix(in srgb,var(--ink) 4%,transparent)}
+table thead th{position:sticky;top:0;background:var(--tile);z-index:1}
+.lbody::-webkit-scrollbar,.scroll-y::-webkit-scrollbar{width:8px;height:8px}
+.lbody::-webkit-scrollbar-track,.scroll-y::-webkit-scrollbar-track{background:var(--bg)}
+.lbody::-webkit-scrollbar-thumb,.scroll-y::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:999px}
+.lbody::-webkit-scrollbar-thumb:hover,.scroll-y::-webkit-scrollbar-thumb:hover{background:var(--ink-3)}
+.empty-state,.zero-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:24px;border-radius:20px;border:1px dashed var(--line-strong);background:var(--pill);color:var(--ink-2);text-align:center}
+.loading-shimmer{background:linear-gradient(90deg,var(--pill) 25%,var(--track) 50%,var(--pill) 75%);border-radius:12px}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms !important;animation-iteration-count:1 !important;transition-duration:0.01ms !important;scroll-behavior:auto !important}}
+</style>
+</helmet>
+
+<div class="board">
+  <header class="top">
+    <div class="brand"><span class="mark" aria-hidden="true">E</span>EdgeLedger</div>
+    <nav class="nav" aria-label="Primary">
+      <a href="Tidewater.dc.html">Overview</a>
+      <a href="AccountsTidewater.dc.html">Accounts</a>
+      <a href="TradeLedgerTidewater.dc.html">Trades</a>
+      <a href="CalendarTidewater.dc.html">Calendar</a>
+      <a href="JournalTidewater.dc.html">Journal</a>
+      <a href="RiskTidewater.dc.html" aria-current="page">Risk</a>
+      <a href="ReportsTidewater.dc.html">Reports</a>
+    </nav>
+    <div class="tools">
+      <span class="alert">1 risk alert</span>
+      <a class="btn" href="RiskTidewaterDark.dc.html">Dark</a>
+      <button class="btn quiet" type="button">Search <kbd>⌘K</kbd></button>
+    </div>
+  </header>
+
+  <div class="titlerow">
+    <div>
+      <h1>Risk and exposure</h1>
+      <p>Limit usage, open risk and what-if losses, measured against your own rules.</p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Period">
+        <button type="button" aria-pressed="false">Session</button>
+        <button type="button" aria-pressed="true">Week</button>
+        <button type="button" aria-pressed="false">Month</button>
+      </div>
+      <button class="btn" type="button">All accounts, 3</button>
+      <button class="btn dark" type="button">Edit limits</button>
+    </div>
+  </div>
+
+  <main class="grid">
+
+    <section class="tile hero" aria-label="Risk status">
+      <div class="head">
+        <span class="eyebrow">Risk status · 19 Mar 2026 close</span>
+        <span class="pill"><span class="d"></span>Within limits</span>
+      </div>
+      <div class="ring">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <defs>
+            <linearGradient id="rg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" style="stop-color:var(--hero-line)"></stop>
+              <stop offset="1" style="stop-color:var(--sun)"></stop>
+            </linearGradient>
+          </defs>
+          <circle cx="100" cy="100" r="86" fill="none" style="stroke:var(--hero-rule);stroke-width:14"></circle>
+          <circle cx="100" cy="100" r="86" fill="none" stroke="url(#rg)" stroke-width="14" stroke-linecap="round" transform="rotate(-90 100 100)" stroke-dasharray="540 540"></circle>
+        </svg>
+        <div class="rc"><b>5.0%</b><span>daily limit left</span></div>
+      </div>
+      <p class="rsub">Worst day was +$2,956.00 on 19 Mar. No day has closed negative.</p>
+      <div class="rstats">
+        <div><span>Max per trade</span><b>1.0%</b></div>
+        <div><span>Open risk</span><b>1.0%</b></div>
+        <div><span>Worst trade</span><b>−1.00R</b></div>
+      </div>
+    </section>
+
+    <section class="tile meters" aria-label="Limit usage">
+      <div class="head"><span class="eyebrow">Limit usage</span><span class="sub">used of limit</span></div>
+      <div class="mrow">
+        <div class="mtop"><span class="mn">Daily loss</span><span class="mv">0.0% of 5.0%</span></div>
+        <div class="meter mGain" role="meter" aria-label="Daily loss used" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0"><i style="width:0%"></i></div>
+      </div>
+      <div class="mrow">
+        <div class="mtop"><span class="mn">Drawdown from peak</span><span class="mv">0.0% of 10.0%</span></div>
+        <div class="meter mGain" role="meter" aria-label="Drawdown used" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0"><i style="width:0%"></i></div>
+      </div>
+      <div class="mrow">
+        <div class="mtop"><span class="mn">Risk per trade</span><span class="mv">1.0% of 1.0%</span></div>
+        <div class="meter mCap" role="meter" aria-label="Risk per trade used" aria-valuemin="0" aria-valuemax="1" aria-valuenow="1"><i style="width:100%"></i></div>
+      </div>
+      <div class="mrow">
+        <div class="mtop"><span class="mn">Open risk</span><span class="mv">1.0% of 2.0%</span></div>
+        <div class="meter mOpen" role="meter" aria-label="Open risk used" aria-valuemin="0" aria-valuemax="2" aria-valuenow="1"><i style="width:50%"></i></div>
+      </div>
+    </section>
+
+    <section class="tile alerts" aria-label="Active alerts">
+      <div class="head"><span class="eyebrow">Alerts</span><span class="pill" style="background:var(--sun-ink);color:var(--sun)">1 active</span></div>
+      <div class="big">Cap reached</div>
+      <div class="al"><span class="ai">!</span><div><b>Risk per trade sits at its 1.0% cap</b><p>A larger size on the next trade breaks your rule.</p></div></div>
+      <div class="al"><span class="ai">i</span><div><b>One trade is still open</b><p>It carries 1.0% risk. Review it before the next session.</p></div></div>
+    </section>
+
+    <section class="tile rdist" aria-label="R per closed trade">
+      <div class="head"><span class="eyebrow">R per closed trade</span><span class="sub">Dashed line: your −1.00R cap</span></div>
+      <svg viewBox="0 0 520 210" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bars: XAUUSD +2.88R, US30 +2.47R, EURUSD −1.00R, BTCUSD +2.97R, with a dashed cap at −1.00R">
+        <line x1="20" x2="500" y1="128" y2="128" style="stroke:var(--line-strong);stroke-width:1"></line>
+        <line x1="20" x2="500" y1="160" y2="160" style="stroke:var(--warn);stroke-width:1.5;stroke-dasharray:5 5"></line>
+        <text x="500" y="154" text-anchor="end" style="fill:var(--warn);font-size:12px;font-weight:600">cap −1.00R</text>
+        <rect x="62" y="36" width="56" height="92" rx="7" style="fill:var(--gain)"></rect>
+        <rect x="172" y="49" width="56" height="79" rx="7" style="fill:var(--gain)"></rect>
+        <rect x="282" y="128" width="56" height="32" rx="7" style="fill:var(--loss)"></rect>
+        <rect x="392" y="33" width="56" height="95" rx="7" style="fill:var(--gain)"></rect>
+        <g class="mono" style="font-size:12px;font-weight:600">
+          <text x="90" y="28" text-anchor="middle" style="fill:var(--gain)">+2.88R</text>
+          <text x="200" y="41" text-anchor="middle" style="fill:var(--gain)">+2.47R</text>
+          <text x="310" y="176" text-anchor="middle" style="fill:var(--loss)">−1.00R</text>
+          <text x="420" y="25" text-anchor="middle" style="fill:var(--gain)">+2.97R</text>
+        </g>
+        <g style="font-size:12px;fill:var(--ink-2)">
+          <text x="90" y="200" text-anchor="middle">XAUUSD</text>
+          <text x="200" y="200" text-anchor="middle">US30</text>
+          <text x="310" y="200" text-anchor="middle">EURUSD</text>
+          <text x="420" y="200" text-anchor="middle">BTCUSD</text>
+        </g>
+      </svg>
+    </section>
+
+    <section class="tile assets" aria-label="Gross R moved by asset">
+      <div class="head"><span class="eyebrow">Where R came from</span><span class="sub">share of gross R</span></div>
+      <div class="dwrap">
+        <div style="position:relative;flex:none">
+          <svg viewBox="0 0 180 180" aria-hidden="true">
+            <g transform="translate(90 90)" fill="none" stroke-width="22">
+              <circle r="72" transform="rotate(-90)" style="stroke:var(--sun)" stroke-dasharray="136.8 452.4" stroke-dashoffset="0"></circle>
+              <circle r="72" transform="rotate(-90)" style="stroke:var(--s1)" stroke-dasharray="45.4 452.4" stroke-dashoffset="-139.8"></circle>
+              <circle r="72" transform="rotate(-90)" style="stroke:var(--s3)" stroke-dasharray="116.9 452.4" stroke-dashoffset="-188.2"></circle>
+              <circle r="72" transform="rotate(-90)" style="stroke:var(--gain)" stroke-dasharray="141.3 452.4" stroke-dashoffset="-308.1"></circle>
+            </g>
+          </svg>
+          <div class="dc"><span class="mono" style="font-size:22px;font-weight:600">9.32R</span><span style="font-size:12px;color:var(--ink-3)">gross moved</span></div>
+        </div>
+        <div class="dleg">
+          <div class="dl"><i style="background:var(--sun)"></i><span><b>Gold</b> XAUUSD</span><em>+2.88R</em></div>
+          <div class="dl"><i style="background:var(--s1)"></i><span><b>FX</b> EURUSD</span><em class="loss">−1.00R</em></div>
+          <div class="dl"><i style="background:var(--s3)"></i><span><b>Indices</b> US30</span><em>+2.47R</em></div>
+          <div class="dl"><i style="background:var(--gain)"></i><span><b>Crypto</b> BTCUSD</span><em>+2.97R</em></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="tile rules" aria-label="Rule checks">
+      <div class="head"><span class="eyebrow">Rule checks</span><span class="sub">4 on track · 2 to watch</span></div>
+      <div class="rrow"><span class="rn">Daily loss limit</span><span class="rv">0.0% of 5.0%</span><span class="pill ok"><span class="d"></span>On track</span></div>
+      <div class="rrow"><span class="rn">Max drawdown from peak</span><span class="rv">0.0% of 10.0%</span><span class="pill ok"><span class="d"></span>On track</span></div>
+      <div class="rrow"><span class="rn">Risk per trade</span><span class="rv">1.0% of 1.0%</span><span class="pill w"><span class="d"></span>At cap</span></div>
+      <div class="rrow"><span class="rn">Open risk</span><span class="rv">1.0% of 2.0%</span><span class="pill ok"><span class="d"></span>On track</span></div>
+      <div class="rrow"><span class="rn">Losing streak</span><span class="rv">1 of 3 allowed</span><span class="pill ok"><span class="d"></span>On track</span></div>
+      <div class="rrow"><span class="rn">Minimum trading days</span><span class="rv">2 of 4</span><span class="pill w"><span class="d"></span>Behind</span></div>
+    </section>
+
+    <section class="tile stress" aria-label="What-if losses">
+      <div class="head"><span class="eyebrow">What if the next trades lose</span><span class="sub">1.0% risk on $100,000.00</span></div>
+      <div class="sx">
+        <div class="c1"><span>Next full loss</span><b>−$1,000.00</b><small>20% of the daily limit</small></div>
+        <div class="c2"><span>Losses to daily limit</span><b>5</b><small>5 × 1.0% = 5.0%</small></div>
+        <div class="c3"><span>Losses to total floor</span><b>10</b><small>10 × 1.0% = 10.0%</small></div>
+      </div>
+      <div class="bl">
+        <div class="bh"><span>Daily limit</span><span>0 of 5 full losses used</span></div>
+        <div class="blocks" aria-hidden="true"><i class="blk"></i><i class="blk"></i><i class="blk"></i><i class="blk"></i><i class="blk"></i></div>
+      </div>
+      <div class="bl">
+        <div class="bh"><span>Total floor</span><span>0 of 10 full losses used</span></div>
+        <div class="blocks thin" aria-hidden="true"><i class="blk"></i><i class="blk"></i><i class="blk"></i><i class="blk"></i><i class="blk"></i><i class="blk"></i><i class="blk"></i><i class="blk"></i><i class="blk"></i><i class="blk"></i></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

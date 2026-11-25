@@ -357,6 +357,7 @@ export function calculateTradingStatistics(
   trades: {
     netPnl: number;
     realizedR?: number;
+    status?: string;
     direction?: 'BUY' | 'SELL';
     instrumentSymbol?: string;
     session?: string;
@@ -365,7 +366,11 @@ export function calculateTradingStatistics(
   tradingDaysCount: number = 0,
   maxDrawdownAmount: number = 0
 ) {
-  if (!trades || trades.length === 0) {
+  const realizedTrades = (trades || []).filter(
+    (t) => !t.status || t.status === 'CLOSED' || t.status === 'PARTIALLY_CLOSED'
+  );
+
+  if (realizedTrades.length === 0) {
     return {
       totalTrades: 0,
       winningTrades: 0,
@@ -389,7 +394,7 @@ export function calculateTradingStatistics(
     };
   }
 
-  let totalTrades = trades.length;
+  let totalTrades = realizedTrades.length;
   let winningTrades = 0;
   let losingTrades = 0;
   let breakEvenTrades = 0;
@@ -406,7 +411,7 @@ export function calculateTradingStatistics(
   let currentConsecLosses = 0;
   let maxConsecLosses = 0;
 
-  for (const t of trades) {
+  for (const t of realizedTrades) {
     const pnl = new Decimal(t.netPnl);
     const r = new Decimal(t.realizedR || 0);
     netProfit = netProfit.plus(pnl);

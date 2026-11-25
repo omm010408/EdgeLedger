@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AccountRepository } from '@/lib/data/accountRepository';
 import { problemResponse } from '@/lib/api/problemDetails';
+import { SupabaseService } from '@/lib/supabase/service';
+import { isSupabaseConfigured } from '@/lib/supabase/client';
 
 export async function GET(
   req: NextRequest,
@@ -90,5 +92,28 @@ export async function PATCH(
   return NextResponse.json({
     account: result.account,
     gateState,
+  });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const deletedLocal = AccountRepository.deleteAccount(id);
+  const deletedFromCloud = isSupabaseConfigured ? await SupabaseService.deleteAccount(id) : false;
+
+  if (!deletedLocal && !deletedFromCloud) {
+    return problemResponse(
+      404,
+      'Account Not Found',
+      `Trading account with id "${id}" does not exist.`
+    );
+  }
+
+  return NextResponse.json({
+    success: true,
+    deletedId: id,
+    deletedFromCloud,
   });
 }

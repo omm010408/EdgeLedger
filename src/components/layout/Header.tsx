@@ -4,7 +4,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTrading } from '../../context/TradingContext';
-import { ChevronDown, Check, Plus, ExternalLink, Sun, Moon, Fingerprint, Eye, EyeOff } from 'lucide-react';
+import { useSessionSync } from '../../context/SessionSyncContext';
+import { EdgeLedgerLogo } from '../ui/EdgeLedgerLogo';
+import { SyncStatusChip } from '../sync/SyncStatusChip';
+import { ChevronDown, Check, Plus, ExternalLink, Sun, Moon, Eye, EyeOff, Lock, LogOut } from 'lucide-react';
 
 interface HeaderProps {
   onOpenQuickTrade: () => void;
@@ -23,6 +26,12 @@ const PRIMARY_NAV = [
   { name: 'Journal', href: '/journal' },
   { name: 'Risk', href: '/risk' },
   { name: 'Reports', href: '/reports' },
+];
+
+const MORE_NAV = [
+  { name: 'Strategies', href: '/strategies' },
+  { name: 'Analytics', href: '/analytics' },
+  { name: 'Settings', href: '/settings' },
 ];
 
 export const Header: React.FC<HeaderProps> = ({
@@ -44,6 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
     isPnlHidden,
     setIsPnlHidden,
   } = useTrading();
+  const { sessionSnapshot, lockSession, requestSignOut } = useSessionSync();
 
   const [isHeaderScanning, setIsHeaderScanning] = useState(false);
 
@@ -65,20 +75,25 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+  const [moreNavOpen, setMoreNavOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const moreNavRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
+  // Close dropdowns on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setAccountDropdownOpen(false);
       }
+      if (moreNavRef.current && !moreNavRef.current.contains(e.target as Node)) {
+        setMoreNavOpen(false);
+      }
     };
-    if (accountDropdownOpen) {
+    if (accountDropdownOpen || moreNavOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [accountDropdownOpen]);
+  }, [accountDropdownOpen, moreNavOpen]);
 
   const activeDeskLabel =
     selectedAccountId === 'ALL'
@@ -88,9 +103,9 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="tw-top">
       {/* 1. Brand Mark & Title */}
-      <Link href="/" className="tw-brand">
+      <Link href="/" className="tw-brand shrink-0">
         <span className="tw-mark" aria-hidden="true">
-          E
+          <EdgeLedgerLogo size={26} />
         </span>
         <span>EdgeLedger</span>
       </Link>
@@ -113,6 +128,50 @@ export const Header: React.FC<HeaderProps> = ({
             </Link>
           );
         })}
+
+        <div className="relative" ref={moreNavRef}>
+          <button
+            type="button"
+            onClick={() => setMoreNavOpen((prev) => !prev)}
+            aria-expanded={moreNavOpen}
+            aria-haspopup="menu"
+            className={`inline-flex items-center gap-1 h-8 px-1.5 rounded-full text-[13px] font-medium whitespace-nowrap transition-colors ${
+              MORE_NAV.some((m) => pathname.startsWith(m.href))
+                ? 'bg-[var(--tw-tile)] text-[var(--tw-ink)] font-semibold'
+                : 'text-[var(--tw-ink-2)] hover:text-[var(--tw-ink)]'
+            }`}
+          >
+            <span>More</span>
+            <ChevronDown size={12} />
+          </button>
+
+          {moreNavOpen && (
+            <div
+              role="menu"
+              className="absolute left-0 mt-2 w-44 rounded-2xl bg-[var(--tw-tile)] border border-[var(--tw-line-strong)] shadow-2xl p-1.5 z-50"
+            >
+              {MORE_NAV.map((item) => {
+                const isActive = pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    role="menuitem"
+                    aria-current={isActive ? 'page' : undefined}
+                    onClick={() => setMoreNavOpen(false)}
+                    className={`block px-3 py-2 rounded-xl text-xs font-medium transition-colors ${
+                      isActive
+                        ? 'bg-[var(--tw-pill)] text-[var(--tw-ink)] font-semibold'
+                        : 'text-[var(--tw-ink-2)] hover:bg-[var(--tw-pill)] hover:text-[var(--tw-ink)]'
+                    }`}
+                  >
+                    {item.name}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </nav>
 
       {/* 3. Right Tools: Period Segmented Control, Desk Selector & Search */}
@@ -140,7 +199,7 @@ export const Header: React.FC<HeaderProps> = ({
             aria-expanded={accountDropdownOpen}
             aria-haspopup="listbox"
           >
-            <span className="truncate max-w-[120px] sm:max-w-none">{activeDeskLabel}</span>
+            <span className="truncate max-w-[70px]">{activeDeskLabel}</span>
             <ChevronDown size={13} className="opacity-70 shrink-0" />
           </button>
 
@@ -225,7 +284,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Biometric P&L Privacy Toggle */}
         <button
-          className={`tw-btn quiet tw-fp-head ${isPnlHidden ? 'tw-fp-head-locked' : 'tw-fp-head-unlocked'}`}
+          className={`tw-btn quiet shrink-0 !w-[34px] !px-0 justify-center tw-fp-head ${isPnlHidden ? 'tw-fp-head-locked' : 'tw-fp-head-unlocked'}`}
           type="button"
           onClick={handleHeaderFingerprintClick}
           title={isPnlHidden ? 'P&L is Hidden (Click fingerprint to verify & reveal)' : 'P&L is Visible (Click to lock & hide)'}
@@ -245,33 +304,55 @@ export const Header: React.FC<HeaderProps> = ({
             )}
             {isHeaderScanning && <span className="tw-fp-laser" />}
           </div>
-          <span className="hidden sm:inline text-xs font-mono">
-            {isHeaderScanning ? 'Scanning...' : isPnlHidden ? 'P&L Hidden' : 'P&L Visible'}
-          </span>
         </button>
 
         {/* Theme Toggle Button */}
         {onToggleTheme && (
           <button
-            className="tw-btn quiet"
+            className="tw-btn quiet shrink-0 !w-[34px] !px-0 justify-center"
             type="button"
             onClick={onToggleTheme}
             title={theme === 'dark' ? 'Switch to Light theme' : 'Switch to Dark theme'}
-            aria-label="Toggle color theme"
+            aria-label={theme === 'dark' ? 'Switch to Light theme' : 'Switch to Dark theme'}
           >
             {theme === 'dark' ? <Sun size={14} className="text-[#FFD56B]" /> : <Moon size={14} className="text-[#0A4D4C]" />}
-            <span className="hidden sm:inline text-xs">{theme === 'dark' ? 'Light' : 'Dark'}</span>
           </button>
+        )}
+
+        {/* Live Sync & Auth Status Chip */}
+        <SyncStatusChip compact />
+
+        {sessionSnapshot.state !== 'signedOut' && (
+          <>
+            <button
+              className="tw-btn quiet shrink-0 !w-[34px] !px-0 justify-center"
+              type="button"
+              onClick={lockSession}
+              title="Lock session UI"
+              aria-label="Lock session UI"
+            >
+              <Lock size={14} aria-hidden="true" />
+            </button>
+            <button
+              className="tw-btn quiet shrink-0 !w-[34px] !px-0 justify-center"
+              type="button"
+              onClick={() => void requestSignOut()}
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <LogOut size={14} aria-hidden="true" />
+            </button>
+          </>
         )}
 
         {/* Search / Command Palette Button */}
         <button
-          className="tw-btn quiet"
+          className="tw-btn quiet shrink-0 !w-[38px] !px-0 justify-center"
           type="button"
           onClick={onOpenCommandPalette}
           title="Search or command palette (⌘K)"
+          aria-label="Search or command palette"
         >
-          <span>Search</span>
           <kbd>⌘K</kbd>
         </button>
       </div>

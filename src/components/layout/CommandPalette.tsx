@@ -39,25 +39,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // Close on Escape or shortcut
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        if (isOpen) {
-          onClose();
-        }
-      }
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
   const navCommands = [
     { label: 'Go to Overview', icon: LayoutDashboard, action: () => router.push('/') },
     { label: 'Go to Accounts Desk', icon: Wallet, action: () => router.push('/accounts') },
@@ -123,6 +104,36 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     item.action();
     onClose();
   };
+
+  // Close on Escape, toggle on Cmd/Ctrl+K, and handle Arrow/Enter navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (isOpen) {
+          onClose();
+        }
+        return;
+      }
+      if (!isOpen) return;
+      if (e.key === 'Escape') {
+        onClose();
+      } else if (e.key === 'ArrowDown' && filteredItems.length > 0) {
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev + 1) % filteredItems.length);
+      } else if (e.key === 'ArrowUp' && filteredItems.length > 0) {
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev - 1 + filteredItems.length) % filteredItems.length);
+      } else if (e.key === 'Enter' && filteredItems[selectedIndex]) {
+        e.preventDefault();
+        handleSelect(filteredItems[selectedIndex]);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose, filteredItems, selectedIndex]);
+
+  if (!isOpen) return null;
 
   return (
     <div

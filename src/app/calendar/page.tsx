@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useTrading } from '../../context/TradingContext';
 import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { Trade } from '../../lib/types/financial';
+import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
 
 interface DayTradeSummary {
   dateNum: number;
@@ -37,17 +38,33 @@ export default function CalendarPage() {
     environmentFilter,
     setEnvironmentFilter,
     isPnlHidden,
+    isLoaded,
+    deleteTrade,
   } = useTrading();
 
   // Calendar View Mode: Monthly, Weekly, Daily
   const [viewMode, setViewMode] = useState<'Monthly' | 'Weekly' | 'Daily'>('Monthly');
 
-  // Currently displayed year and month (Defaults to March 2026 matching Tidewater reference)
-  const [displayedYear, setDisplayedYear] = useState<number>(2026);
+  // Default to March 2024 matching the closed-trade dataset (18-20 Mar 2024)
+  const [displayedYear, setDisplayedYear] = useState<number>(2024);
   const [displayedMonth, setDisplayedMonth] = useState<number>(2); // 0-indexed: 2 = March
 
   // Selected Day (defaults to 18 March)
   const [selectedDayNum, setSelectedDayNum] = useState<number>(18);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const dateParam = params.get('date');
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      const [y, m, d] = dateParam.split('-').map(Number);
+      if (y && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+        setDisplayedYear(y);
+        setDisplayedMonth(m - 1);
+        setSelectedDayNum(d);
+      }
+    }
+  }, []);
 
   // Month navigation helpers
   const handlePrevMonth = () => {
@@ -109,10 +126,10 @@ export default function CalendarPage() {
 
     filteredTrades.forEach((t) => {
       const date = new Date(t.entryTime || t.createdAt);
-      // For demo data: map March trades or match active month
-      const tMonth = date.getMonth();
-      const tDay = date.getDate();
-      if (tMonth === displayedMonth || displayedMonth === 2) {
+      const tYear = date.getUTCFullYear();
+      const tMonth = date.getUTCMonth();
+      const tDay = date.getUTCDate();
+      if (tYear === displayedYear && tMonth === displayedMonth) {
         if (dayMap.has(tDay)) {
           dayMap.get(tDay)!.push(t);
         }
@@ -678,7 +695,7 @@ export default function CalendarPage() {
                         ? '••••••'
                         : (pnl >= 0 ? '+' : '−') + formatCur(Math.abs(pnl))}
                     </span>
-                    <span>
+                    <span className="inline-flex items-center gap-1.5">
                       <span className="rp">
                         {t.status === 'OPEN'
                           ? '—'
@@ -686,6 +703,13 @@ export default function CalendarPage() {
                               t.realizedR || 0
                             ).toFixed(2)}R`}
                       </span>
+                      <DeleteConfirmButton
+                        variant="icon"
+                        size={12}
+                        title="Delete trade"
+                        ariaLabel={`Delete ${t.instrumentSymbol} trade`}
+                        onConfirm={() => deleteTrade(t.id)}
+                      />
                     </span>
                   </div>
                 );
@@ -702,13 +726,21 @@ export default function CalendarPage() {
             <b>Discipline score: not scored.</b> No journal entry exists for this day. Scores are never estimated from P&amp;L.
           </div>
 
-          {/* Link to Journal */}
-          <Link
-            href="/journal"
-            className="tw-btn dark full text-center justify-center mt-auto"
-          >
-            <span>Open journal for {selectedDay.dateNum} {monthName}</span>
-          </Link>
+          {/* Links to Trade Ledger & Journal */}
+          <div className="flex flex-col gap-2 mt-auto">
+            <Link
+              href={`/trades?date=${selectedDay.dateStr}`}
+              className="tw-btn full text-center justify-center"
+            >
+              <span>Filter ledger for {selectedDay.dateNum} {monthName} →</span>
+            </Link>
+            <Link
+              href={`/journal?date=${selectedDay.dateStr}`}
+              className="tw-btn dark full text-center justify-center"
+            >
+              <span>Open journal for {selectedDay.dateNum} {monthName}</span>
+            </Link>
+          </div>
         </section>
 
         {/* ================================================================= */}

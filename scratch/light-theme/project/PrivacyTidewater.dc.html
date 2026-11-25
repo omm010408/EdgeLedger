@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EdgeLedger privacy, light</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&amp;family=JetBrains+Mono:wght@400..700&amp;display=swap">
+<style>
+:root{color-scheme:light;--bg:#EDF4F2;--tile:#FFFFFF;--line:#C5D7D3;--line-strong:#758B86;--ink:#0E1B1C;--ink-2:#3F5553;--ink-3:#566967;--pill:#E6EEEB;--track:#E4EDEA;--ring-track:#E2ECE9;--ring-empty:#9DB3AE;--hero:#0D4A4A;--hero-ink:#FFFFFF;--hero-2:#CDEBE3;--hero-line:#8FE6CF;--hero-rule:rgba(255,255,255,0.22);--hero-chip:rgba(143,230,207,0.2);--sun:#F6C744;--sun-ink:#1A1400;--sun-disc:#FBDB7A;--aqua:#D5F0E6;--aqua-ink:#0B2E2A;--aqua-chip:#FFFFFF;--gain:#13784E;--loss:#B3263E;--warn:#8F4305;--warn-bg:rgba(143,67,5,0.07);--warn-line:rgba(143,67,5,0.4);--s1:#2A78D6;--s2:#EB6834;--s3:#6250D6;--b1:#13784E;--b2:#7CC7A4;--buy-bg:#E1EBFB;--buy-ink:#1F4F95;--sell-bg:#E6EEEB;--sell-ink:#3F5553;--wave:#E8F2EF;--ripple:#D0E2DE;--focus:#0D4A4A;--shadow:0 1px 2px rgba(14,27,28,0.05),0 8px 20px -14px rgba(14,27,28,0.14);--c:var(--ink-2);--aqua-num:#0B6B47}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg)}
+.board{width:100%;height:1080px;overflow:hidden;display:flex;flex-direction:column;padding:20px 32px 24px;background:var(--bg);color:var(--ink);font-family:'Instrument Sans',Inter,ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:20px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+button{font:inherit;color:inherit}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+.top{display:flex;align-items:center;gap:22px;height:56px;flex:none}
+.brand{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;letter-spacing:-0.01em;white-space:nowrap}
+.mark{display:grid;place-items:center;width:32px;height:32px;border-radius:58% 42% 46% 54% / 52% 48% 52% 48%;background:var(--hero);color:var(--hero-ink);font-size:15px;font-weight:700;line-height:1}
+.nav{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.nav a{display:inline-flex;align-items:center;height:32px;padding:0 13px;border-radius:999px;color:var(--ink-2);font-weight:500;text-decoration:none;white-space:nowrap}
+.nav a[aria-current="page"]{background:var(--tile);color:var(--ink);font-weight:600;box-shadow:inset 0 0 0 1px var(--line-strong)}
+.tools{margin-left:auto;display:flex;align-items:center;gap:8px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 16px;border-radius:999px;border:1px solid var(--line-strong);background:var(--tile);color:var(--ink);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn.quiet{color:var(--ink-2)}
+kbd{padding:3px 6px;border-radius:6px;background:var(--pill);color:var(--ink-2);font-size:12px;font-weight:600}
+
+.titlerow{margin-top:18px;flex:none}
+.titlerow h1{margin:0;font-size:34px;line-height:40px;font-weight:600;letter-spacing:-0.03em}
+.titlerow p{margin:6px 0 0;color:var(--ink-2);font-size:15px;line-height:22px}
+
+.grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:minmax(0,1fr) 212px;gap:16px;margin-top:18px}
+.tile{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column;padding:20px 22px;border-radius:32px;background:var(--tile);border:1px solid var(--line);overflow:hidden}
+.head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex:none}
+.lbl{font-size:13px;line-height:18px;font-weight:600;color:var(--ink-2)}
+.eyebrow{font-size:12px;line-height:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.sub{font-size:12px;line-height:16px;color:var(--ink-3)}
+.pill{display:inline-flex;align-items:center;height:26px;padding:0 11px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;flex:none}
+.pill.ok{background:color-mix(in srgb,var(--gain) 14%,transparent);color:var(--gain)}
+.pill.w{background:var(--warn-bg);color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn-line)}
+.pill.n{background:var(--pill);color:var(--ink-2)}
+.gain{color:var(--gain)}
+.loss{color:var(--loss)}
+.warn{color:var(--warn)}
+
+/* Hidden figure card (hero tone) */
+.hero{grid-column:1 / 8;grid-row:1;background:var(--hero);color:var(--hero-ink);border:0;padding:24px 26px 20px}
+.hero :focus-visible{outline-color:var(--hero-line)}
+.hero .lbl{color:var(--hero-2)}
+.hero .chip{display:inline-flex;align-items:center;height:26px;padding:0 11px;border-radius:999px;background:var(--hero-chip);color:var(--hero-ink);font-size:12px;font-weight:600;box-shadow:inset 0 0 0 1px var(--hero-rule);white-space:nowrap}
+.big{margin-top:30px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:52px;line-height:56px;font-weight:600;letter-spacing:.02em;color:var(--hero-ink);white-space:nowrap}
+.hsub{margin:10px 0 0;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:14px;line-height:20px;color:var(--hero-2);white-space:nowrap}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:24px;padding-top:18px;border-top:1px solid var(--hero-rule)}
+.sl{display:block;font-size:13px;line-height:18px;color:var(--hero-2)}
+.sv{display:block;margin-top:6px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:20px;line-height:24px;font-weight:600;color:var(--hero-ink);white-space:nowrap}
+.chart{position:relative;flex:1;min-height:110px;margin-top:18px}
+.chart svg{position:absolute;inset:0;width:100%;height:100%}
+.chart .ov{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);display:inline-flex;align-items:center;height:30px;padding:0 14px;border-radius:999px;background:var(--hero);color:var(--hero-2);font-size:13px;box-shadow:inset 0 0 0 1px var(--hero-rule);white-space:nowrap}
+.chart .dl{position:absolute;bottom:-2px;font-size:12px;color:var(--hero-2)}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px;padding-top:14px;border-top:1px solid var(--hero-rule)}
+.cap{display:flex;align-items:center;gap:8px;font-size:13px;line-height:18px;color:var(--hero-2)}
+.unlock{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 20px;border-radius:999px;border:0;background:var(--sun);color:var(--sun-ink);font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap}
+
+/* State rail */
+.rail{grid-column:8 / 13;grid-row:1;display:flex;flex-direction:column;gap:12px;min-height:0}
+.st{flex:1;min-height:0;padding:14px 20px;gap:6px}
+.st .fig{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:22px;line-height:26px;font-weight:600;letter-spacing:-0.01em;margin-top:2px;white-space:nowrap}
+.st .txt{font-size:13px;line-height:18px;color:var(--ink-2)}
+.st .acts{display:flex;align-items:center;gap:8px;margin-top:auto}
+.bs{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:40px;padding:0 16px;border-radius:999px;border:1px solid var(--line-strong);background:var(--tile);color:var(--ink);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.bs.p{background:var(--ink);border-color:var(--ink);color:var(--tile)}
+.bs.sun{background:var(--sun);border-color:var(--sun);color:var(--sun-ink)}
+.bs.q{border-color:transparent;background:transparent;color:var(--ink-2);padding:0 10px}
+.track{height:6px;border-radius:999px;background:var(--track);overflow:hidden;margin-top:6px}
+.track i{display:block;height:100%;border-radius:999px;background:var(--sun)}
+.dots{display:flex;gap:6px;align-items:center}
+
+/* Blur hide state */
+.hero .blur{flex:1;display:flex;flex-direction:column;min-height:0;filter:blur(9px);user-select:none;pointer-events:none}
+.hero .blur .chart{flex:1}
+.hero .eyecenter{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:12px}
+.eyeb{width:84px;height:84px;border-radius:50%;border:0;background:var(--sun);color:var(--sun-ink);display:grid;place-items:center;cursor:pointer;box-shadow:0 0 0 10px color-mix(in srgb,var(--sun) 20%,transparent)}
+.eyeb svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.cap2{margin:0;padding:6px 14px;border-radius:999px;background:var(--hero);box-shadow:inset 0 0 0 1px var(--hero-rule);font-size:13px;line-height:18px;color:var(--hero-ink);white-space:nowrap}
+.fp{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:999px;border:1px solid var(--hero-line);background:var(--hero-chip);color:var(--hero-ink);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.fp svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.blur-s{filter:blur(5px);user-select:none}
+
+/* Spec tiles */
+.spec{grid-row:2;padding:18px 20px 16px}
+.c1{grid-column:1 / 4}
+.c2{grid-column:4 / 7}
+.c3{grid-column:7 / 10}
+.c4{grid-column:10 / 13}
+.spec .eyebrow{display:block}
+.sp{list-style:none;margin:10px 0 0;padding:0}
+.sp li{font-size:13px;line-height:18px;color:var(--ink-2);padding:7px 0;border-top:1px solid var(--line)}
+.sp li:first-child{border-top:0;padding-top:0}
+.sp b{color:var(--ink);font-weight:600}
+.mk{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;color:var(--ink);font-weight:600}
+/*linked*/a{color:inherit;text-decoration:none}
+/* Unified Light Elevation, Interaction, Scrollbar, Empty & Reduced Motion Polish */
+.tile{border:1px solid var(--line);box-shadow:var(--shadow)}
+.hero,.sunt,.mint,.best,.setups,.capital,.alerts,.trend{box-shadow:var(--shadow)}
+::selection{background:var(--hero-line);color:var(--ink)}
+input,textarea,select{caret-color:var(--focus)}
+button,a,.btn,.chip,.pill,.seg button,.tabs button,.lrow,.sess,.cat,.acct{transition:background-color 175ms ease,border-color 175ms ease,color 175ms ease,box-shadow 175ms ease,transform 175ms ease}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.btn:active,.seg button:active,.tabs button:active,.chip:active{transform:translateY(1px)}
+button:disabled,.btn:disabled,.chip:disabled{opacity:.48;cursor:not-allowed;pointer-events:none}
+table tbody tr{transition:background-color 165ms ease}
+table tbody tr:hover{background:color-mix(in srgb,var(--ink) 4%,transparent)}
+table thead th{position:sticky;top:0;background:var(--tile);z-index:1}
+.lbody::-webkit-scrollbar,.scroll-y::-webkit-scrollbar{width:8px;height:8px}
+.lbody::-webkit-scrollbar-track,.scroll-y::-webkit-scrollbar-track{background:var(--bg)}
+.lbody::-webkit-scrollbar-thumb,.scroll-y::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:999px}
+.lbody::-webkit-scrollbar-thumb:hover,.scroll-y::-webkit-scrollbar-thumb:hover{background:var(--ink-3)}
+.empty-state,.zero-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:24px;border-radius:20px;border:1px dashed var(--line-strong);background:var(--pill);color:var(--ink-2);text-align:center}
+.loading-shimmer{background:linear-gradient(90deg,var(--pill) 25%,var(--track) 50%,var(--pill) 75%);border-radius:12px}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms !important;animation-iteration-count:1 !important;transition-duration:0.01ms !important;scroll-behavior:auto !important}}
+</style>
+</helmet>
+
+<div class="board">
+  <header class="top">
+    <div class="brand"><span class="mark">E</span>EdgeLedger</div>
+    <nav class="nav" aria-label="Sections">
+      <a href="Tidewater.dc.html" aria-current="page">Overview</a>
+      <a href="AccountsTidewater.dc.html">Accounts</a>
+      <a href="TradeLedgerTidewater.dc.html">Trades</a>
+      <a href="CalendarTidewater.dc.html">Calendar</a>
+      <a href="JournalTidewater.dc.html">Journal</a>
+      <a href="RiskTidewater.dc.html">Risk</a>
+      <a href="ReportsTidewater.dc.html">Reports</a>
+    </nav>
+    <div class="tools">
+      <button class="btn" type="button" aria-pressed="true">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"></path><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.1"></path><path d="M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.8 9.8 0 0 0 5.4-1.6"></path><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path></svg>
+        P&amp;L hidden
+      </button>
+      <a class="btn" href="PrivacyTidewaterDark.dc.html">Dark</a>
+      <button class="btn quiet" type="button">Search <kbd>⌘K</kbd></button>
+    </div>
+  </header>
+
+  <div class="titlerow">
+    <h1>Hide and unhide P&amp;L</h1>
+    <p>Masks money figures on this device. Verification is needed to show them again.</p>
+  </div>
+
+  <main class="grid">
+
+    <section class="tile hero" aria-label="Net P&amp;L, hidden">
+      <div class="head">
+        <span class="lbl">Net P&amp;L from closed trades, 16 to 22 Mar</span>
+        <button class="fp" type="button" aria-label="Verify with fingerprint to show P&amp;L">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 11a3 3 0 0 0-3 3c0 2-.5 3.5-1.5 5"/><path d="M8.5 5.5A6 6 0 0 1 18 10c0 1.5 0 3-.5 5"/><path d="M5 10a7 7 0 0 1 .4-2.3"/><path d="M12 7a6 6 0 0 0-6 6c0 3-.5 4.5-1.5 6"/><path d="M15 13c0 2-.3 4-1 6"/><path d="M19 13c0 1 0 2-.2 3"/></svg>
+          Touch ID
+        </button>
+      </div>
+
+      <div class="blur" aria-hidden="true">
+        <div class="big">+$7,071.00</div>
+        <p class="hsub">+4.04% on a $175,000.00 start</p>
+        <div class="stats">
+          <div><span class="sl">Balance</span><span class="sv">$182,071.00</span></div>
+          <div><span class="sl">Gross profit</span><span class="sv">$7,385.00</span></div>
+          <div><span class="sl">Gross loss</span><span class="sv">−$314.00</span></div>
+        </div>
+        <div class="chart">
+          <svg viewBox="0 0 600 120" preserveAspectRatio="none">
+            <path d="M0 112 C90 104 150 88 230 76 C320 62 380 40 460 30 C520 24 570 26 600 28 L600 120 L0 120 Z" style="fill:var(--hero-chip)"></path>
+            <path d="M0 112 C90 104 150 88 230 76 C320 62 380 40 460 30 C520 24 570 26 600 28" fill="none" style="stroke:var(--hero-line);stroke-width:2.5;vector-effect:non-scaling-stroke"></path>
+          </svg>
+          <span class="dl mono" style="left:0">18 Mar</span>
+          <span class="dl mono" style="right:0">19 Mar</span>
+        </div>
+      </div>
+
+      <div class="eyecenter">
+        <button class="eyeb" type="button" aria-label="Show P&amp;L">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.9 17.9A10.8 10.8 0 0 1 12 19c-6.5 0-10-7-10-7a18.5 18.5 0 0 1 4.2-5.2"/><path d="M9.9 4.2A10.4 10.4 0 0 1 12 4c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.2 3.2"/><path d="M14.1 14.1a3 3 0 1 1-4.2-4.2"/><path d="M2 2l20 20"/></svg>
+        </button>
+        <span class="cap2">Hidden. Tap the eye or Touch ID to show.</span>
+      </div>
+
+      <div class="foot">
+        <span class="cap">Relocks after 30 s without interaction</span>
+      </div>
+    </section>
+
+    <aside class="rail" aria-label="Other states">
+
+      <section class="tile st" aria-label="Verifying">
+        <div class="head">
+          <span class="eyebrow">Verifying</span>
+          <span class="pill w">Waiting for device</span>
+        </div>
+        <div class="fig blur-s">+$7,071.00</div>
+        <p class="txt">Confirm on this device to show figures. Nothing else on the page changes.</p>
+        <div class="track" aria-hidden="true"><i style="width:42%"></i></div>
+        <div class="acts">
+          <button class="bs q" type="button">Cancel</button>
+        </div>
+      </section>
+
+      <section class="tile st" aria-label="Revealed">
+        <div class="head">
+          <span class="eyebrow">Revealed</span>
+          <span class="pill n">Hides in 18 s</span>
+        </div>
+        <div class="fig gain">+$7,071.00</div>
+        <p class="txt">Balance $182,071.00 · Gross loss −$314.00</p>
+        <div class="track" aria-hidden="true"><i style="width:60%"></i></div>
+        <div class="acts">
+          <button class="bs p" type="button">Hide now</button>
+        </div>
+      </section>
+
+      <section class="tile st" aria-label="Not verified">
+        <div class="head">
+          <span class="eyebrow">Not verified</span>
+          <span class="pill w">Still hidden</span>
+        </div>
+        <p class="txt">The check was cancelled or failed. Figures stay masked, and nothing is loaded.</p>
+        <div class="acts">
+          <button class="bs sun" type="button">Try again</button>
+          <button class="bs q" type="button">Keep hidden</button>
+        </div>
+      </section>
+
+    </aside>
+
+    <section class="tile spec c1" aria-label="Mask">
+      <span class="eyebrow">Mask</span>
+      <ul class="sp">
+        <li><b>Blur 9 px</b> over the real card. Layout does not change.</li>
+        <li>A closed eye, centred on the card, marks the hidden state.</li>
+        <li>Blur is cosmetic. Real values load only after verification.</li>
+      </ul>
+    </section>
+
+    <section class="tile spec c2" aria-label="Relock">
+      <span class="eyebrow">Relock</span>
+      <ul class="sp">
+        <li><b>30 s</b> idle, or at once on tab hide, screen lock or reload.</li>
+        <li>Each unlock asks the device again. Nothing is remembered.</li>
+        <li>Privacy only. Not a replacement for account login.</li>
+      </ul>
+    </section>
+
+    <section class="tile spec c3" aria-label="Data">
+      <span class="eyebrow">Data</span>
+      <ul class="sp">
+        <li><b>Hidden values never reach the page</b> until verified.</li>
+        <li>Chart points, labels and tooltips follow the same rule.</li>
+        <li>Figures keep their box width on reveal, so nothing jumps.</li>
+      </ul>
+    </section>
+
+    <section class="tile spec c4" aria-label="Control">
+      <span class="eyebrow">Control</span>
+      <ul class="sp">
+        <li><b>48 px hit area</b> and a visible focus ring on every button.</li>
+        <li><span class="mk">aria-pressed</span> tracks state. Label: Show or Hide P&amp;L.</li>
+        <li>No tooltip covers the prompt. Status sits under the figure.</li>
+      </ul>
+    </section>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

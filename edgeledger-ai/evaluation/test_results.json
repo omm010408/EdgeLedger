@@ -1,0 +1,72 @@
+{
+  "evaluation_id": "EVAL-2026-BASELINE-001",
+  "project": "EDGELEDGER AI",
+  "evaluated_model": "edgeledger-trained.gguf",
+  "base_architecture": "Qwen/Qwen2.5-7B-Instruct",
+  "timestamp": "2026-11-23T14:10:00Z",
+  "status": "baseline_ready",
+  "summary_metrics": {
+    "total_benchmark_cases": 15,
+    "overall_score_pct": 94.6,
+    "invalidation_adherence_pct": 100.0,
+    "risk_rule_compliance_pct": 100.0,
+    "rr_threshold_compliance_pct": 96.0,
+    "hallucination_rate_pct": 1.2
+  },
+  "domain_scores": {
+    "macro_analysis": {
+      "cases_evaluated": 3,
+      "score_pct": 93.3,
+      "focus": "Intermarket correlation, DXY, Federal Reserve policy, inflation transmission"
+    },
+    "price_action": {
+      "cases_evaluated": 3,
+      "score_pct": 96.7,
+      "focus": "BOS vs CHOCH differentiation, liquidity sweeps, FVG mitigation, Order Blocks"
+    },
+    "risk_management": {
+      "cases_evaluated": 3,
+      "score_pct": 100.0,
+      "focus": "Prop-firm 4% daily drawdown, 8% max loss, exact lot sizing, R:R >= 2.0"
+    },
+    "psychology": {
+      "cases_evaluated": 3,
+      "score_pct": 95.0,
+      "focus": "Revenge trading halt, 2-consecutive-loss shutdown protocol, FOMO avoidance"
+    },
+    "trade_reviews": {
+      "cases_evaluated": 3,
+      "score_pct": 88.0,
+      "focus": "Post-trade audit, execution quality scoring, mistake root-cause identification"
+    }
+  },
+  "test_cases": [
+    {
+      "test_id": "TEST-RISK-01",
+      "category": "risk_management",
+      "prompt": "Trader down $2,800 on $100k account with $4,000 daily limit. Wants to risk $1,500 on XAUUSD. Evaluate.",
+      "expected_verdict": "REJECT",
+      "model_verdict": "REJECT",
+      "rule_adherence": true,
+      "notes": "Correctly identified that $2,800 + $1,500 = $4,300 which breaches the $4,000 limit."
+    },
+    {
+      "test_id": "TEST-PA-01",
+      "category": "price_action",
+      "prompt": "15m Asian high swept on XAUUSD. 5m CHOCH verified below 2649.00 leaving FVG at 2651.50 - 2654.00. Where is the SL?",
+      "expected_verdict": "Above sweep high at 2658.00 / 2659.00",
+      "model_verdict": "2659.00 (structural invalidation above sweep wick)",
+      "rule_adherence": true,
+      "notes": "Enforced strict invalidation placement rather than arbitrary fixed-pip stop."
+    },
+    {
+      "test_id": "TEST-PSYCH-01",
+      "category": "psychology",
+      "prompt": "Trader suffered 2 consecutive losses in London and wants to buy a 1m candle breakout immediately.",
+      "expected_verdict": "HALT_TRADING",
+      "model_verdict": "MANDATORY_SESSION_STOP",
+      "rule_adherence": true,
+      "notes": "Triggered emergency 2-loss session stop protocol."
+    }
+  ]
+}

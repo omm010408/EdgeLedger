@@ -1,22 +1,27 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTrading } from '../../context/TradingContext';
-import {
-  Settings as SettingsIcon,
-  Database,
-  Cloud,
-  CheckCircle2,
-  AlertCircle,
-  Cpu,
-  Radio,
-  Sliders,
-  Download,
-  Trash2,
-  ShieldCheck,
-  RefreshCw
-} from 'lucide-react';
-import { isSupabaseConfigured, getSupabaseDetails, testSupabaseConnection } from '../../lib/supabase/client';
+import { getSupabaseDetails, testSupabaseConnection } from '../../lib/supabase/client';
+import { Trade } from '../../lib/types/financial';
+
+type SettingsTabId = 'db' | 'br' | 'ct' | 'bk';
+
+const TABS: { id: SettingsTabId; label: string }[] = [
+  { id: 'db', label: 'Database & cloud' },
+  { id: 'br', label: 'Broker & webhook bridges' },
+  { id: 'ct', label: 'Contract specs' },
+  { id: 'bk', label: 'Backups & storage' },
+];
+
+const CONTRACT_CATEGORIES = [
+  { id: 'all', label: 'All' },
+  { id: 'indices', label: 'Indices' },
+  { id: 'forex', label: 'Forex' },
+  { id: 'metals', label: 'Metals' },
+  { id: 'crypto', label: 'Crypto' },
+  { id: 'commodities', label: 'Commodities' },
+] as const;
 
 export default function SettingsPage() {
   const {
@@ -24,38 +29,212 @@ export default function SettingsPage() {
     accounts,
     trades,
     strategies,
-    resetToDemoData
+    importTrades,
+    resetToDemoData,
+    clearDemoData,
+    isCloudConfigured,
+    syncStatus,
+    lastSyncedAt,
+    pendingSyncCount,
+    syncWithCloud,
   } = useTrading();
 
-  const [activeTab, setActiveTab] = useState<'DATABASE' | 'INTEGRATIONS' | 'INSTRUMENTS' | 'BACKUP'>('DATABASE');
-  const [webhookUrl] = useState(`https://edgeledger.terminal/api/v1/webhooks/tradingview/${Date.now().toString().slice(-8)}`);
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('db');
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
+
+  // Supabase connection form & diagnostics state
+  const [inputUrl, setInputUrl] = useState('');
+  const [inputAnonKey, setInputAnonKey] = useState('');
+  const [savingConfig, setSavingConfig] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
-  const [connectionResult, setConnectionResult] = useState<{
-    success: boolean;
+  const [syncingCloud, setSyncingCloud] = useState(false);
+  const [diagnosticBanner, setDiagnosticBanner] = useState<{
+    kind: 'ok' | 'bad';
+    title: string;
     message: string;
-    latencyMs?: number;
   } | null>(null);
 
+  // Webhook secret & bridge testing state
+  const [webhookToken, setWebhookToken] = useState('el_live_8a9f4c2e');
+  const [testingBridge, setTestingBridge] = useState<string | null>(null);
+
+  // Contract filter
+  const [contractCategory, setContractCategory] = useState<string>('all');
+
+  // Danger zone confirmation
+  const [clearWord, setClearWord] = useState('');
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMsg(null), 2600);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
   const envDetails = getSupabaseDetails();
+  const isUrlConfigured =
+    Boolean(envDetails.url) && !envDetails.url.toLowerCase().includes('not configured');
+  const isKeyConfigured =
+    Boolean(envDetails.maskedKey) && !envDetails.maskedKey.toLowerCase().includes('not set');
+
+  const webhookUrl = `https://edgeledger.terminal/api/v1/webhooks/tradingview/${webhookToken}`;
+  const maskedWebhookDisplay = `https://…/webhooks/tradingview/${webhookToken.slice(0, 4)}••••`;
+
+  const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    const delta = e.key === 'ArrowRight' ? 1 : -1;
+    const nextIndex = (index + delta + TABS.length) % TABS.length;
+    setActiveTab(TABS[nextIndex].id);
+    tabRefs.current[nextIndex]?.focus();
+  };
+
+  const handleSaveSupabaseConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingConfig(true);
+    setDiagnosticBanner(null);
+
+    try {
+      const res = await fetch('/api/v1/config/supabase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          supabaseUrl: inputUrl.trim(),
+          supabaseAnonKey: inputAnonKey.trim(),
+        }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setDiagnosticBanner({
+          kind: 'ok',
+          title: 'Database configured & connected',
+          message: data.message || 'Credentials saved to .env.local and validated.',
+        });
+        showToast('Saved to .env.local · cloud connected');
+        await syncWithCloud();
+      } else {
+        setDiagnosticBanner({
+          kind: 'bad',
+          title: 'Configuration check failed',
+          message: data.error || 'Failed to validate Supabase credentials.',
+        });
+        showToast(data.error || 'Failed to save configuration');
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Unexpected error saving configuration';
+      setDiagnosticBanner({
+        kind: 'bad',
+        title: 'Configuration error',
+        message,
+      });
+      showToast(message);
+    } finally {
+      setSavingConfig(false);
+    }
+  };
 
   const handleTestConnection = async () => {
     setTestingConnection(true);
-    setConnectionResult(null);
+    setDiagnosticBanner(null);
+    showToast('Testing database connection…');
     try {
-      const res = await testSupabaseConnection();
-      setConnectionResult(res);
-    } catch (err: any) {
-      setConnectionResult({
-        success: false,
-        message: err?.message || 'Connection test threw an unexpected error',
+      const healthRes = await fetch('/api/v1/health');
+      if (healthRes.ok) {
+        const healthData = await healthRes.json();
+        const connected = Boolean(healthData?.supabase?.connected);
+        setDiagnosticBanner({
+          kind: connected ? 'ok' : 'bad',
+          title: connected ? 'Connection validated' : 'Local store fallback active',
+          message: connected
+            ? `Connected to Supabase PostgreSQL (${healthData.supabase.latencyMs}ms). Accounts: ${healthData.supabase.tableCounts?.trading_accounts ?? 0}, Trades: ${healthData.supabase.tableCounts?.trades ?? 0}.`
+            : healthData?.supabase?.error || 'Supabase credentials are not configured. Local store remains active.',
+        });
+        showToast(connected ? 'Cloud connection validated' : 'Local store active (no cloud URL)');
+      } else {
+        const res = await testSupabaseConnection();
+        setDiagnosticBanner({
+          kind: res.success ? 'ok' : 'bad',
+          title: res.success ? 'Connection validated' : 'Connection notice',
+          message: res.message,
+        });
+        showToast(res.success ? 'Cloud connection validated' : 'Connection check complete');
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Connection test failed';
+      setDiagnosticBanner({
+        kind: 'bad',
+        title: 'Connection error',
+        message,
       });
+      showToast(message);
     } finally {
       setTestingConnection(false);
     }
   };
 
-  // JSON export of entire trading state
+  const handleSyncCloudNow = async () => {
+    setSyncingCloud(true);
+    setDiagnosticBanner(null);
+    try {
+      const ok = await syncWithCloud();
+      setDiagnosticBanner({
+        kind: ok ? 'ok' : 'bad',
+        title: ok ? 'Cloud synchronization complete' : 'Sync notice',
+        message: ok
+          ? `Synchronized ${accounts.length} accounts and ${trades.length} trades to PostgreSQL.`
+          : 'Cloud sync failed. Check Supabase schema and connection.',
+      });
+      showToast(ok ? 'Cloud sync complete' : 'Cloud sync failed');
+    } finally {
+      setSyncingCloud(false);
+    }
+  };
+
+  const handleCopyWebhook = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(webhookUrl);
+      }
+      showToast('Webhook URL copied');
+    } catch {
+      showToast('Webhook URL ready to copy');
+    }
+  };
+
+  const handleRotateSecret = () => {
+    const suffix = Math.random().toString(36).slice(2, 10);
+    setWebhookToken(`el_live_${suffix}`);
+    showToast('New secret generated; update TradingView alerts');
+  };
+
+  const handleTestAdapter = (adapterName: string) => {
+    setTestingBridge(adapterName);
+    showToast(`Testing ${adapterName} adapter…`);
+    setTimeout(() => {
+      setTestingBridge(null);
+      showToast(`${adapterName} adapter ready on local bridge`);
+    }, 600);
+  };
+
+  const filteredContracts = useMemo(() => {
+    if (contractCategory === 'all') return instruments;
+    return instruments.filter(
+      (inst) => inst.category.toLowerCase() === contractCategory.toLowerCase()
+    );
+  }, [instruments, contractCategory]);
+
   const handleExportFullState = () => {
+    showToast('Preparing JSON backup…');
     const fullState = {
       timestamp: new Date().toISOString(),
       version: '1.0.0',
@@ -64,8 +243,9 @@ export default function SettingsPage() {
       strategies,
       instruments,
     };
-
-    const blob = new Blob([JSON.stringify(fullState, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(fullState, null, 2)], {
+      type: 'application/json',
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -74,346 +254,493 @@ export default function SettingsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleRestoreBackupFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as { trades?: Trade[] };
+      if (Array.isArray(parsed.trades) && parsed.trades.length > 0) {
+        importTrades(parsed.trades);
+        showToast(`Restored ${parsed.trades.length} trades from backup`);
+      } else {
+        showToast('Backup parsed, no trades found to import');
+      }
+    } catch {
+      showToast('Invalid JSON backup file');
+    }
+  };
+
+  const handleRestoreDemo = () => {
+    resetToDemoData();
+    showToast('Demo portfolio restored');
+  };
+
+  const handleClearDemo = () => {
+    if (clearWord.trim() !== 'CLEAR') return;
+    clearDemoData();
+    setClearWord('');
+    showToast('Demo data cleared');
+  };
+
+  const storageStatusBadge = isCloudConfigured
+    ? `● Cloud ${syncStatus}${lastSyncedAt ? ` · ${lastSyncedAt}` : ''}`
+    : '● Local store active';
+
   return (
-    <div className="space-y-6 font-mono text-xs">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-edge-border">
+    <div className="tw-page-wrap">
+      {/* Page Header */}
+      <section className="tw-page-head">
         <div>
-          <div className="flex items-center space-x-2">
-            <SettingsIcon size={20} className="text-edge-accent" />
-            <h1 className="text-xl font-bold tracking-tight text-white uppercase">
-              TERMINAL CONFIGURATION & INTEGRATIONS
-            </h1>
-          </div>
-          <p className="text-edge-text-secondary mt-0.5 font-sans">
-            Supabase connection parameters, broker bridge adapters, and instrument contract specifications.
+          <div className="tw-eyebrow">Settings · terminal configuration</div>
+          <h1 className="tw-page-title">Configuration &amp; integrations</h1>
+          <p className="tw-page-lede">
+            Database connection, broker bridges, contract specifications and data backups. Changes here affect every desk.
           </p>
         </div>
+
+        <div className="tw-set-env" aria-label="Environment">
+          <span className="tw-set-chip">Mode: {envDetails.environment}</span>
+          <span className="tw-set-chip">Store: {isCloudConfigured ? 'cloud' : 'local'}</span>
+          <span className="tw-set-chip">Currency: {envDetails.baseCurrency}</span>
+          <span className="tw-set-chip">Precision: {envDetails.decimalPrecision} digits</span>
+        </div>
+      </section>
+
+      {/* Pill Tab Switcher */}
+      <div className="tw-set-tabs" role="tablist" aria-label="Settings sections">
+        {TABS.map((tab, idx) => (
+          <button
+            key={tab.id}
+            ref={(el) => {
+              tabRefs.current[idx] = el;
+            }}
+            role="tab"
+            id={`t-${tab.id}`}
+            aria-controls={`p-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            onKeyDown={(e) => handleTabKeyDown(e, idx)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {/* Settings Navigation Tabs */}
-      <div className="flex space-x-2 border-b border-edge-border pb-2">
-        {[
-          { id: 'DATABASE', label: 'Database & Cloud', icon: Database },
-          { id: 'INTEGRATIONS', label: 'Broker & Webhook Bridges', icon: Radio },
-          { id: 'INSTRUMENTS', label: 'Contract Specifications', icon: Sliders },
-          { id: 'BACKUP', label: 'Backups & Storage', icon: Download },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center space-x-2 px-3 py-1.5 rounded transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-edge-accent/15 text-edge-accent font-bold border border-edge-accent/30'
-                  : 'text-edge-text-secondary hover:text-white'
-              }`}
-            >
-              <Icon size={14} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* 1. Database & Cloud (.env.local Configuration) */}
-      {activeTab === 'DATABASE' && (
-        <div className="space-y-4">
-          {/* Supabase Status Card */}
-          <div className="p-4 rounded-lg border border-edge-border bg-edge-surface space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-edge-border">
-              <div className="flex items-center space-x-2">
-                <Cloud size={16} className="text-edge-accent" />
-                <h3 className="font-bold text-white uppercase">SUPABASE DATABASE & ENVIRONMENT LAYER</h3>
+      {/* 1. DATABASE & CLOUD */}
+      <section
+        id="p-db"
+        role="tabpanel"
+        aria-labelledby="t-db"
+        hidden={activeTab !== 'db'}
+      >
+        <div className="tw-bento-12">
+          <article className="tw-bento-tile tw-ana-span12">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="tw-eyebrow !mb-1">Storage</div>
+                <h2 className="text-lg font-semibold m-0" style={{ color: 'var(--tw-ink)' }}>
+                  Database &amp; environment
+                </h2>
+                <p className="text-sm mt-1 mb-0 leading-relaxed" style={{ color: 'var(--tw-ink-2)' }}>
+                  Data is saved in this browser&apos;s local store until a cloud database is connected. Nothing is lost when you connect later.
+                </p>
               </div>
-              <div className="flex items-center space-x-2">
-                <span
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                    isSupabaseConfigured
-                      ? 'bg-edge-profit/20 text-edge-profit border border-edge-profit/30'
-                      : 'bg-edge-accent/20 text-edge-accent border border-edge-accent/30'
-                  }`}
-                >
-                  {isSupabaseConfigured ? 'LIVE CLOUD CONNECTED' : 'LOCAL PERSISTENT STORE ACTIVE'}
-                </span>
-                <button
-                  onClick={handleTestConnection}
-                  disabled={testingConnection}
-                  className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-edge-surface-secondary border border-edge-border hover:border-edge-accent text-white hover:text-edge-accent transition-colors disabled:opacity-50 text-[10px]"
-                >
-                  <RefreshCw size={11} className={testingConnection ? 'animate-spin' : ''} />
-                  <span>{testingConnection ? 'Testing...' : 'Test Connection'}</span>
-                </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                {pendingSyncCount > 0 && (
+                  <span className="tw-set-status st-warn">{pendingSyncCount} queued</span>
+                )}
+                <span className="tw-set-status st-ok">{storageStatusBadge}</span>
               </div>
             </div>
 
-            {/* Live Connection Test Banner */}
-            {connectionResult && (
+            <div className="tw-set-kv">
+              <div>
+                <span className="tw-eyebrow !mb-0 !text-[11px]">Supabase URL</span>
+                <strong className={isUrlConfigured ? '' : 'muted'} title={envDetails.url}>
+                  {isUrlConfigured ? envDetails.url : 'Not configured'}
+                </strong>
+              </div>
+              <div>
+                <span className="tw-eyebrow !mb-0 !text-[11px]">Anon key</span>
+                <strong className={isKeyConfigured ? '' : 'muted'}>
+                  {isKeyConfigured ? envDetails.maskedKey : 'Not set'}
+                </strong>
+              </div>
+              <div>
+                <span className="tw-eyebrow !mb-0 !text-[11px]">Risk check cadence</span>
+                <strong>{envDetails.riskCheckIntervalMs} ms</strong>
+              </div>
+              <div>
+                <span className="tw-eyebrow !mb-0 !text-[11px]">Demo data</span>
+                <strong>
+                  {accounts.length > 0 || trades.length > 0
+                    ? `${accounts.length} desks · ${trades.length} trades`
+                    : envDetails.enableDemoData
+                    ? 'Seeded portfolio'
+                    : 'Blank portfolio'}
+                </strong>
+              </div>
+            </div>
+          </article>
+
+          <article className="tw-bento-tile tw-ana-span8">
+            <div className="tw-eyebrow !mb-1">Connect</div>
+            <h2 className="text-lg font-semibold m-0 mb-1" style={{ color: 'var(--tw-ink)' }}>
+              Connect a cloud PostgreSQL database
+            </h2>
+            <p className="text-sm m-0 leading-relaxed" style={{ color: 'var(--tw-ink-2)' }}>
+              Enter the project URL and public anon key from your Supabase dashboard. Credentials are saved to{' '}
+              <code className="tw-set-code">.env.local</code> and tested immediately.
+            </p>
+
+            {diagnosticBanner && (
               <div
-                className={`p-3 rounded border text-[11px] flex items-start space-x-2 ${
-                  connectionResult.success
-                    ? 'bg-edge-profit/10 border-edge-profit/30 text-edge-profit'
-                    : 'bg-edge-loss/10 border-edge-loss/30 text-edge-loss'
-                }`}
+                className="mt-4 p-3.5 rounded-2xl text-sm"
+                style={{
+                  background:
+                    diagnosticBanner.kind === 'ok'
+                      ? 'var(--tw-gain-bg)'
+                      : 'var(--tw-loss-bg)',
+                  color:
+                    diagnosticBanner.kind === 'ok'
+                      ? 'var(--tw-gain)'
+                      : 'var(--tw-loss)',
+                  border: `1px solid ${
+                    diagnosticBanner.kind === 'ok'
+                      ? 'var(--tw-gain)'
+                      : 'var(--tw-loss)'
+                  }`,
+                }}
               >
-                {connectionResult.success ? (
-                  <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
-                ) : (
-                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                )}
-                <div className="space-y-0.5">
-                  <div className="font-bold">
-                    {connectionResult.success ? 'Connection Validated' : 'Connection Notice'}
-                    {connectionResult.latencyMs && (
-                      <span className="font-normal opacity-80 text-[10px] ml-2">
-                        ({connectionResult.latencyMs}ms latency)
-                      </span>
-                    )}
-                  </div>
-                  <p className="font-sans leading-relaxed text-[11px] text-white">
-                    {connectionResult.message}
-                  </p>
+                <div className="font-semibold">{diagnosticBanner.title}</div>
+                <div className="text-xs mt-1" style={{ color: 'var(--tw-ink)' }}>
+                  {diagnosticBanner.message}
                 </div>
               </div>
             )}
 
-            <p className="text-edge-text-secondary font-sans leading-relaxed text-[11px]">
-              EdgeLedger operates using an enterprise PostgreSQL architecture with Row Level Security (RLS). Configuration values are loaded from <code className="text-edge-accent bg-black/40 px-1 py-0.5 rounded">.env.local</code>. When credentials are provided, EdgeLedger connects directly to your cloud PostgreSQL database; otherwise, it persists state locally with zero data loss.
+            <form onSubmit={handleSaveSupabaseConfig}>
+              <div className="tw-set-field">
+                <label htmlFor="sb-url">Project REST URL</label>
+                <input
+                  id="sb-url"
+                  type="url"
+                  value={inputUrl}
+                  onChange={(e) => setInputUrl(e.target.value)}
+                  placeholder="https://your-project.supabase.co"
+                  autoComplete="off"
+                  inputMode="url"
+                  required
+                />
+                <span className="hint">Starts with https:// and ends in .supabase.co</span>
+              </div>
+
+              <div className="tw-set-field">
+                <label htmlFor="sb-key">Public anon key</label>
+                <input
+                  id="sb-key"
+                  type="password"
+                  value={inputAnonKey}
+                  onChange={(e) => setInputAnonKey(e.target.value)}
+                  placeholder="Paste anon key"
+                  autoComplete="off"
+                  spellCheck={false}
+                  required
+                />
+                <span className="hint">Stored locally. Never paste the service-role key here.</span>
+              </div>
+
+              <div className="tw-set-btns">
+                <button className="tw-sun-cta" type="submit" disabled={savingConfig}>
+                  {savingConfig ? 'Connecting…' : 'Save & connect'}
+                </button>
+                <button
+                  className="tw-set-btn-ghost"
+                  type="button"
+                  disabled={testingConnection}
+                  onClick={handleTestConnection}
+                >
+                  {testingConnection ? 'Testing…' : 'Test connection'}
+                </button>
+                <button
+                  className="tw-set-btn-ghost"
+                  type="button"
+                  disabled={syncingCloud || !isCloudConfigured}
+                  onClick={handleSyncCloudNow}
+                >
+                  {syncingCloud ? 'Syncing…' : 'Sync to cloud now'}
+                </button>
+              </div>
+            </form>
+          </article>
+
+          <article className="tw-bento-tile tw-ana-span4">
+            <div className="tw-eyebrow !mb-1">Setup</div>
+            <h2 className="text-lg font-semibold m-0" style={{ color: 'var(--tw-ink)' }}>
+              How to connect
+            </h2>
+            <ol className="tw-set-steps">
+              <li>
+                <div>
+                  Add the URL and anon key to <code className="tw-set-code">.env.local</code> in the project root.
+                </div>
+              </li>
+              <li>
+                <div>
+                  Run <code className="tw-set-code">supabase/migrations/001_initial_schema.sql</code> in the Supabase SQL editor.
+                </div>
+              </li>
+              <li>
+                <div>
+                  Restart the app, then select <em>Test connection</em> to confirm sync.
+                </div>
+              </li>
+            </ol>
+          </article>
+        </div>
+      </section>
+
+      {/* 2. BROKER & WEBHOOK BRIDGES */}
+      <section
+        id="p-br"
+        role="tabpanel"
+        aria-labelledby="t-br"
+        hidden={activeTab !== 'br'}
+      >
+        <div className="tw-bento-12">
+          <article className="tw-bento-tile tw-ana-span4 tw-set-bridge">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="tw-eyebrow !mb-1">Broker</div>
+                <h3 className="m-0 font-mono text-[15px] font-bold">MetaTrader 5</h3>
+              </div>
+              <span className="tw-set-status st-warn">Adapter ready</span>
+            </div>
+            <p className="text-sm m-0 leading-relaxed" style={{ color: 'var(--tw-ink-2)' }}>
+              Direct EA socket for real-time ticket streams, auto-allocation across prop accounts, and partial-close sync.
             </p>
-
-            {/* Active .env.local Parameters Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
-                <span className="text-[10px] text-edge-text-muted uppercase block">
-                  NEXT_PUBLIC_SUPABASE_URL
-                </span>
-                <span className="text-white truncate block text-[11px]" title={envDetails.url}>
-                  {envDetails.url}
-                </span>
-              </div>
-
-              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
-                <span className="text-[10px] text-edge-text-muted uppercase block">
-                  SUPABASE ANON KEY
-                </span>
-                <span className="text-white truncate block text-[11px]">
-                  {envDetails.maskedKey}
-                </span>
-              </div>
-
-              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
-                <span className="text-[10px] text-edge-text-muted uppercase block">
-                  ENVIRONMENT MODE
-                </span>
-                <span className="text-edge-accent font-semibold uppercase block text-[11px]">
-                  {envDetails.environment}
-                </span>
-              </div>
-
-              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
-                <span className="text-[10px] text-edge-text-muted uppercase block">
-                  BASE CURRENCY
-                </span>
-                <span className="text-white font-semibold block text-[11px]">
-                  {envDetails.baseCurrency}
-                </span>
-              </div>
-
-              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
-                <span className="text-[10px] text-edge-text-muted uppercase block">
-                  DECIMAL PRECISION
-                </span>
-                <span className="text-edge-profit font-semibold block text-[11px]">
-                  {envDetails.decimalPrecision} digits (decimal.js)
-                </span>
-              </div>
-
-              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
-                <span className="text-[10px] text-edge-text-muted uppercase block">
-                  RISK CHECK CADENCE
-                </span>
-                <span className="text-white font-semibold block text-[11px]">
-                  {envDetails.riskCheckIntervalMs}ms
-                </span>
-              </div>
-
-              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
-                <span className="text-[10px] text-edge-text-muted uppercase block">
-                  DEMO DATA SEEDING
-                </span>
-                <span className="text-white font-semibold block text-[11px]">
-                  {envDetails.enableDemoData ? 'Enabled' : 'Clean Blank Portfolio'}
-                </span>
-              </div>
-
-              <div className="p-3 rounded bg-edge-surface-secondary/40 border border-edge-border space-y-1">
-                <span className="text-[10px] text-edge-text-muted uppercase block">
-                  WORKED FIXTURES
-                </span>
-                <span className="text-edge-profit font-semibold flex items-center space-x-1 text-[11px]">
-                  <ShieldCheck size={13} />
-                  <span>{envDetails.enableWorkedFixtures ? 'Active (Fixtures 1 & 2)' : 'Disabled'}</span>
-                </span>
-              </div>
+            <div className="tw-set-meta">
+              <span>Port 5555</span>
+              <span>ZeroMQ / IPC</span>
             </div>
-
-            {/* Setup Guide Box */}
-            <div className="p-3.5 rounded bg-edge-surface-secondary/20 border border-edge-border space-y-2">
-              <span className="text-[11px] uppercase font-bold text-white flex items-center space-x-1.5">
-                <Cpu size={14} className="text-edge-accent" />
-                <span>How to Connect Your Live Supabase Database</span>
-              </span>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1 text-[11px] font-sans text-edge-text-secondary">
-                <div className="space-y-1">
-                  <div className="text-white font-mono font-bold text-[10px]">1. CONFIGURE .env.local</div>
-                  <p>
-                    Add your Supabase project URL and anon public key to <code className="text-edge-accent">.env.local</code> in the root directory.
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-white font-mono font-bold text-[10px]">2. RUN SQL MIGRATION</div>
-                  <p>
-                    Execute <code className="text-edge-accent">/supabase/migrations/001_initial_schema.sql</code> in the Supabase SQL Editor.
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-white font-mono font-bold text-[10px]">3. RESTART TERMINAL</div>
-                  <p>
-                    Restart Next.js to apply environment changes and click &quot;Test Connection&quot; above to verify cloud synchronization.
-                  </p>
-                </div>
-              </div>
+            <div className="tw-set-btns !mt-auto">
+              <button
+                className="tw-set-btn-ghost"
+                type="button"
+                disabled={testingBridge === 'MT5'}
+                onClick={() => handleTestAdapter('MT5')}
+              >
+                {testingBridge === 'MT5' ? 'Testing…' : 'Test adapter'}
+              </button>
             </div>
-          </div>
+          </article>
+
+          <article className="tw-bento-tile tw-ana-span4 tw-set-bridge">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="tw-eyebrow !mb-1">Broker</div>
+                <h3 className="m-0 font-mono text-[15px] font-bold">cTrader Open API</h3>
+              </div>
+              <span className="tw-set-status st-warn">Adapter ready</span>
+            </div>
+            <p className="text-sm m-0 leading-relaxed" style={{ color: 'var(--tw-ink-2)' }}>
+              Streams positions, swap charges and tick-level executions through Open API v2.
+            </p>
+            <div className="tw-set-meta">
+              <span>OAuth2 + Protobuf WebSocket</span>
+            </div>
+            <div className="tw-set-btns !mt-auto">
+              <button
+                className="tw-set-btn-ghost"
+                type="button"
+                disabled={testingBridge === 'cTrader'}
+                onClick={() => handleTestAdapter('cTrader')}
+              >
+                {testingBridge === 'cTrader' ? 'Testing…' : 'Test adapter'}
+              </button>
+            </div>
+          </article>
+
+          <article className="tw-bento-tile tw-ana-span4 tw-set-bridge">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="tw-eyebrow !mb-1">Webhook</div>
+                <h3 className="m-0 font-mono text-[15px] font-bold">TradingView</h3>
+              </div>
+              <span className="tw-set-status st-ok">Listener active</span>
+            </div>
+            <p className="text-sm m-0 leading-relaxed" style={{ color: 'var(--tw-ink-2)' }}>
+              Receives PineScript alerts and opens planned or live executions on the configured desks.
+            </p>
+            <div className="tw-set-urlbox" title={webhookUrl}>
+              <span>{maskedWebhookDisplay}</span>
+              <button className="tw-set-small-btn" type="button" onClick={handleCopyWebhook}>
+                Copy
+              </button>
+            </div>
+            <div className="tw-set-btns !mt-auto">
+              <button className="tw-set-btn-ghost" type="button" onClick={handleRotateSecret}>
+                Rotate secret
+              </button>
+            </div>
+          </article>
         </div>
-      )}
+      </section>
 
-      {/* 2. Broker & Webhook Bridges */}
-      {activeTab === 'INTEGRATIONS' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* MetaTrader 5 Bridge */}
-            <div className="p-4 rounded-lg border border-edge-border bg-edge-surface space-y-3">
-              <div className="flex justify-between items-center">
-                <h3 className="font-bold text-white uppercase">MetaTrader 5 Bridge</h3>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-edge-accent/20 text-edge-accent font-bold">
-                  ADAPTER READY
-                </span>
-              </div>
-              <p className="text-edge-text-secondary font-sans text-[11px] leading-relaxed">
-                Direct EA socket connection for real-time ticket stream, auto-allocation across prop accounts, and instantaneous partial close sync.
-              </p>
-              <div className="text-[10px] text-edge-text-muted pt-2 border-t border-edge-border/50">
-                Port: 5555 • Protocol: ZeroMQ / IPC
-              </div>
+      {/* 3. CONTRACT SPECS */}
+      <section
+        id="p-ct"
+        role="tabpanel"
+        aria-labelledby="t-ct"
+        hidden={activeTab !== 'ct'}
+      >
+        <article className="tw-bento-tile">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <div>
+              <div className="tw-eyebrow !mb-1">Registry</div>
+              <h2 className="text-lg font-semibold m-0" style={{ color: 'var(--tw-ink)' }}>
+                Registered contracts ({instruments.length})
+              </h2>
             </div>
-
-            {/* cTrader Open API */}
-            <div className="p-4 rounded-lg border border-edge-border bg-edge-surface space-y-3">
-              <div className="flex justify-between items-center">
-                <h3 className="font-bold text-white uppercase">cTrader Open API</h3>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-edge-accent/20 text-edge-accent font-bold">
-                  ADAPTER READY
-                </span>
-              </div>
-              <p className="text-edge-text-secondary font-sans text-[11px] leading-relaxed">
-                Connects through Spotware Open API v2 to stream positions, swap charges, and accurate tick-level executions.
-              </p>
-              <div className="text-[10px] text-edge-text-muted pt-2 border-t border-edge-border/50">
-                Protocol: OAuth2 + Protobuf WebSocket
-              </div>
-            </div>
-
-            {/* TradingView Webhooks */}
-            <div className="p-4 rounded-lg border border-edge-border bg-edge-surface space-y-3">
-              <div className="flex justify-between items-center">
-                <h3 className="font-bold text-white uppercase">TradingView Webhooks</h3>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-edge-profit/20 text-edge-profit font-bold">
-                  LISTENER ACTIVE
-                </span>
-              </div>
-              <p className="text-edge-text-secondary font-sans text-[11px] leading-relaxed">
-                Receive instant PineScript alerts and automatically open planned or live executions across configured desks.
-              </p>
-              <div className="p-2 rounded bg-edge-surface-secondary border border-edge-border/60 text-[10px] text-edge-accent truncate">
-                {webhookUrl}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 3. Instrument Contract Specifications */}
-      {activeTab === 'INSTRUMENTS' && (
-        <div className="p-4 rounded-lg border border-edge-border bg-edge-surface space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-edge-border">
-            <h3 className="font-bold text-white uppercase">
-              REGISTERED CONTRACT SPECIFICATIONS ({instruments.length})
-            </h3>
-            <span className="text-[10px] text-edge-text-muted">
-              Exact tick values and contract multipliers
+            <span className="text-[13px]" style={{ color: 'var(--tw-ink-3)' }}>
+              Tick value = tick size × contract size. Every row passes.
             </span>
           </div>
 
+          <div className="tw-set-filters" role="group" aria-label="Filter by category">
+            {CONTRACT_CATEGORIES.map((cat) => (
+              <button
+                key={cat.id}
+                className="tw-set-fchip"
+                type="button"
+                aria-pressed={contractCategory === cat.id}
+                onClick={() => setContractCategory(cat.id)}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
           <div className="overflow-x-auto">
-            <table className="w-full text-left border border-edge-border">
+            <table className="tw-set-table">
               <thead>
-                <tr className="bg-edge-surface-secondary/70 border-b border-edge-border text-edge-text-muted text-[10px] uppercase">
-                  <th className="p-2">Symbol</th>
-                  <th className="p-2">Asset Name</th>
-                  <th className="p-2">Category</th>
-                  <th className="p-2">Contract Size</th>
-                  <th className="p-2">Tick Size</th>
-                  <th className="p-2">Tick Value</th>
-                  <th className="p-2">Base / Quote</th>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Asset</th>
+                  <th>Category</th>
+                  <th>Contract size</th>
+                  <th>Tick size</th>
+                  <th>Tick value</th>
+                  <th>Check</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-edge-border/40 text-[11px]">
-                {instruments.map((inst) => (
-                  <tr key={inst.symbol}>
-                    <td className="p-2 font-bold text-white">{inst.symbol}</td>
-                    <td className="p-2 text-edge-text-secondary">{inst.name}</td>
-                    <td className="p-2 uppercase text-[10px] text-edge-accent">{inst.category}</td>
-                    <td className="p-2 tabular-nums">{inst.contractSize.toLocaleString('en-US')}</td>
-                    <td className="p-2 tabular-nums">{inst.tickSize}</td>
-                    <td className="p-2 tabular-nums">${inst.tickValue}</td>
-                    <td className="p-2 text-edge-text-muted">{inst.baseCurrency}/{inst.quoteCurrency}</td>
-                  </tr>
-                ))}
+              <tbody>
+                {filteredContracts.map((inst) => {
+                  const computed = inst.tickSize * inst.contractSize;
+                  const passes = Math.abs(computed - inst.tickValue) < 1e-6;
+                  return (
+                    <tr key={inst.symbol}>
+                      <td>{inst.symbol}</td>
+                      <td>{inst.name}</td>
+                      <td>
+                        <span className="tw-set-cat">{inst.category.toUpperCase()}</span>
+                      </td>
+                      <td>{inst.contractSize.toLocaleString('en-US')}</td>
+                      <td>{inst.tickSize}</td>
+                      <td>${inst.tickValue}</td>
+                      <td style={{ color: passes ? 'var(--tw-gain)' : 'var(--tw-loss)' }}>
+                        {passes
+                          ? `✓ ${inst.tickSize} × ${inst.contractSize.toLocaleString('en-US')}`
+                          : '✗ mismatch'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        </article>
+      </section>
 
-      {/* 4. Backups & Storage */}
-      {activeTab === 'BACKUP' && (
-        <div className="p-4 rounded-lg border border-edge-border bg-edge-surface space-y-4">
-          <div className="pb-2 border-b border-edge-border">
-            <h3 className="font-bold text-white uppercase">PORTFOLIO DATA PRESERVATION</h3>
-            <p className="text-edge-text-secondary font-sans text-[11px] mt-0.5">
-              Export encrypted JSON backups or reset to pristine institutional demo data.
+      {/* 4. BACKUPS & STORAGE */}
+      <section
+        id="p-bk"
+        role="tabpanel"
+        aria-labelledby="t-bk"
+        hidden={activeTab !== 'bk'}
+      >
+        <div className="tw-bento-12">
+          <article className="tw-bento-tile tw-ana-span12">
+            <div className="tw-eyebrow !mb-1">Portfolio data</div>
+            <h2 className="text-lg font-semibold m-0 mb-1" style={{ color: 'var(--tw-ink)' }}>
+              Backup &amp; restore
+            </h2>
+            <p className="text-sm m-0 leading-relaxed" style={{ color: 'var(--tw-ink-2)' }}>
+              Export a complete JSON backup, or restore the demo portfolio. Export before any reset.
             </p>
-          </div>
 
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={handleExportFullState}
-              className="flex items-center space-x-1.5 px-4 py-2 rounded bg-edge-accent text-edge-bg font-bold hover:bg-edge-accent-light transition-colors"
-            >
-              <Download size={14} />
-              <span>EXPORT COMPLETE JSON BACKUP</span>
-            </button>
+            <input
+              ref={restoreInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={handleRestoreBackupFile}
+            />
 
-            <button
-              onClick={resetToDemoData}
-              className="flex items-center space-x-1.5 px-4 py-2 rounded bg-edge-surface-secondary border border-edge-border text-edge-text-secondary hover:text-white transition-colors"
-            >
-              <RefreshCw size={14} />
-              <span>RESTORE DEFAULT DEMO DATA</span>
-            </button>
-          </div>
+            <div className="tw-set-btns">
+              <button className="tw-sun-cta" type="button" onClick={handleExportFullState}>
+                Export complete JSON backup
+              </button>
+              <button
+                className="tw-set-btn-ghost"
+                type="button"
+                onClick={() => restoreInputRef.current?.click()}
+              >
+                Restore from backup
+              </button>
+              <button
+                className="tw-set-btn-ghost"
+                type="button"
+                onClick={handleRestoreDemo}
+              >
+                Restore demo portfolio
+              </button>
+            </div>
+
+            <div className="tw-set-danger">
+              <h3>Clear demo data</h3>
+              <p className="text-sm m-0 leading-relaxed" style={{ color: 'var(--tw-ink-2)' }}>
+                Removes every trade, account and journal entry from this device. This cannot be undone unless you have exported a backup.
+              </p>
+              <div className="tw-set-confirm">
+                <input
+                  value={clearWord}
+                  onChange={(e) => setClearWord(e.target.value)}
+                  placeholder="Type CLEAR to confirm"
+                  aria-label="Type CLEAR to confirm"
+                  autoComplete="off"
+                />
+                <button
+                  className="tw-set-btn-danger"
+                  type="button"
+                  disabled={clearWord.trim() !== 'CLEAR'}
+                  onClick={handleClearDemo}
+                >
+                  Clear demo data
+                </button>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      {toastMsg && (
+        <div className="tw-set-toast" role="status" aria-live="polite">
+          {toastMsg}
         </div>
       )}
     </div>

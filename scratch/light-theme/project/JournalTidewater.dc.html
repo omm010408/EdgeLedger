@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EdgeLedger journal, light</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&amp;family=JetBrains+Mono:wght@400..700&amp;display=swap">
+<style>
+:root{color-scheme:light;--bg:#EDF4F2;--tile:#FFFFFF;--line:#C5D7D3;--line-strong:#758B86;--ink:#0E1B1C;--ink-2:#3F5553;--ink-3:#566967;--pill:#E6EEEB;--track:#E4EDEA;--ring-track:#E2ECE9;--ring-empty:#9DB3AE;--hero:#0D4A4A;--hero-ink:#FFFFFF;--hero-2:#CDEBE3;--hero-line:#8FE6CF;--hero-rule:rgba(255,255,255,0.22);--hero-chip:rgba(143,230,207,0.2);--sun:#F6C744;--sun-ink:#1A1400;--sun-disc:#FBDB7A;--aqua:#D5F0E6;--aqua-ink:#0B2E2A;--aqua-chip:#FFFFFF;--gain:#13784E;--loss:#B3263E;--warn:#8F4305;--warn-bg:rgba(143,67,5,0.07);--warn-line:rgba(143,67,5,0.4);--s1:#2A78D6;--s2:#EB6834;--s3:#6250D6;--b1:#13784E;--b2:#7CC7A4;--buy-bg:#E1EBFB;--buy-ink:#1F4F95;--sell-bg:#E6EEEB;--sell-ink:#3F5553;--wave:#E8F2EF;--ripple:#D0E2DE;--focus:#0D4A4A;--shadow:0 1px 2px rgba(14,27,28,0.05),0 8px 20px -14px rgba(14,27,28,0.14);--c:var(--ink-2);--aqua-num:#0B6B47}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg)}
+.board{width:100%;height:1080px;overflow:hidden;display:flex;flex-direction:column;padding:24px 32px 28px;background:var(--bg);color:var(--ink);font-family:'Instrument Sans',Inter,ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:20px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+button{font:inherit;color:inherit}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+
+.top{display:flex;align-items:center;gap:28px;height:56px;flex:none}
+.brand{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;letter-spacing:-0.01em}
+.mark{display:grid;place-items:center;width:32px;height:32px;border-radius:58% 42% 46% 54% / 52% 48% 52% 48%;background:var(--hero);color:var(--hero-ink);font-size:15px;font-weight:700;line-height:1}
+.nav{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.nav a{display:inline-flex;align-items:center;height:32px;padding:0 14px;border-radius:999px;color:var(--ink-2);font-weight:500;text-decoration:none}
+.nav a[aria-current="page"]{background:var(--tile);color:var(--ink);font-weight:600;box-shadow:inset 0 0 0 1px var(--line-strong)}
+.tools{margin-left:auto;display:flex;align-items:center;gap:10px}
+.alert{display:inline-flex;align-items:center;height:32px;padding:0 13px;border-radius:999px;background:var(--warn-bg);box-shadow:inset 0 0 0 1px var(--warn-line);color:var(--warn);font-size:13px;font-weight:600;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border-radius:999px;border:1px solid var(--line-strong);background:var(--tile);color:var(--ink);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn.dark{background:var(--ink);border-color:var(--ink);color:var(--tile);font-weight:600}
+.btn.quiet{color:var(--ink-2)}
+kbd{padding:3px 6px;border-radius:6px;background:var(--pill);color:var(--ink-2);font-size:12px;font-weight:600}
+.seg{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.seg button{height:28px;padding:0 14px;border:0;border-radius:999px;background:transparent;color:var(--ink-2);font-size:13px;font-weight:500;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--tile);font-weight:600}
+
+.titlerow{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-top:26px;flex:none}
+.titlerow h1{margin:0;font-size:36px;line-height:40px;font-weight:600;letter-spacing:-0.03em}
+.titlerow p{margin:8px 0 0;color:var(--ink-2);font-size:15px;line-height:22px}
+.controls{display:flex;gap:10px;align-items:center}
+
+.grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;margin-top:20px}
+.tile{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column;padding:20px 22px;border-radius:32px;background:var(--tile);border:1px solid var(--line)}
+.lbl{font-size:13px;line-height:18px;font-weight:600;color:var(--ink-2)}
+.eyebrow{font-size:12px;line-height:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.sub{font-size:12px;line-height:16px;color:var(--ink-3)}
+.pill{display:inline-flex;align-items:center;height:26px;padding:0 11px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.gain{color:var(--gain)}
+.loss{color:var(--loss)}
+.warn{color:var(--warn)}
+
+/* Session list */
+.side{grid-column:1 / 5;grid-row:1;display:flex;flex-direction:column;gap:12px;min-height:0}
+.sess{padding:16px 18px;border-radius:26px;background:var(--tile);border:1px solid var(--line-strong);text-align:left;cursor:pointer;flex:none;width:100%}
+.sess[aria-current="true"]{border-color:var(--sun);box-shadow:inset 0 0 0 1px var(--sun);background:color-mix(in srgb,var(--sun) 10%,var(--tile))}
+.sess .row1{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.sess .d{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;font-weight:600}
+.sess p{margin:8px 0 0;font-size:13px;line-height:19px;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sess .row2{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--ink-3)}
+.flagp{display:inline-flex;align-items:center;gap:4px;color:var(--loss);font-weight:600;font-size:12px}
+.score-ok{background:color-mix(in srgb,var(--gain) 14%,transparent);color:var(--gain)}
+.score-mid{background:var(--warn-bg);color:var(--warn)}
+.score-low{background:color-mix(in srgb,var(--loss) 14%,transparent);color:var(--loss)}
+.trend{margin-top:auto;display:flex;flex-direction:column;flex:1;min-height:0;background:var(--aqua);border:0;color:var(--aqua-ink)}
+.trend .lbl,.trend .sub{color:var(--aqua-ink)}
+.bars{display:flex;align-items:flex-end;gap:12px;flex:1;min-height:60px;margin-top:12px;padding-bottom:4px;border-bottom:1px solid color-mix(in srgb,var(--aqua-ink) 25%,transparent)}
+.bars div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;height:100%}
+.bars i{display:block;width:100%;max-width:56px;border-radius:12px 12px 6px 6px;background:var(--aqua-ink)}
+.bars span{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;font-weight:600}
+.bars small{font-size:12px;opacity:.8}
+.trend .big{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:30px;line-height:34px;font-weight:600;letter-spacing:-0.03em;margin-top:8px}
+
+/* Detail */
+.detail{grid-column:5 / 13;grid-row:1;padding:22px 24px;gap:14px}
+.dhead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.dhead h2{margin:4px 0 0;font-size:30px;line-height:34px;font-weight:600;letter-spacing:-0.03em;font-family:'JetBrains Mono',ui-monospace,monospace}
+.scores{display:grid;grid-template-columns:repeat(3,auto);gap:10px}
+.sc{display:flex;align-items:center;gap:10px;padding:8px 12px 8px 8px;border-radius:999px;background:var(--pill)}
+.sc.hi{background:var(--sun);color:var(--sun-ink)}
+.sc svg{width:44px;height:44px;flex:none}
+.sc .ring-bg{fill:none;stroke:color-mix(in srgb,currentColor 18%,transparent);stroke-width:4}
+.sc .ring{fill:none;stroke:currentColor;stroke-width:4;stroke-linecap:round;transform:rotate(-90deg);transform-origin:50% 50%}
+.sc .txt{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;font-weight:600;line-height:16px}
+.sc .txt small{display:block;font-family:'Instrument Sans',sans-serif;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;opacity:.75}
+.sc.hi .txt small{opacity:.85}
+
+.secs{display:grid;grid-template-columns:1fr 1fr;gap:12px;flex:1;min-height:0;grid-auto-rows:auto}
+.sec{padding:14px 16px;border-radius:22px;background:var(--pill);border:1px solid var(--line);min-width:0}
+.sec p{margin:8px 0 0;font-size:14px;line-height:21px;color:var(--ink)}
+.sec.wide{grid-column:1 / 3}
+.sec.plan{background:var(--tile);border-color:var(--line-strong)}
+.sec.lesson{background:color-mix(in srgb,var(--sun) 16%,var(--tile));border-color:color-mix(in srgb,var(--sun) 60%,transparent)}
+.sec.lesson .eyebrow{color:var(--sun-ink)}
+.sec.exec .eyebrow{color:var(--gain)}
+.sec.plan .eyebrow{color:var(--hero)}
+.pitfalls{grid-column:1 / 3;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 16px;border-radius:22px;border:1px dashed var(--line-strong)}
+.pitfalls .eyebrow{width:100%}
+.pf{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;background:var(--tile);border:1px solid var(--line);font-size:12px;font-weight:500;color:var(--ink-3)}
+.pf i{width:8px;height:8px;border-radius:999px;background:var(--ring-empty)}
+.pf.on{color:var(--loss);border-color:color-mix(in srgb,var(--loss) 45%,transparent);background:color-mix(in srgb,var(--loss) 10%,var(--tile))}
+.pf.on i{background:var(--loss)}
+.link{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;font-size:13px;color:var(--ink-2)}
+/* polish */
+.sc.p .ring{stroke:var(--s1)}
+.sc.e .ring{stroke:var(--gain)}
+.sc.hi .ring{stroke:var(--sun-ink)}
+.sc.p .ring-bg,.sc.e .ring-bg{stroke:var(--line-strong)}
+.sc.hi .ring-bg{stroke:color-mix(in srgb,var(--sun-ink) 20%,transparent)}
+.sc{background:var(--tile);border:1px solid var(--line)}
+.sc.hi{border-color:var(--sun)}
+.meta{display:flex;align-items:center;gap:10px;margin-top:8px}
+.mood{background:var(--pill);color:var(--ink-2);height:24px}
+.bars div.sel span{color:var(--ink);text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:4px}
+.bars i.bad{background:var(--loss)}
+.bars div.sel i{outline:2px solid var(--sun-ink);outline-offset:3px}
+.secs .sec{display:flex;flex-direction:column}
+.sec p{margin-top:auto}
+.sec .eyebrow + p{margin-top:8px}
+.sec.exec p{margin-top:8px}
+.sec.lesson{position:relative}
+.sec.lesson::after{content:"Rule reinforced";position:absolute;top:14px;right:16px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--sun-ink);color:var(--sun)}
+/* avg discipline refine */
+.trend{gap:0}
+.avgtag{background:var(--aqua-ink);color:var(--aqua);height:22px;font-size:12px}
+.avgrow{display:flex;align-items:baseline;gap:6px;margin-top:6px}
+.avgv{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:52px;line-height:54px;font-weight:600;letter-spacing:-0.05em}
+.avgof{font-size:15px;font-weight:600;opacity:.75}
+.scale{position:relative;height:12px;margin:18px 12px 0}
+.bands{position:absolute;inset:0;display:grid;grid-template-columns:5fr 3fr 2fr;gap:3px}
+.bands i{display:block;border-radius:99px}
+.bands .b-off{background:color-mix(in srgb,var(--loss) 45%,transparent)}
+.bands .b-mix{background:color-mix(in srgb,var(--warn) 45%,transparent)}
+.bands .b-on{background:color-mix(in srgb,var(--gain) 60%,transparent)}
+.scale .dot{position:absolute;top:-4px;width:20px;height:20px;margin-left:-10px;border-radius:999px;background:var(--aqua-ink);border:3px solid var(--aqua)}
+.scale .avgmark{position:absolute;top:-8px;bottom:-8px;width:2px;margin-left:-1px;border-radius:2px;background:var(--aqua-ink)}
+.ticks{display:flex;justify-content:space-between;padding:0 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;margin-top:8px;opacity:.7}
+.chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
+.ck{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:14px;background:color-mix(in srgb,var(--aqua-ink) 10%,transparent)}
+.ck small{font-size:12px;opacity:.85}
+.ck b{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:14px;font-weight:600}
+.ck.low{background:color-mix(in srgb,var(--loss) 18%,transparent)}
+.stats3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid color-mix(in srgb,var(--aqua-ink) 22%,transparent)}
+.stats3 small{display:block;font-size:12px;opacity:.8}
+.stats3 b{display:block;margin-top:2px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:14px;font-weight:600;white-space:nowrap}
+.legend{margin-top:auto;padding-top:10px;font-size:12px;line-height:15px;color:var(--aqua-ink);opacity:.8}
+/* theme-aware average tile: tinted surface, ink text, works on light and dark */
+.trend{background:color-mix(in srgb,var(--aqua) 16%,var(--tile));border:1px solid color-mix(in srgb,var(--aqua) 45%,var(--line));color:var(--ink)}
+.trend .lbl,.trend .sub,.trend .legend,.trend .avgof,.trend .ticks{color:var(--ink-2)}
+.trend .avgv{color:var(--ink)}
+.avgtag{display:none}
+.scale .dot{background:var(--aqua);border-color:var(--tile)}
+.scale .avgmark{background:var(--ink)}
+.ck{background:color-mix(in srgb,var(--aqua) 14%,transparent);color:var(--ink)}
+.ck small{color:var(--ink-2)}
+.ck.low{background:color-mix(in srgb,var(--loss) 20%,transparent)}
+.stats3{border-top-color:var(--line)}
+.stats3 small{color:var(--ink-3)}
+.stats3 b{color:var(--ink)}
+/*linked*/a{color:inherit;text-decoration:none}
+/* Unified Light Elevation, Interaction, Scrollbar, Empty & Reduced Motion Polish */
+.tile{border:1px solid var(--line);box-shadow:var(--shadow)}
+.hero,.sunt,.mint,.best,.setups,.capital,.alerts,.trend{box-shadow:var(--shadow)}
+::selection{background:var(--hero-line);color:var(--ink)}
+input,textarea,select{caret-color:var(--focus)}
+button,a,.btn,.chip,.pill,.seg button,.tabs button,.lrow,.sess,.cat,.acct{transition:background-color 175ms ease,border-color 175ms ease,color 175ms ease,box-shadow 175ms ease,transform 175ms ease}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.btn:active,.seg button:active,.tabs button:active,.chip:active{transform:translateY(1px)}
+button:disabled,.btn:disabled,.chip:disabled{opacity:.48;cursor:not-allowed;pointer-events:none}
+table tbody tr{transition:background-color 165ms ease}
+table tbody tr:hover{background:color-mix(in srgb,var(--ink) 4%,transparent)}
+table thead th{position:sticky;top:0;background:var(--tile);z-index:1}
+.lbody::-webkit-scrollbar,.scroll-y::-webkit-scrollbar{width:8px;height:8px}
+.lbody::-webkit-scrollbar-track,.scroll-y::-webkit-scrollbar-track{background:var(--bg)}
+.lbody::-webkit-scrollbar-thumb,.scroll-y::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:999px}
+.lbody::-webkit-scrollbar-thumb:hover,.scroll-y::-webkit-scrollbar-thumb:hover{background:var(--ink-3)}
+.empty-state,.zero-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:24px;border-radius:20px;border:1px dashed var(--line-strong);background:var(--pill);color:var(--ink-2);text-align:center}
+.loading-shimmer{background:linear-gradient(90deg,var(--pill) 25%,var(--track) 50%,var(--pill) 75%);border-radius:12px}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms !important;animation-iteration-count:1 !important;transition-duration:0.01ms !important;scroll-behavior:auto !important}}
+</style>
+</helmet>
+
+<div class="board">
+  <header class="top">
+    <div class="brand"><span class="mark" aria-hidden="true">E</span>EdgeLedger</div>
+    <nav class="nav" aria-label="Primary">
+      <a href="Tidewater.dc.html">Overview</a>
+      <a href="AccountsTidewater.dc.html">Accounts</a>
+      <a href="TradeLedgerTidewater.dc.html">Trades</a>
+      <a href="CalendarTidewater.dc.html">Calendar</a>
+      <a href="JournalTidewater.dc.html" aria-current="page">Journal</a>
+      <a href="RiskTidewater.dc.html">Risk</a>
+      <a href="ReportsTidewater.dc.html">Reports</a>
+    </nav>
+    <div class="tools">
+      <span class="alert">1 risk alert</span>
+      <a class="btn" href="JournalTidewaterDark.dc.html">Dark</a>
+      <button class="btn quiet" type="button">Search <kbd>⌘K</kbd></button>
+    </div>
+  </header>
+
+  <div class="titlerow">
+    <div>
+      <h1>Trading journal</h1>
+      <p>Context, plan, debrief and a discipline score you set yourself. Scores are never estimated from P&amp;L.</p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Period">
+        <button type="button" aria-pressed="false">Week</button>
+        <button type="button" aria-pressed="false">Month</button>
+        <button type="button" aria-pressed="true">All time</button>
+      </div>
+      <button class="btn" type="button">All accounts, 3</button>
+      <button class="btn dark" type="button">+ New journal entry</button>
+    </div>
+  </div>
+
+  <main class="grid">
+
+    <aside class="side" aria-label="Past sessions">
+      <div class="eyebrow" style="padding:0 4px">Past sessions · 3</div>
+
+      <button class="sess" type="button" aria-current="true">
+        <div class="row1"><span class="d">2024-03-18</span><span class="pill score-ok">Discipline 10/10</span></div>
+        <p>Executed 2 trades (XAUUSD and US30), both hit full take profit. Scaled out properly and let runners breathe.</p>
+        <div class="row2"><span>Mood: Disciplined</span><span>2 trades</span></div>
+      </button>
+
+      <button class="sess" type="button" aria-current="false">
+        <div class="row1"><span class="d">2024-03-19</span><span class="pill score-low">Discipline 5/10</span></div>
+        <p>Violated checklist on EURUSD by front-running the signal. Lost $314. Recovered on BTC swing with $3,270 profit.</p>
+        <div class="row2"><span>Mood: Frustrated</span><span class="flagp">Behavioral leak</span></div>
+      </button>
+
+      <button class="sess" type="button" aria-current="false">
+        <div class="row1"><span class="d">2024-03-20</span><span class="pill score-ok">Discipline 9/10</span></div>
+        <p>Entered London Gold sell with tight stop. Monitoring rule limits carefully.</p>
+        <div class="row2"><span>Mood: Calm</span><span>1 open</span></div>
+      </button>
+
+      <section class="tile trend" aria-label="Average discipline">
+        <div class="thead" style="margin-bottom:4px"><span class="lbl">Average discipline</span></div>
+        <div class="avgrow"><span class="avgv">8.0</span><span class="avgof">/ 10</span></div>
+        <div class="scale" role="img" aria-label="Scores 10, 5 and 9 on a 0 to 10 scale; average 8.0">
+          <div class="bands"><i class="b-off"></i><i class="b-mix"></i><i class="b-on"></i></div>
+          <i class="avgmark" style="left:80%"></i>
+          <i class="dot" style="left:100%"></i>
+          <i class="dot" style="left:50%"></i>
+          <i class="dot" style="left:90%"></i>
+        </div>
+        <div class="ticks"><span>0</span><span>5</span><span>8</span><span>10</span></div>
+        <div class="chips">
+          <div class="ck"><small>18 Mar</small><b>10</b></div>
+          <div class="ck low"><small>19 Mar</small><b>5</b></div>
+          <div class="ck"><small>20 Mar</small><b>9</b></div>
+        </div>
+        <div class="stats3">
+          <div><small>Median</small><b>9.0</b></div>
+          <div><small>Range</small><b>5 to 10</b></div>
+          <div><small>Leaks</small><b>1 of 3</b></div>
+        </div>
+        <div class="sub legend">Self-scored. Bands: 0 to 4 off plan, 5 to 7 mixed, 8 to 10 disciplined.</div>
+      </section>
+    </aside>
+
+    <section class="tile detail" aria-label="Session journal, 2024-03-18">
+      <div class="dhead">
+        <div>
+          <div class="eyebrow">Session journal</div>
+          <h2>2024-03-18</h2>
+          <div class="meta"><span class="pill mood">Disciplined</span><span class="sub">2 trades · Self-scored</span></div>
+        </div>
+        <div class="scores">
+          <div class="sc p"><svg viewBox="0 0 44 44"><circle class="ring-bg" cx="22" cy="22" r="18"></circle><circle class="ring" cx="22" cy="22" r="18" stroke-dasharray="103.7 113.1"></circle></svg><div class="txt">9/10<small>Prep</small></div></div>
+          <div class="sc e"><svg viewBox="0 0 44 44"><circle class="ring-bg" cx="22" cy="22" r="18"></circle><circle class="ring" cx="22" cy="22" r="18" stroke-dasharray="113.1 113.1"></circle></svg><div class="txt">10/10<small>Execution</small></div></div>
+          <div class="sc hi"><svg viewBox="0 0 44 44"><circle class="ring-bg" cx="22" cy="22" r="18"></circle><circle class="ring" cx="22" cy="22" r="18" stroke-dasharray="113.1 113.1"></circle></svg><div class="txt">10/10<small>Discipline</small></div></div>
+        </div>
+      </div>
+
+      <div class="secs">
+        <div class="sec"><span class="eyebrow">Macro backdrop and catalysts</span><p>US yields slightly softer. Geopolitical tensions lifting metals.</p></div>
+        <div class="sec"><span class="eyebrow">HTF bias and narrative</span><p>Bullish Gold. Bearish US30. Neutral EURUSD.</p></div>
+
+        <div class="sec plan wide"><span class="eyebrow">Session trading plan and gameplan</span><p>Only trade London open sweep and NY session displacement. No afternoon chop.</p></div>
+
+        <div class="sec exec wide"><span class="eyebrow">Post-session debrief and execution summary</span><p>Executed 2 trades (XAUUSD and US30), both hit full take profit. Scaled out properly and let runners breathe.</p>
+          <div class="link"><span>Linked executions: none yet</span><button class="btn quiet" type="button" style="height:30px;padding:0 12px">Link trades</button></div>
+        </div>
+
+        <div class="sec lesson wide"><span class="eyebrow">Key lesson and rule reinforcement</span><p>Sticking to predefined R-multiples and not closing early yielded an extra 1.2R overall.</p></div>
+
+        <div class="pitfalls" aria-label="Behavioral pitfalls audit">
+          <span class="eyebrow">Behavioral pitfalls audit · none flagged this session</span>
+          <span class="pf"><i></i>FOMO</span>
+          <span class="pf"><i></i>Revenge trading</span>
+          <span class="pf"><i></i>Overtrading</span>
+          <span class="pf"><i></i>Moved stop loss</span>
+          <span class="pf"><i></i>Ignored plan or rules</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

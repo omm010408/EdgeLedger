@@ -33,28 +33,28 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
   const router = useRouter();
   const { addAccount } = useTrading();
 
-  // Form Fields
-  const [label, setLabel] = useState('Apex 100K Funded Live #1');
+  // Form Fields - Clean initial state with informative placeholders
+  const [label, setLabel] = useState('');
   // Manual prop firm / broker name (NO dropdown/select)
-  const [brokerOrFirm, setBrokerOrFirm] = useState('Apex Trader Funding');
+  const [brokerOrFirm, setBrokerOrFirm] = useState('');
   const [baseCurrency, setBaseCurrency] = useState('USD');
   const [accountType, setAccountType] = useState<AccountTypeCategory>('evaluation');
-  const [startingBalance, setStartingBalance] = useState('100000');
+  const [startingBalance, setStartingBalance] = useState('');
   const [phase, setPhase] = useState<number | null>(1);
 
   // Personalized Loss Limits
   const [dailyLossMode, setDailyLossMode] = useState<DailyLossMode>('pct_day_start');
-  const [dailyLossValue, setDailyLossValue] = useState('5.0');
+  const [dailyLossValue, setDailyLossValue] = useState('');
   const [dailyResetLocalTime, setDailyResetLocalTime] = useState('00:00');
   const [dailyResetTimezone, setDailyResetTimezone] = useState('UTC');
 
   const [totalLossMode, setTotalLossMode] = useState<TotalLossMode>('trailing_peak');
-  const [totalLossValue, setTotalLossValue] = useState('5.0');
+  const [totalLossValue, setTotalLossValue] = useState('');
   const [warnThresholdPct, setWarnThresholdPct] = useState(80);
   const [enforcement, setEnforcement] = useState<EnforcementMode>('enforce');
-  const [newsRestricted, setNewsRestricted] = useState(true);
+  const [newsRestricted, setNewsRestricted] = useState(false);
 
-  const [notes, setNotes] = useState('Trailing drawdown from peak, scale down after 3 losing days, no trading during London open.');
+  const [notes, setNotes] = useState('');
 
   // Submission State
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -587,6 +587,7 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
                   <input
                     type="number"
                     step={dailyLossMode === 'pct_day_start' ? '0.1' : '100'}
+                    placeholder={dailyLossMode === 'pct_day_start' ? '5.0' : '2500'}
                     value={dailyLossValue}
                     onChange={(e) => setDailyLossValue(e.target.value)}
                   />
@@ -651,6 +652,7 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
                   <input
                     type="number"
                     step="0.5"
+                    placeholder="e.g. 5.0 or 10.0"
                     value={totalLossValue}
                     onChange={(e) => setTotalLossValue(e.target.value)}
                   />

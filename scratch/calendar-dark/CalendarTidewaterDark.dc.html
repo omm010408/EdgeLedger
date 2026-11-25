@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EdgeLedger calendar, dark</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&amp;display=swap">
+<style>
+:root{color-scheme:dark;--bg:#050A0B;--tile:#0B1415;--line:#34544F;--line-strong:#4F7470;--ink:#FFFFFF;--ink-2:#CFE2DE;--ink-3:#A9C1BD;--pill:#13211F;--track:#1A2D2B;--ring-track:#243F3C;--ring-empty:#6E8B86;--hero:#0A4D4C;--hero-ink:#FFFFFF;--hero-2:#CFEEE6;--hero-line:#9BF3DF;--hero-rule:rgba(255,255,255,0.24);--hero-chip:rgba(155,243,223,0.18);--sun:#FFD56B;--sun-ink:#0A0800;--sun-disc:#FFE595;--aqua:#8FEBD3;--aqua-ink:#03211C;--aqua-chip:#E9FBF5;--aqua-num:#03211C;--gain:#5BE6AE;--loss:#FF8F80;--warn:#FFB86B;--warn-bg:rgba(255,184,107,0.12);--warn-line:rgba(255,184,107,0.6);--s1:#3987E5;--s2:#D95926;--s3:#9085E9;--b1:#5BE6AE;--b2:#2E9C72;--buy-bg:#16365F;--buy-ink:#9CC8FF;--sell-bg:#1A2D2B;--sell-ink:#E6F2EF;--wave:#0E1D1E;--ripple:#17302D;--focus:#9BF3DF}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg)}
+.board{width:100%;height:1080px;overflow:hidden;display:flex;flex-direction:column;padding:24px 32px 28px;background:var(--bg);color:var(--ink);font-family:'Instrument Sans',Inter,ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:20px;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;-webkit-font-smoothing:antialiased}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+button{font:inherit;color:inherit}
+
+/* Header */
+.top{display:flex;align-items:center;gap:28px;height:56px;flex:none}
+.brand{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;letter-spacing:-0.01em}
+.mark{display:grid;place-items:center;width:32px;height:32px;border-radius:58% 42% 46% 54% / 52% 48% 52% 48%;background:var(--hero);color:var(--hero-ink);font-size:15px;font-weight:700;line-height:1}
+.nav{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.nav a{display:inline-flex;align-items:center;height:32px;padding:0 14px;border-radius:999px;color:var(--ink-2);font-weight:500;text-decoration:none}
+.nav a[aria-current="page"]{background:var(--tile);color:var(--ink);font-weight:600;box-shadow:inset 0 0 0 1px var(--line-strong)}
+.tools{margin-left:auto;display:flex;align-items:center;gap:10px}
+.alert{display:inline-flex;align-items:center;height:32px;padding:0 13px;border-radius:999px;background:var(--warn-bg);box-shadow:inset 0 0 0 1px var(--warn-line);color:var(--warn);font-size:13px;font-weight:600;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border-radius:999px;border:1px solid var(--line-strong);background:var(--tile);color:var(--ink);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--ink)}
+.btn.dark{background:var(--ink);border-color:var(--ink);color:var(--tile);font-weight:600}
+.btn.quiet{color:var(--ink-2)}
+.btn.full{width:100%;height:42px;font-weight:600}
+kbd{padding:3px 6px;border-radius:6px;background:var(--pill);color:var(--ink-2);font-size:11px;font-weight:600}
+.seg{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.seg button{height:28px;padding:0 14px;border:0;border-radius:999px;background:transparent;color:var(--ink-2);font-size:13px;font-weight:500;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--tile);font-weight:600}
+
+/* Title */
+.titlerow{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-top:26px;flex:none}
+.titlerow h1{margin:0;font-size:36px;line-height:40px;font-weight:600;letter-spacing:-0.03em}
+.titlerow p{margin:8px 0 0;color:var(--ink-2);font-size:15px;line-height:22px}
+.controls{display:flex;gap:10px;align-items:center}
+
+/* Bento */
+.grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr));gap:16px;margin-top:20px}
+.tile{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column;padding:22px 24px;border-radius:32px;background:var(--tile);border:1px solid var(--line)}
+.lbl{font-size:13px;line-height:18px;font-weight:600;color:var(--ink-2)}
+.sub{font-size:13px;line-height:18px;color:var(--ink-3)}
+.foot{margin-top:auto;font-size:12px;line-height:16px;color:var(--ink-3)}
+.pill{display:inline-flex;align-items:center;height:26px;padding:0 12px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.gain{color:var(--gain)}
+.loss{color:var(--loss)}
+.warn{color:var(--warn)}
+
+/* Calendar */
+.cal{grid-column:1 / 9;grid-row:1 / 4;padding:22px 24px 20px}
+.calhead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.calhead h2{margin:0;font-size:24px;line-height:28px;font-weight:600;letter-spacing:-0.02em}
+.calhead p{margin:4px 0 0;font-size:13px;line-height:18px;color:var(--ink-3)}
+.legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;justify-content:flex-end;font-size:12px;line-height:16px;color:var(--ink-2);white-space:nowrap}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.ramp{display:inline-block;width:110px;height:8px;border-radius:999px;background:linear-gradient(90deg,color-mix(in srgb,var(--loss) 45%,var(--tile)) 0%,var(--tile) 34%,color-mix(in srgb,var(--gain) 22%,var(--tile)) 60%,color-mix(in srgb,var(--gain) 45%,var(--tile)) 80%,var(--gain) 100%)}
+.sw{display:inline-block;width:12px;height:12px;border-radius:4px;background:var(--pill)}
+.sw.op{background:color-mix(in srgb,var(--s3) 14%,var(--tile));border:1.5px dashed var(--s3)}
+.sw.sel{background:var(--tile);box-shadow:0 0 0 2px var(--sun)}
+.weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr)) 96px;gap:8px;margin-top:18px;font-size:11px;line-height:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:0 10px}
+.weeks{display:grid;grid-template-columns:repeat(7,minmax(0,1fr)) 96px;grid-template-rows:repeat(6,minmax(0,1fr));gap:8px;flex:1;min-height:0;margin-top:8px}
+.cell{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;padding:10px 11px 10px;border-radius:16px;border:1px solid var(--line);background:var(--tile)}
+.cell .dn{font-size:12px;line-height:16px;font-weight:600;color:var(--ink-2)}
+.cell .pl{margin-top:auto;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;line-height:18px;font-weight:600;white-space:nowrap;color:var(--ink)}
+.cell .ct{margin-top:3px;font-size:11px;line-height:14px;color:var(--ink-2);white-space:normal;overflow-wrap:break-word}
+.cell .mag{margin-top:8px;height:4px;border-radius:999px;background:color-mix(in srgb,var(--gain) 18%,transparent);overflow:hidden}
+.cell .mag i{display:block;height:100%;border-radius:999px;background:var(--gain)}
+.cell.mu{opacity:.42}
+.cell.mu .dn{color:var(--ink-3)}
+.cell.t1{background:color-mix(in srgb,var(--gain) 9%,var(--tile));border-color:color-mix(in srgb,var(--gain) 20%,var(--tile))}
+.cell.t2{background:color-mix(in srgb,var(--gain) 18%,var(--tile));border-color:color-mix(in srgb,var(--gain) 32%,var(--tile))}
+.cell.t3{background:color-mix(in srgb,var(--gain) 30%,var(--tile));border-color:color-mix(in srgb,var(--gain) 46%,var(--tile))}
+.cell.t4{background:var(--hero);border-color:var(--hero)}
+.cell.t4 .dn,.cell.t4 .ct{color:var(--hero-2)}
+.cell.t4 .pl{color:var(--hero-ink)}
+.cell.t4 .mag{background:var(--hero-rule)}
+.cell.t4 .mag i{background:var(--hero-line)}
+.cell.t1 .dn,.cell.t2 .dn,.cell.t3 .dn{color:var(--ink)}
+.cell.op{border:1.5px dashed var(--s3);background:color-mix(in srgb,var(--s3) 12%,var(--tile))}
+.cell.op .pl{color:var(--s3)}
+.cell.sel{box-shadow:0 0 0 2px var(--sun)}
+.cell.wk{background:var(--pill);border-color:transparent;padding:10px 10px 10px}
+.cell.wk .wl{font-size:11px;line-height:14px;font-weight:600;color:var(--ink-3)}
+.cell.wk .wt{margin-top:auto;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;line-height:16px;font-weight:600;color:var(--ink-3)}
+.cell.wk.hit{background:color-mix(in srgb,var(--sun) 16%,var(--tile));border-color:color-mix(in srgb,var(--sun) 42%,var(--tile))}
+.cell.wk.hit .wl{color:var(--ink-2)}
+.cell.wk.hit .wt{align-self:flex-start;display:inline-flex;height:22px;align-items:center;padding:0 8px;border-radius:999px;background:var(--sun);color:var(--sun-ink);font-size:11px}
+
+/* Right column */
+.hero{grid-column:9 / 13;grid-row:1;padding:20px 24px 18px;border:0;border-radius:44px;background:var(--hero);color:var(--hero-ink)}
+.hero .lbl{color:var(--hero-2)}
+.big{margin-top:8px;font-size:52px;line-height:52px;font-weight:600;letter-spacing:-0.045em;white-space:nowrap}
+.big small{font-size:26px;letter-spacing:-0.02em;font-weight:500;color:var(--hero-2)}
+.delta{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:14px;color:var(--hero-2)}
+.delta .pill{height:26px;padding:0 11px;background:var(--hero-chip);color:var(--hero-ink)}
+.spark{position:relative;flex:1;min-height:56px;margin-top:14px;display:flex;flex-direction:column}
+.spark svg{flex:1;width:100%;min-height:0;display:block}
+.axis{display:flex;justify-content:space-between;font-size:11px;line-height:14px;color:var(--hero-2);margin-top:6px}
+
+.detail{grid-column:9 / 13;grid-row:2;padding:20px 24px}
+.dhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.dhead h3{margin:6px 0 0;font-size:20px;line-height:26px;font-weight:600;letter-spacing:-0.01em}
+.dval{margin-top:10px;font-size:32px;line-height:36px;font-weight:600;letter-spacing:-0.03em;font-family:'JetBrains Mono',ui-monospace,monospace;white-space:nowrap}
+.trow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;align-items:center;height:36px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-2)}
+.trow b{color:var(--ink);font-weight:600}
+.trow .num{font-family:'JetBrains Mono',ui-monospace,monospace;text-align:right;white-space:nowrap}
+.rp{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;background:color-mix(in srgb,var(--gain) 16%,transparent);color:var(--gain);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;font-weight:600;white-space:nowrap}
+.disc{margin-top:auto;padding:12px 14px;border-radius:16px;background:var(--pill);font-size:12px;line-height:17px;color:var(--ink-2)}
+.disc b{color:var(--ink);font-weight:600}
+.detail .btn{margin-top:10px}
+
+.sunt{grid-column:9 / 11;grid-row:3;background:var(--sun);border:0;color:var(--sun-ink)}
+.sunt .lbl,.sunt .sub,.sunt .foot{color:var(--sun-ink)}
+.sunt .n{margin-top:10px;font-size:30px;line-height:34px;font-weight:600;letter-spacing:-0.03em;font-family:'JetBrains Mono',ui-monospace,monospace;white-space:nowrap}
+.mint{grid-column:11 / 13;grid-row:3;background:var(--aqua);border:0;color:var(--aqua-ink)}
+.mint .lbl,.mint .sub,.mint .foot{color:var(--aqua-ink)}
+.mint .n{margin-top:10px;font-size:30px;line-height:34px;font-weight:600;letter-spacing:-0.03em;color:var(--aqua-ink);white-space:nowrap}
+</style>
+</helmet>
+
+<div class="board">
+  <header class="top">
+    <div class="brand"><span class="mark" aria-hidden="true">E</span>EdgeLedger</div>
+    <nav class="nav" aria-label="Primary">
+      <a href="/">Overview</a>
+      <a href="/accounts">Accounts</a>
+      <a href="/trades">Trades</a>
+      <a href="/calendar" aria-current="page">Calendar</a>
+      <a href="/journal">Journal</a>
+      <a href="/risk">Risk</a>
+      <a href="/reports">Reports</a>
+    </nav>
+    <div class="tools">
+      <span class="alert">1 risk alert</span>
+      <button class="btn quiet" type="button">Search <kbd>⌘K</kbd></button>
+    </div>
+  </header>
+
+  <div class="titlerow">
+    <div>
+      <h1>Trading calendar</h1>
+      <p>Net P&amp;L, trades and discipline for each day. Dates use the account ruleset timezone.</p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" aria-pressed="true">Monthly</button>
+        <button type="button" aria-pressed="false">Weekly</button>
+        <button type="button" aria-pressed="false">Daily</button>
+      </div>
+      <button class="btn" type="button">All accounts, 3</button>
+      <button class="btn" type="button">Live only</button>
+    </div>
+  </div>
+
+  <main class="grid">
+
+    <section class="tile cal" aria-label="March 2026 calendar">
+      <div class="calhead">
+        <div>
+          <h2>March 2026</h2>
+          <p>Shade scales with the best day in view. Bar shows each day's share of it.</p>
+        </div>
+        <div class="legend">
+          <span>Loss<i class="ramp" aria-hidden="true"></i>Profit</span>
+          <span><i class="sw op"></i>Open trade</span>
+          <span><i class="sw sel"></i>Selected</span>
+        </div>
+      </div>
+      <div class="weekdays" aria-hidden="true"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span><span>Week</span></div>
+      <div class="weeks" role="grid" aria-label="Days in March 2026">
+
+        <div class="cell mu"><span class="dn">23</span></div>
+        <div class="cell mu"><span class="dn">24</span></div>
+        <div class="cell mu"><span class="dn">25</span></div>
+        <div class="cell mu"><span class="dn">26</span></div>
+        <div class="cell mu"><span class="dn">27</span></div>
+        <div class="cell mu"><span class="dn">28</span></div>
+        <div class="cell"><span class="dn">1</span></div>
+        <div class="cell wk"><span class="wl">Wk 23</span><span class="wt">no trades</span></div>
+
+        <div class="cell"><span class="dn">2</span></div>
+        <div class="cell"><span class="dn">3</span></div>
+        <div class="cell"><span class="dn">4</span></div>
+        <div class="cell"><span class="dn">5</span></div>
+        <div class="cell"><span class="dn">6</span></div>
+        <div class="cell"><span class="dn">7</span></div>
+        <div class="cell"><span class="dn">8</span></div>
+        <div class="cell wk"><span class="wl">Wk 2</span><span class="wt">no trades</span></div>
+
+        <div class="cell"><span class="dn">9</span></div>
+        <div class="cell"><span class="dn">10</span></div>
+        <div class="cell"><span class="dn">11</span></div>
+        <div class="cell"><span class="dn">12</span></div>
+        <div class="cell"><span class="dn">13</span></div>
+        <div class="cell"><span class="dn">14</span></div>
+        <div class="cell"><span class="dn">15</span></div>
+        <div class="cell wk"><span class="wl">Wk 9</span><span class="wt">no trades</span></div>
+
+        <div class="cell"><span class="dn">16</span></div>
+        <div class="cell"><span class="dn">17</span></div>
+        <div class="cell t4 sel" role="gridcell" tabindex="0" aria-label="18 March, net plus 4,115 dollars, 2 trades, 100 percent win rate, selected"><span class="dn">18</span><span class="pl">+$4,115</span><span class="ct">2 trades, 100% win</span><span class="mag"><i style="width:100%"></i></span></div>
+        <div class="cell t3" role="gridcell" tabindex="0" aria-label="19 March, net plus 2,956 dollars, 2 trades, 50 percent win rate"><span class="dn">19</span><span class="pl">+$2,956</span><span class="ct">2 trades, 50% win</span><span class="mag"><i style="width:72%"></i></span></div>
+        <div class="cell op" role="gridcell" tabindex="0" aria-label="20 March, open trade, no closed P&amp;L"><span class="dn">20</span><span class="pl">Open</span><span class="ct">1 open trade</span></div>
+        <div class="cell"><span class="dn">21</span></div>
+        <div class="cell"><span class="dn">22</span></div>
+        <div class="cell wk hit"><span class="wl">Wk 16</span><span class="wt">+$7,071.00</span></div>
+
+        <div class="cell"><span class="dn">23</span></div>
+        <div class="cell"><span class="dn">24</span></div>
+        <div class="cell"><span class="dn">25</span></div>
+        <div class="cell"><span class="dn">26</span></div>
+        <div class="cell"><span class="dn">27</span></div>
+        <div class="cell"><span class="dn">28</span></div>
+        <div class="cell"><span class="dn">29</span></div>
+        <div class="cell wk"><span class="wl">Wk 23</span><span class="wt">no trades</span></div>
+
+        <div class="cell"><span class="dn">30</span></div>
+        <div class="cell"><span class="dn">31</span></div>
+        <div class="cell mu"><span class="dn">1</span></div>
+        <div class="cell mu"><span class="dn">2</span></div>
+        <div class="cell mu"><span class="dn">3</span></div>
+        <div class="cell mu"><span class="dn">4</span></div>
+        <div class="cell mu"><span class="dn">5</span></div>
+        <div class="cell wk"><span class="wl">Wk 30</span><span class="wt">no trades</span></div>
+
+      </div>
+    </section>
+
+    <section class="tile hero" aria-label="March net P&amp;L">
+      <div class="lbl">Net P&amp;L, March, closed trades</div>
+      <div class="big">+$7,071<small>.00</small></div>
+      <div class="delta"><span class="pill">+4.04%</span>on a $175,000.00 start</div>
+      <div class="spark" role="img" aria-label="Cumulative P&amp;L for March: flat until 18 March, then up to +$7,071 on 19 March">
+        <svg viewBox="0 0 300 90" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="hg" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0" style="stop-color:var(--hero-line);stop-opacity:.42"></stop>
+              <stop offset="1" style="stop-color:var(--hero-line);stop-opacity:0"></stop>
+            </linearGradient>
+          </defs>
+          <path d="M0 80 L160 80 L170 39 L180 10 L300 10 L300 90 L0 90 Z" fill="url(#hg)"></path>
+          <path d="M0 80 L160 80 L170 39 L180 10 L300 10" fill="none" style="stroke:var(--hero-line);stroke-width:2.5;stroke-linejoin:round;vector-effect:non-scaling-stroke"></path>
+        </svg>
+        <div class="axis"><span>1 Mar</span><span>31 Mar</span></div>
+      </div>
+    </section>
+
+    <section class="tile detail" aria-label="Selected day, Wednesday 18 March">
+      <div class="dhead">
+        <div>
+          <div class="lbl">Selected day</div>
+          <h3>Wednesday 18 March</h3>
+        </div>
+        <span class="pill" style="background:color-mix(in srgb,var(--gain) 14%,transparent);color:var(--gain)">2 closed</span>
+      </div>
+      <div class="dval gain">+$4,115.00</div>
+      <div class="trow"><span><b>XAUUSD</b> buy</span><span class="num gain">+$2,880.00</span><span><span class="rp">+2.88R</span></span></div>
+      <div class="trow"><span><b>US30</b> sell</span><span class="num gain">+$1,235.00</span><span><span class="rp">+2.47R</span></span></div>
+      <div class="disc"><b>Discipline score: not scored.</b> No journal entry exists for this day. Scores are never estimated from P&amp;L.</div>
+      <button class="btn dark full" type="button">Open journal for 18 March</button>
+    </section>
+
+    <section class="tile sunt" aria-label="Best day">
+      <div class="lbl">Best day</div>
+      <div class="n">+$4,115</div>
+      <div class="foot">18 March · 2 trades</div>
+    </section>
+
+    <section class="tile mint" aria-label="Trades in view">
+      <div class="lbl">Trades in view</div>
+      <div class="n">4 closed</div>
+      <div class="foot">75% win · 2 days · 1 open</div>
+    </section>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

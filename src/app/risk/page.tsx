@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useTrading } from '../../context/TradingContext';
 import {
   ShieldAlert,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { evaluateAccountRule } from '../../lib/calculations/financialEngine';
 import { AccountRule, RuleStatus } from '../../lib/types/financial';
+import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
 
 export default function RiskTerminalPage() {
   const {
@@ -26,6 +27,7 @@ export default function RiskTerminalPage() {
     trades,
     toggleRule,
     updateRule,
+    deleteRule,
     isPnlHidden,
   } = useTrading();
 
@@ -34,6 +36,15 @@ export default function RiskTerminalPage() {
     if (selectedAccountId && selectedAccountId !== 'ALL') return selectedAccountId;
     return accounts[0]?.id || '';
   });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const accId = new URLSearchParams(window.location.search).get('accountId');
+    if (accId && accounts.some((a) => a.id === accId)) {
+      setLocalAccountId(accId);
+      setSelectedAccountId(accId);
+    }
+  }, [accounts, setSelectedAccountId]);
 
   const [period, setPeriod] = useState<'session' | 'week' | 'month'>('week');
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
@@ -103,16 +114,35 @@ export default function RiskTerminalPage() {
     });
   }, [activeAccount]);
 
-  // Extract key rule thresholds
+  const startingBal = activeAccount?.startingBalance || 100000;
+
+  // Extract key rule thresholds with unit normalization (dollars vs percent)
   const dailyLossRule = evaluatedRules.find((r) => r.rule.ruleType === 'daily_loss_limit');
   const drawdownRule = evaluatedRules.find(
     (r) => r.rule.ruleType === 'trailing_drawdown' || r.rule.ruleType === 'max_overall_loss'
   );
   const tradeRiskRule = evaluatedRules.find((r) => r.rule.ruleType === 'max_risk_per_trade_pct');
 
-  const dailyLimitPct = dailyLossRule?.rule.thresholdValue || 5.0;
-  const drawdownLimitPct = drawdownRule?.rule.thresholdValue || 10.0;
-  const maxRiskPerTradePct = tradeRiskRule?.rule.thresholdValue || 1.0;
+  const dailyLimitPct = useMemo(() => {
+    if (!dailyLossRule) return 5.0;
+    const val = dailyLossRule.rule.thresholdValue;
+    if (dailyLossRule.rule.thresholdUnit === 'percent') return val;
+    return val > 100 ? Number(((val / startingBal) * 100).toFixed(1)) : val;
+  }, [dailyLossRule, startingBal]);
+
+  const drawdownLimitPct = useMemo(() => {
+    if (!drawdownRule) return 10.0;
+    const val = drawdownRule.rule.thresholdValue;
+    if (drawdownRule.rule.thresholdUnit === 'percent') return val;
+    return val > 100 ? Number(((val / startingBal) * 100).toFixed(1)) : val;
+  }, [drawdownRule, startingBal]);
+
+  const maxRiskPerTradePct = useMemo(() => {
+    if (!tradeRiskRule) return 1.0;
+    const val = tradeRiskRule.rule.thresholdValue;
+    if (tradeRiskRule.rule.thresholdUnit === 'percent') return val;
+    return val > 100 ? Number(((val / startingBal) * 100).toFixed(1)) : val;
+  }, [tradeRiskRule, startingBal]);
 
   // Open risk calculations
   const openTrades = useMemo(() => {
@@ -228,15 +258,17 @@ export default function RiskTerminalPage() {
   }, [hoveredAssetCategory, donutSegments, totalGrossR]);
 
   // Stress test / what-if metrics
-  const startingBal = activeAccount?.startingBalance || 100000;
   const nextFullLossDollars = (startingBal * maxRiskPerTradePct) / 100;
-  const lossesToDailyLimit = Math.max(1, Math.round(dailyLimitPct / maxRiskPerTradePct));
-  const lossesToTotalFloor = Math.max(1, Math.round(drawdownLimitPct / maxRiskPerTradePct));
+  const lossesToDailyLimit = Math.max(1, Math.min(20, Math.round(dailyLimitPct / maxRiskPerTradePct)));
+  const lossesToTotalFloor = Math.max(1, Math.min(20, Math.round(drawdownLimitPct / maxRiskPerTradePct)));
 
   // Dynamic values adjusted for interactive simulated loss count
   const effectiveSimulatedLosses = Math.min(lossesToDailyLimit, simulatedLosses);
   const remainingLossesToDaily = Math.max(0, lossesToDailyLimit - effectiveSimulatedLosses);
   const remainingDailyLimitPct = Math.max(0, dailyLimitPct - effectiveSimulatedLosses * maxRiskPerTradePct);
+
+  // SVG Gauge Dasharray (total circumference = 2 * PI * 86 ~= 540)
+  const ringDash = Number(((Math.max(0.01, remainingDailyLimitPct) / dailyLimitPct) * 540).toFixed(1));
 
   // Currency formatter
   const formatCur = (val: number) => {
@@ -257,17 +289,17 @@ export default function RiskTerminalPage() {
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col w-full">
+    <div className="flex-1 min-h-0 flex flex-col w-full overflow-y-auto pb-12">
       {/* Title & Controls Row */}
-      <div className="titlerow">
+      <div className="titlerow flex items-end justify-between gap-4 mt-4 mb-2 flex-none">
         <div>
-          <h1>Risk and exposure</h1>
-          <p>Limit usage, open risk and what-if losses, measured against your own rules.</p>
+          <h1 className="text-3xl font-semibold tracking-tight text-[var(--tw-ink)]">Risk and exposure</h1>
+          <p className="text-sm text-[var(--tw-ink-2)] mt-1.5">Limit usage, open risk and what-if losses, measured against your own rules.</p>
         </div>
 
-        <div className="controls">
+        <div className="controls flex items-center gap-2.5">
           {/* Period Segments */}
-          <div className="seg" role="group" aria-label="Period">
+          <div className="seg inline-flex items-center gap-0.5 p-1 rounded-full bg-[var(--tw-pill)] border border-[var(--tw-line)]" role="group" aria-label="Period">
             <button
               type="button"
               aria-pressed={period === 'session'}
@@ -294,7 +326,7 @@ export default function RiskTerminalPage() {
           {/* Account Selector Dropdown */}
           <div className="relative">
             <button
-              className="btn flex items-center gap-1.5"
+              className="btn flex items-center gap-2"
               type="button"
               onClick={() => setAccountDropdownOpen(!accountDropdownOpen)}
               aria-expanded={accountDropdownOpen}
@@ -347,20 +379,20 @@ export default function RiskTerminalPage() {
         {/* ================================================================ */}
         {/* TILE 1: HERO - RISK STATUS RING (Cols 1-4, Rows 1-2)             */}
         {/* ================================================================ */}
-        <section className="tile tw-risk-hero" aria-label="Risk status">
-          <div className="head">
+        <section className="tile tw-risk-hero select-none" aria-label="Risk status">
+          <div className="head flex items-center justify-between w-full select-none">
             <span className="eyebrow">Risk status · 19 Mar 2026 close</span>
-            <span className="pill">
+            <span className="pill select-none">
               <span className="d" />
               Within limits
             </span>
           </div>
 
-          <div className="ring">
+          <div className="tw-gauge-ring select-none">
             {/* Ambient radial glow behind the gauge */}
             <div className="ring-glow" />
 
-            <svg viewBox="0 0 200 200" aria-hidden="true">
+            <svg viewBox="0 0 200 200" aria-hidden="true" focusable="false" tabIndex={-1} style={{ outline: 'none' }}>
               <defs>
                 <linearGradient id="tw-risk-rg" x1="0" y1="0" x2="1" y2="1">
                   <stop offset="0" stopColor="var(--tw-hero-line)" />
@@ -383,10 +415,10 @@ export default function RiskTerminalPage() {
                 strokeWidth="14"
                 strokeLinecap="round"
                 transform="rotate(-90 100 100)"
-                strokeDasharray="540 540"
+                strokeDasharray={`${ringDash} 540`}
               />
             </svg>
-            <div className="rc">
+            <div className="rc select-none">
               <b>{remainingDailyLimitPct.toFixed(1)}%</b>
               <span>daily limit left</span>
             </div>
@@ -415,8 +447,8 @@ export default function RiskTerminalPage() {
         {/* ================================================================ */}
         {/* TILE 2: LIMIT USAGE METERS (Cols 5-9, Row 1)                     */}
         {/* ================================================================ */}
-        <section className="tile tw-risk-meters" aria-label="Limit usage">
-          <div className="head">
+        <section className="tile tw-risk-meters select-none" aria-label="Limit usage">
+          <div className="head flex items-center justify-between w-full select-none">
             <span className="eyebrow">Limit usage</span>
             <span className="sub">used of limit</span>
           </div>
@@ -503,11 +535,11 @@ export default function RiskTerminalPage() {
         {/* ================================================================ */}
         {/* TILE 3: ACTIVE ALERTS - SUN GOLD TILE (Cols 10-12, Row 1)         */}
         {/* ================================================================ */}
-        <section className="tile tw-risk-alerts" aria-label="Active alerts">
-          <div className="head">
+        <section className="tile tw-risk-alerts select-none" aria-label="Active alerts">
+          <div className="head flex items-center justify-between w-full select-none">
             <span className="eyebrow">Alerts</span>
             <span
-              className="pill"
+              className="pill select-none"
               style={{ background: 'var(--tw-sun-ink)', color: 'var(--tw-sun)' }}
             >
               1 active
@@ -536,8 +568,8 @@ export default function RiskTerminalPage() {
         {/* ================================================================ */}
         {/* TILE 4: R DISTRIBUTION BAR CHART (Cols 5-9, Row 2)               */}
         {/* ================================================================ */}
-        <section className="tile tw-risk-dist" aria-label="R per closed trade">
-          <div className="head">
+        <section className="tile tw-risk-dist select-none" aria-label="R per closed trade">
+          <div className="head flex items-center justify-between w-full select-none">
             <span className="eyebrow">R per closed trade</span>
             <span className="sub">
               {hoveredBarIndex !== null
@@ -639,15 +671,15 @@ export default function RiskTerminalPage() {
         {/* ================================================================ */}
         {/* TILE 5: ASSET DONUT - WHERE R CAME FROM (Cols 10-12, Row 2)       */}
         {/* ================================================================ */}
-        <section className="tile tw-risk-assets" aria-label="Gross R moved by asset">
-          <div className="head">
+        <section className="tile tw-risk-assets select-none" aria-label="Gross R moved by asset">
+          <div className="head flex items-center justify-between w-full select-none">
             <span className="eyebrow">Where R came from</span>
             <span className="sub">share of gross R</span>
           </div>
 
           <div className="dwrap">
             <div style={{ position: 'relative', flex: 'none' }}>
-              <svg viewBox="0 0 180 180" aria-hidden="true">
+              <svg viewBox="0 0 180 180" aria-hidden="true" focusable="false" tabIndex={-1}>
                 <g transform="translate(90 90)" fill="none" strokeWidth="22">
                   {donutSegments.map((seg) => (
                     <circle
@@ -669,7 +701,7 @@ export default function RiskTerminalPage() {
                   ))}
                 </g>
               </svg>
-              <div className="dc">
+              <div className="dc select-none">
                 <span className="mono" style={{ fontSize: 22, fontWeight: 600 }}>
                   {activeDonutInfo.label}
                 </span>
@@ -679,11 +711,11 @@ export default function RiskTerminalPage() {
               </div>
             </div>
 
-            <div className="dleg">
+            <div className="dleg select-none">
               {donutSegments.map((item) => (
                 <div
                   key={item.category}
-                  className="dl"
+                  className="dl select-none"
                   style={{
                     opacity:
                       hoveredAssetCategory === null || hoveredAssetCategory === item.category ? 1 : 0.45,
@@ -708,14 +740,14 @@ export default function RiskTerminalPage() {
         {/* ================================================================ */}
         {/* TILE 6: RULE CHECKS CHECKLIST (Cols 1-6, Row 3)                  */}
         {/* ================================================================ */}
-        <section className="tile tw-risk-rules" aria-label="Rule checks">
-          <div className="head">
+        <section className="tile tw-risk-rules select-none" aria-label="Rule checks">
+          <div className="head flex items-center justify-between w-full select-none">
             <span className="eyebrow">Rule checks</span>
             <span className="sub">4 on track · 2 to watch (click to configure)</span>
           </div>
 
           <div
-            className="rrow"
+            className="rrow select-none"
             role="button"
             tabIndex={0}
             onClick={() => {
@@ -724,14 +756,14 @@ export default function RiskTerminalPage() {
           >
             <span className="rn">Daily loss limit</span>
             <span className="rv">0.0% of {dailyLimitPct.toFixed(1)}%</span>
-            <span className="pill ok">
+            <span className="pill ok select-none">
               <span className="d" />
               On track
             </span>
           </div>
 
           <div
-            className="rrow"
+            className="rrow select-none"
             role="button"
             tabIndex={0}
             onClick={() => {
@@ -740,14 +772,14 @@ export default function RiskTerminalPage() {
           >
             <span className="rn">Max drawdown from peak</span>
             <span className="rv">0.0% of {drawdownLimitPct.toFixed(1)}%</span>
-            <span className="pill ok">
+            <span className="pill ok select-none">
               <span className="d" />
               On track
             </span>
           </div>
 
           <div
-            className="rrow"
+            className="rrow select-none"
             role="button"
             tabIndex={0}
             onClick={() => {
@@ -758,14 +790,14 @@ export default function RiskTerminalPage() {
             <span className="rv">
               {maxRiskPerTradePct.toFixed(1)}% of {maxRiskPerTradePct.toFixed(1)}%
             </span>
-            <span className="pill w">
+            <span className="pill w select-none">
               <span className="d" />
               At cap
             </span>
           </div>
 
           <div
-            className="rrow"
+            className="rrow select-none"
             role="button"
             tabIndex={0}
             onClick={() => {
@@ -777,14 +809,14 @@ export default function RiskTerminalPage() {
             <span className="rv">
               {openRiskPct.toFixed(1)}% of {(openRiskPct * 2).toFixed(1)}%
             </span>
-            <span className="pill ok">
+            <span className="pill ok select-none">
               <span className="d" />
               On track
             </span>
           </div>
 
           <div
-            className="rrow"
+            className="rrow select-none"
             role="button"
             tabIndex={0}
             onClick={() => {
@@ -794,14 +826,14 @@ export default function RiskTerminalPage() {
           >
             <span className="rn">Losing streak</span>
             <span className="rv">1 of 3 allowed</span>
-            <span className="pill ok">
+            <span className="pill ok select-none">
               <span className="d" />
               On track
             </span>
           </div>
 
           <div
-            className="rrow"
+            className="rrow select-none"
             role="button"
             tabIndex={0}
             onClick={() => {
@@ -811,7 +843,7 @@ export default function RiskTerminalPage() {
           >
             <span className="rn">Minimum trading days</span>
             <span className="rv">2 of 4</span>
-            <span className="pill w">
+            <span className="pill w select-none">
               <span className="d" />
               Behind
             </span>
@@ -821,8 +853,8 @@ export default function RiskTerminalPage() {
         {/* ================================================================ */}
         {/* TILE 7: WHAT-IF STRESS TEST (Cols 7-12, Row 3)                   */}
         {/* ================================================================ */}
-        <section className="tile tw-risk-stress" aria-label="What-if losses">
-          <div className="head">
+        <section className="tile tw-risk-stress select-none" aria-label="What-if losses">
+          <div className="head flex items-center justify-between w-full select-none">
             <span className="eyebrow">What if the next trades lose</span>
             <span className="sub" suppressHydrationWarning>
               {maxRiskPerTradePct.toFixed(1)}% risk on {formatCur(startingBal)}
@@ -1012,21 +1044,38 @@ export default function RiskTerminalPage() {
               </div>
             )}
 
-            <div className="flex justify-end gap-2.5 pt-3 border-t border-[var(--tw-line)]">
-              <button
-                type="button"
-                onClick={() => setIsEditModalOpen(false)}
-                className="px-4 py-2 rounded-full text-xs font-medium text-[var(--tw-ink-2)] hover:bg-white/5 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveRule}
-                className="px-5 py-2 rounded-full text-xs font-semibold bg-[var(--tw-hero-line)] text-[var(--tw-hero)] hover:opacity-90 shadow-md transition-all"
-              >
-                Save Limits
-              </button>
+            <div className="flex items-center justify-between gap-2.5 pt-3 border-t border-[var(--tw-line)]">
+              {editingRule ? (
+                <DeleteConfirmButton
+                  variant="button"
+                  label="Delete rule"
+                  confirmLabel="Confirm delete"
+                  title="Remove this governance rule"
+                  onConfirm={() => {
+                    deleteRule(activeAccount.id, editingRule.id);
+                    setEditingRule(null);
+                    setIsEditModalOpen(false);
+                  }}
+                />
+              ) : (
+                <span />
+              )}
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 rounded-full text-xs font-medium text-[var(--tw-ink-2)] hover:bg-white/5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRule}
+                  className="px-5 py-2 rounded-full text-xs font-semibold bg-[var(--tw-hero-line)] text-[var(--tw-hero)] hover:opacity-90 shadow-md transition-all"
+                >
+                  Save Limits
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -3,26 +3,31 @@
 import React, { useState, useEffect } from 'react';
 import { useTrading } from '../../context/TradingContext';
 import { calculatePositionSize } from '../../lib/calculations/financialEngine';
-import { TradeDirection, TradeStatus } from '../../lib/types/financial';
+import { Trade, TradeDirection, TradeStatus } from '../../lib/types/financial';
 import { X, CheckSquare, Square, Calculator, AlertCircle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 interface QuickTradeModalProps {
   isOpen: boolean;
   onClose: () => void;
+  editTrade?: Trade | null;
 }
 
-export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({ isOpen, onClose }) => {
-  const { accounts, selectedAccountId, instruments, strategies, addTrade } = useTrading();
+export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
+  isOpen,
+  onClose,
+  editTrade = null,
+}) => {
+  const { accounts, selectedAccountId, instruments, strategies, addTrade, updateTrade } = useTrading();
 
-  // Form State
+  // Form State - Clean blank defaults with informative placeholders
   const [symbol, setSymbol] = useState('XAUUSD');
   const [direction, setDirection] = useState<TradeDirection>('BUY');
-  const [entryPrice, setEntryPrice] = useState<string>('2710.00');
-  const [stopLoss, setStopLoss] = useState<string>('2704.00');
-  const [takeProfit, setTakeProfit] = useState<string>('2728.00');
+  const [entryPrice, setEntryPrice] = useState<string>('');
+  const [stopLoss, setStopLoss] = useState<string>('');
+  const [takeProfit, setTakeProfit] = useState<string>('');
   const [riskPct, setRiskPct] = useState<string>('1.0');
   const [strategyId, setStrategyId] = useState<string>('');
-  const [setupType, setSetupType] = useState<string>('Fair Value Gap Retest');
+  const [setupType, setSetupType] = useState<string>('');
   const [session, setSession] = useState<'Asian' | 'London' | 'London Close' | 'New York' | 'Sydney'>('London');
   const [timeframe, setTimeframe] = useState<string>('15M');
   const [status, setStatus] = useState<TradeStatus>('OPEN');
@@ -41,35 +46,46 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({ isOpen, onClos
 
   const activeInstrument = instruments.find((i) => i.symbol === symbol) || instruments[0];
 
-  // Initialize selected accounts
+  // Populate form state when opening in Edit Mode vs New Mode
   useEffect(() => {
-    if (selectedAccountId !== 'ALL') {
-      setSelectedAccountIds([selectedAccountId]);
-    } else if (accounts.length > 0) {
-      setSelectedAccountIds([accounts[0].id]);
+    if (!isOpen) return;
+    if (editTrade) {
+      setSymbol(editTrade.instrumentSymbol || 'XAUUSD');
+      setDirection(editTrade.direction || 'BUY');
+      setEntryPrice(editTrade.entryPrice ? String(editTrade.entryPrice) : '');
+      setStopLoss(editTrade.stopLoss ? String(editTrade.stopLoss) : '');
+      setTakeProfit(editTrade.takeProfit ? String(editTrade.takeProfit) : '');
+      setRiskPct(editTrade.plannedRiskPct ? String(editTrade.plannedRiskPct) : '1.0');
+      setStrategyId(editTrade.strategyId || '');
+      setSetupType(editTrade.setupType || '');
+      setSession((editTrade.session as typeof session) || 'London');
+      setTimeframe(editTrade.timeframe || '15M');
+      setStatus(editTrade.status || 'OPEN');
+      setTradeThesis(editTrade.tradeThesis || '');
+      const allocAccs = editTrade.allocations?.map((a) => a.accountId).filter(Boolean) || [];
+      if (allocAccs.length > 0) {
+        setSelectedAccountIds(allocAccs);
+      }
+    } else {
+      setSymbol('XAUUSD');
+      setDirection('BUY');
+      setEntryPrice('');
+      setStopLoss('');
+      setTakeProfit('');
+      setRiskPct('1.0');
+      setStrategyId('');
+      setSetupType('');
+      setSession('London');
+      setTimeframe('15M');
+      setStatus('OPEN');
+      setTradeThesis('');
+      if (selectedAccountId !== 'ALL') {
+        setSelectedAccountIds([selectedAccountId]);
+      } else if (accounts.length > 0) {
+        setSelectedAccountIds([accounts[0].id]);
+      }
     }
-  }, [selectedAccountId, accounts]);
-
-  // Adjust default prices when symbol changes
-  useEffect(() => {
-    if (symbol === 'XAUUSD') {
-      setEntryPrice('2710.00');
-      setStopLoss(direction === 'BUY' ? '2704.00' : '2716.00');
-      setTakeProfit(direction === 'BUY' ? '2728.00' : '2692.00');
-    } else if (symbol === 'US30') {
-      setEntryPrice('43900');
-      setStopLoss(direction === 'BUY' ? '43800' : '44000');
-      setTakeProfit(direction === 'BUY' ? '44150' : '43650');
-    } else if (symbol === 'EURUSD') {
-      setEntryPrice('1.08500');
-      setStopLoss(direction === 'BUY' ? '1.08350' : '1.08650');
-      setTakeProfit(direction === 'BUY' ? '1.08950' : '1.08050');
-    } else if (symbol === 'BTCUSD') {
-      setEntryPrice('66000');
-      setStopLoss(direction === 'BUY' ? '64800' : '67200');
-      setTakeProfit(direction === 'BUY' ? '69600' : '62400');
-    }
-  }, [symbol, direction]);
+  }, [isOpen, editTrade, selectedAccountId, accounts]);
 
   if (!isOpen) return null;
 
@@ -102,7 +118,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({ isOpen, onClos
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!calcPreview && !calcError) return;
+    if (!calcPreview || calcError || selectedAccountIds.length === 0) return;
 
     const allocations = selectedAccountIds.map((accId) => {
       const acc = accounts.find((a) => a.id === accId);
@@ -154,25 +170,48 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({ isOpen, onClos
 
     const totalRiskUsd = allocations.reduce((sum, a) => sum + a.allocatedRiskUsd, 0);
 
-    addTrade({
-      instrumentSymbol: symbol,
-      strategyId: strategyId || undefined,
-      direction,
-      status,
-      timeframe,
-      session,
-      setupType,
-      entryPrice: numEntry,
-      stopLoss: numSl,
-      takeProfit: numTp > 0 ? numTp : undefined,
-      plannedRiskUsd: totalRiskUsd,
-      plannedRiskPct: numRisk,
-      plannedRr: calcPreview?.plannedRr || 2.0,
-      tradeThesis,
-      isRuleCompliant: allChecklistPassed,
-      allocations,
-      tags: [symbol, session, setupType],
-    });
+    if (editTrade) {
+      updateTrade({
+        ...editTrade,
+        instrumentSymbol: symbol,
+        strategyId: strategyId || undefined,
+        strategyName: strategies.find((s) => s.id === strategyId)?.name || editTrade.strategyName,
+        direction,
+        status: editTrade.status === 'CLOSED' ? 'CLOSED' : status,
+        timeframe,
+        session,
+        setupType: setupType || editTrade.setupType,
+        entryPrice: numEntry,
+        stopLoss: numSl,
+        takeProfit: numTp > 0 ? numTp : undefined,
+        plannedRiskUsd: totalRiskUsd > 0 ? totalRiskUsd : editTrade.plannedRiskUsd,
+        plannedRiskPct: numRisk,
+        plannedRr: calcPreview?.plannedRr || editTrade.plannedRr,
+        tradeThesis,
+        isRuleCompliant: allChecklistPassed,
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      addTrade({
+        instrumentSymbol: symbol,
+        strategyId: strategyId || undefined,
+        direction,
+        status,
+        timeframe,
+        session,
+        setupType,
+        entryPrice: numEntry,
+        stopLoss: numSl,
+        takeProfit: numTp > 0 ? numTp : undefined,
+        plannedRiskUsd: totalRiskUsd,
+        plannedRiskPct: numRisk,
+        plannedRr: calcPreview?.plannedRr || 2.0,
+        tradeThesis,
+        isRuleCompliant: allChecklistPassed,
+        allocations,
+        tags: [symbol, session, setupType].filter(Boolean),
+      });
+    }
 
     onClose();
   };
@@ -185,7 +224,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({ isOpen, onClos
           <div className="flex items-center space-x-2">
             <span className="w-2.5 h-2.5 rounded bg-edge-accent" />
             <h2 className="font-mono text-sm font-bold tracking-wider text-white uppercase">
-              RECORD NEW EXECUTION
+              {editTrade ? `EDIT EXECUTION · ${editTrade.instrumentSymbol}` : 'RECORD NEW EXECUTION'}
             </h2>
           </div>
           <button
@@ -275,6 +314,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({ isOpen, onClos
                 step="any"
                 value={entryPrice}
                 onChange={(e) => setEntryPrice(e.target.value)}
+                placeholder="0.00"
                 className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
                 required
               />
@@ -289,6 +329,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({ isOpen, onClos
                 step="any"
                 value={stopLoss}
                 onChange={(e) => setStopLoss(e.target.value)}
+                placeholder="0.00"
                 className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-loss/50 text-edge-loss font-mono focus:border-edge-loss outline-none tabular-nums"
                 required
               />
@@ -303,6 +344,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({ isOpen, onClos
                 step="any"
                 value={takeProfit}
                 onChange={(e) => setTakeProfit(e.target.value)}
+                placeholder="0.00 (optional)"
                 className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-profit/50 text-edge-profit font-mono focus:border-edge-profit outline-none tabular-nums"
               />
             </div>
@@ -569,7 +611,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({ isOpen, onClos
               type="submit"
               className="px-5 py-2 rounded bg-edge-accent text-edge-bg font-mono font-bold tracking-wider hover:bg-edge-accent-light transition-colors shadow-subtle"
             >
-              RECORD EXECUTION
+              {editTrade ? 'SAVE EXECUTION CHANGES' : 'RECORD EXECUTION'}
             </button>
           </div>
         </form>

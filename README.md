@@ -113,5 +113,29 @@ To connect your own Supabase project:
 
 ---
 
+## 7. Sign-In & Sync Layer — Pointing the Adapter at a Real Backend
+
+The client session and sync architecture wraps the existing fetch calls at the app root without modifying existing `SupabaseService` or `/api/v1/*` signatures:
+
+1. **Auth Endpoints (`src/lib/auth/sessionManager.ts` -> `createDefaultSessionTransport(baseUrl)`):**
+   - `POST <baseUrl>/auth/sign-in` -> validates email/password or passkey, sets `httpOnly`, `Secure`, `SameSite=Lax` cookies (`el_access`, `el_refresh`), returns `{ session }`.
+   - `POST <baseUrl>/auth/refresh` -> validates & rotates refresh cookie, returns refreshed `{ session }` (or `401` to trigger client sign-out).
+   - `POST <baseUrl>/auth/sign-out` -> revokes refresh token and clears auth cookies.
+   - To target an external API origin, configure `baseUrl` in `SessionSyncContext.tsx` (e.g. `process.env.NEXT_PUBLIC_SYNC_API_URL`) and ensure the backend enables `Access-Control-Allow-Credentials: true` for your frontend origin.
+
+2. **Sync Protocol Adapter (`src/lib/sync/syncProtocolAdapter.ts` -> `createHttpSyncProtocolAdapter({ baseUrl })`):**
+   - `GET <baseUrl>/sync/changes?cursor=<token>` -> returns `{ changes: SyncChangeEntry[], nextCursor: string }`.
+   - `POST <baseUrl>/sync/push` -> accepts `{ items: [{ idempotencyKey, entity, op, baseVersion, payload }] }`, returns `{ results: [{ idempotencyKey, status: 'accepted' | 'conflict' | 'rejected', ... }] }`.
+   - If your real backend uses different field names or endpoints (such as Supabase Edge Functions or custom REST routes), swap or wrap `createHttpSyncProtocolAdapter` without altering `TradingContext` or existing fetch helpers.
+
+3. **Transport Adapter (`src/lib/sync/transportAdapter.ts`):**
+   - Installed once at the app root inside `SessionSyncProvider`.
+   - Automatically adds `credentials: 'include'`, performs a single-flight `/auth/refresh` + retry once on `401` (signing out on a second `401`), and limits automatic `5xx`/network retries strictly to read (`GET`/`HEAD`) and idempotent outbox requests (`Idempotency-Key` or `/sync/push` items).
+
+4. **Server Signing Secret:**
+   - Set `EDGELEDGER_AUTH_SECRET` in `.env.local` for stable HMAC-SHA256 session cookie signing across server restarts.
+
+---
+
 *Trade with structure. Manage with precision.*  
 **EDGELEDGER TERMINAL OS**

@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import Link from 'next/link';
 import { useTrading } from '../../context/TradingContext';
 import { Trade, TradeAllocation } from '../../lib/types/financial';
 import { QuickTradeModal } from '../../components/modals/QuickTradeModal';
+import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
 import {
   Search,
   Plus,
@@ -17,6 +19,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   TrendingUp,
+  Edit3,
+  BookOpen,
 } from 'lucide-react';
 
 export default function TradesPage() {
@@ -29,14 +33,33 @@ export default function TradesPage() {
     filteredTrades,
     periodFilter,
     setPeriodFilter,
+    isPnlHidden,
+    isLoaded,
     deleteTrade,
     executePartialClose,
   } = useTrading();
 
   const [quickTradeOpen, setQuickTradeOpen] = useState(false);
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [selectedTradeId, setSelectedTradeId] = useState<string>('');
+  const [selectedDateFilter, setSelectedDateFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'WINS' | 'LOSSES'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const dateParam = params.get('date');
+    const tradeParam = params.get('tradeId');
+    if (dateParam) {
+      setSelectedDateFilter(dateParam);
+      setPeriodFilter('All time');
+    }
+    if (tradeParam) {
+      setSelectedTradeId(tradeParam);
+      setPeriodFilter('All time');
+    }
+  }, [setPeriodFilter]);
 
   // Partial close modal state
   const [partialCloseModalOpen, setPartialCloseModalOpen] = useState(false);
@@ -47,7 +70,9 @@ export default function TradesPage() {
   const tradesInPeriod = useMemo(() => {
     let list = filteredTrades;
 
-    if (periodFilter === 'Week') {
+    if (selectedDateFilter) {
+      list = list.filter((t) => (t.entryTime || t.createdAt).startsWith(selectedDateFilter));
+    } else if (periodFilter === 'Week') {
       const cutoff = new Date('2024-03-16T00:00:00Z').getTime();
       const endCutoff = new Date('2024-03-23T00:00:00Z').getTime();
       const inWindow = list.filter((t) => {
@@ -61,7 +86,7 @@ export default function TradesPage() {
     }
 
     return list;
-  }, [filteredTrades, periodFilter]);
+  }, [filteredTrades, periodFilter, selectedDateFilter]);
 
   // Apply search and status chip filters
   const displayTrades = useMemo(() => {
@@ -407,8 +432,9 @@ export default function TradesPage() {
 
           <div className="delta">
             <span className="pill tabular-nums">
-              {totalNetPnl >= 0 ? '+' : '−'}
-              {formatCur(totalNetPnl)}
+              {isPnlHidden
+                ? '+$••••.••'
+                : `${totalNetPnl >= 0 ? '+' : '−'}${formatCur(totalNetPnl)}`}
             </span>
             <span>net P&amp;L after costs</span>
           </div>
@@ -608,6 +634,19 @@ export default function TradesPage() {
               <span>Losses</span>
               <b>{lostTrades.length}</b>
             </button>
+
+            {selectedDateFilter && (
+              <button
+                className="tl-chip"
+                type="button"
+                aria-pressed="true"
+                onClick={() => setSelectedDateFilter('')}
+                title="Clear day filter"
+              >
+                <span>Day: {selectedDateFilter}</span>
+                <b>×</b>
+              </button>
+            )}
           </div>
 
           {/* Table Header */}
@@ -623,20 +662,58 @@ export default function TradesPage() {
 
           {/* Table Body (Grouped by Day) */}
           <div className="tl-lbody" role="grid">
-            {groupedTradesByDate.length === 0 ? (
-              <div className="p-12 text-center text-[var(--ink-3)] font-mono text-xs">
-                No executions found matching your filters.
+            {!isLoaded ? (
+              <div className="p-10 text-center text-[var(--ink-3)] font-mono text-xs animate-pulse">
+                Loading execution ledger...
+              </div>
+            ) : groupedTradesByDate.length === 0 ? (
+              <div className="p-12 text-center space-y-3">
+                <div className="text-[var(--ink-2)] font-sans text-sm font-medium">
+                  No executions found matching your filters.
+                </div>
+                <div className="flex items-center justify-center gap-2">
+                  {selectedDateFilter && (
+                    <button
+                      type="button"
+                      className="tw-btn"
+                      onClick={() => setSelectedDateFilter('')}
+                    >
+                      Show all dates
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="tw-btn"
+                    onClick={() => {
+                      setEditingTrade(null);
+                      setQuickTradeOpen(true);
+                    }}
+                  >
+                    <Plus size={14} />
+                    <span>Record execution</span>
+                  </button>
+                </div>
               </div>
             ) : (
               groupedTradesByDate.map((group) => (
                 <React.Fragment key={group.dateStr}>
                   {/* Day Header Banner */}
                   <div className="tl-dayh">
-                    <span>
-                      {group.formattedDate} ·{' '}
-                      {group.closedCount > 0
-                        ? `${group.closedCount} closed`
-                        : `${group.openCount} open`}
+                    <span className="inline-flex items-center gap-2">
+                      <span>
+                        {group.formattedDate} ·{' '}
+                        {group.closedCount > 0
+                          ? `${group.closedCount} closed`
+                          : `${group.openCount} open`}
+                      </span>
+                      <Link
+                        href={`/journal?date=${group.dateStr}`}
+                        className="text-[11px] font-medium underline decoration-[var(--line-strong)] hover:text-[var(--ink)] inline-flex items-center gap-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <BookOpen size={11} />
+                        <span>Journal</span>
+                      </Link>
                     </span>
                     <span
                       className={`mono tabular-nums ${
@@ -649,6 +726,8 @@ export default function TradesPage() {
                     >
                       {group.openCount > 0 && group.closedCount === 0
                         ? 'Active'
+                        : isPnlHidden
+                        ? '••••••'
                         : `${group.dayPnl >= 0 ? '+' : '−'}${formatCur(group.dayPnl)}`}
                     </span>
                   </div>
@@ -738,9 +817,9 @@ export default function TradesPage() {
                           </span>
                         </span>
 
-                        {/* 7. Net P&L */}
+                        {/* 7. Net P&L & Quick Delete */}
                         <span
-                          className={`tl-num ${
+                          className={`tl-num inline-flex items-center justify-end gap-2 ${
                             isWin
                               ? 'gain'
                               : isLoss
@@ -748,9 +827,23 @@ export default function TradesPage() {
                               : 'warn'
                           }`}
                         >
-                          {isClosed
-                            ? `${trade.netPnl >= 0 ? '+' : '−'}${formatCur(trade.netPnl)}`
-                            : 'Active'}
+                          <span>
+                            {!isClosed
+                              ? 'Active'
+                              : isPnlHidden
+                              ? '••••••'
+                              : `${trade.netPnl >= 0 ? '+' : '−'}${formatCur(trade.netPnl)}`}
+                          </span>
+                          <DeleteConfirmButton
+                            variant="icon"
+                            size={13}
+                            title="Delete execution"
+                            ariaLabel={`Delete ${trade.instrumentSymbol} trade`}
+                            onConfirm={() => {
+                              deleteTrade(trade.id);
+                              if (selectedTrade?.id === trade.id) setSelectedTradeId('');
+                            }}
+                          />
                         </span>
                       </div>
                     );
@@ -795,13 +888,25 @@ export default function TradesPage() {
                     {selectedTrade.session}
                   </div>
                 </div>
-                <span
-                  className={`tl-status ${
-                    selectedTrade.status === 'OPEN' ? 'open' : ''
-                  }`}
-                >
-                  {selectedTrade.status}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`tl-status ${
+                      selectedTrade.status === 'OPEN' ? 'open' : ''
+                    }`}
+                  >
+                    {selectedTrade.status}
+                  </span>
+                  <DeleteConfirmButton
+                    variant="pill"
+                    label="Delete"
+                    title="Delete selected execution"
+                    ariaLabel={`Delete ${selectedTrade.instrumentSymbol} execution`}
+                    onConfirm={() => {
+                      deleteTrade(selectedTrade.id);
+                      setSelectedTradeId('');
+                    }}
+                  />
+                </div>
               </div>
 
               {/* Dynamic Price Ladder SVG (Correct Buy vs Sell Orientation) */}
@@ -957,12 +1062,34 @@ export default function TradesPage() {
               {/* Scale-outs Notice */}
               <div className="tl-scale">
                 {selectedTrade.status === 'CLOSED'
-                  ? `Closed at ${selectedTrade.exitTime ? formatShortDate(selectedTrade.exitTime) : 'market'}. Net result: ${selectedTrade.netPnl >= 0 ? '+' : '−'}${formatCur(selectedTrade.netPnl)}.`
+                  ? `Closed at ${selectedTrade.exitTime ? formatShortDate(selectedTrade.exitTime) : 'market'}. Net result: ${
+                      isPnlHidden
+                        ? '••••••'
+                        : `${selectedTrade.netPnl >= 0 ? '+' : '−'}${formatCur(selectedTrade.netPnl)}`
+                    }.`
                   : 'Scale-outs: none logged. Log a partial exit to scale out and secure R.'}
               </div>
 
               {/* Action Buttons */}
               <div className="tl-dact">
+                <button
+                  className="tw-btn"
+                  type="button"
+                  onClick={() => {
+                    setEditingTrade(selectedTrade);
+                    setQuickTradeOpen(true);
+                  }}
+                >
+                  <Edit3 size={14} />
+                  <span>Edit execution</span>
+                </button>
+                <Link
+                  href={`/journal?date=${(selectedTrade.entryTime || selectedTrade.createdAt).slice(0, 10)}`}
+                  className="tw-btn"
+                >
+                  <BookOpen size={14} />
+                  <span>Day journal →</span>
+                </Link>
                 {selectedTrade.status === 'OPEN' ? (
                   <>
                     <button
@@ -1011,7 +1138,10 @@ export default function TradesPage() {
                     className="tw-btn"
                     style={{ gridColumn: 'span 2' }}
                     type="button"
-                    onClick={() => setQuickTradeOpen(true)}
+                    onClick={() => {
+                      setEditingTrade(null);
+                      setQuickTradeOpen(true);
+                    }}
                   >
                     <Plus size={14} />
                     <span>Record new trade</span>
@@ -1103,10 +1233,14 @@ export default function TradesPage() {
         </div>
       )}
 
-      {/* Quick Trade Creation Modal */}
+      {/* Quick Trade Creation & Edit Modal */}
       <QuickTradeModal
         isOpen={quickTradeOpen}
-        onClose={() => setQuickTradeOpen(false)}
+        editTrade={editingTrade}
+        onClose={() => {
+          setQuickTradeOpen(false);
+          setEditingTrade(null);
+        }}
       />
     </div>
   );

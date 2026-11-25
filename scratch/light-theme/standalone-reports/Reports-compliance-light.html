@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EdgeLedger compliance, light</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400..700&display=swap">
+<style>
+
+:root{color-scheme:light;--bg:#EDF4F2;--tile:#FFFFFF;--line:#C5D7D3;--line-strong:#758B86;--ink:#0E1B1C;--ink-2:#3F5553;--ink-3:#566967;--pill:#E6EEEB;--track:#E4EDEA;--hero:#0D4A4A;--hero-ink:#FFFFFF;--hero-2:#CDEBE3;--hero-line:#8FE6CF;--hero-rule:rgba(255,255,255,0.22);--hero-chip:rgba(143,230,207,0.2);--sun:#F6C744;--sun-ink:#1A1400;--gain:#13784E;--loss:#B3263E;--warn:#8F4305;--s1:#2A78D6;--s2:#EB6834;--s3:#6250D6;--buy-bg:#E1EBFB;--buy-ink:#1F4F95;--sell-bg:#FBE4E8;--sell-ink:#8E1D31;--focus:#0D4A4A;--shadow:0 1px 2px rgba(14,27,28,0.05),0 8px 20px -14px rgba(14,27,28,0.14);--c:var(--ink-2)}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg)}
+.board{width:100%;height:1080px;overflow:hidden;display:flex;flex-direction:column;padding:20px 32px 24px;background:var(--bg);color:var(--ink);font-family:'Instrument Sans',Inter,ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:20px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+button{font:inherit;color:inherit}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+.gain{color:var(--gain)}
+.loss{color:var(--loss)}
+.warn{color:var(--warn)}
+
+/* Shell */
+.top{display:flex;align-items:center;gap:22px;height:56px;flex:none}
+.brand{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;letter-spacing:-0.01em;white-space:nowrap}
+.mark{display:grid;place-items:center;width:32px;height:32px;border-radius:58% 42% 46% 54% / 52% 48% 52% 48%;background:var(--hero);color:var(--hero-ink);font-size:15px;font-weight:700;line-height:1}
+.nav{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.nav a{display:inline-flex;align-items:center;height:32px;padding:0 13px;border-radius:999px;color:var(--ink-2);font-weight:500;text-decoration:none;white-space:nowrap}
+.nav a[aria-current="page"]{background:var(--tile);color:var(--ink);font-weight:600;box-shadow:inset 0 0 0 1px var(--line-strong)}
+.tools{margin-left:auto;display:flex;align-items:center;gap:8px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border-radius:999px;border:1px solid var(--line-strong);background:var(--tile);color:var(--ink);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn.sun{background:var(--sun);border-color:color-mix(in srgb,var(--sun-ink) 45%,var(--sun));color:var(--sun-ink);font-weight:600}
+.btn.quiet{color:var(--ink-2)}
+kbd{padding:3px 6px;border-radius:6px;background:var(--pill);color:var(--ink-2);font-size:12px;font-weight:600}
+.seg{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--pill)}
+.seg button{height:28px;padding:0 13px;border:0;border-radius:999px;background:transparent;color:var(--ink-2);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--tile);font-weight:600}
+
+/* Title, tabs */
+.titlerow{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-top:18px;flex:none}
+.titlerow h1{margin:0;font-size:32px;line-height:38px;font-weight:600;letter-spacing:-0.03em;display:flex;align-items:center;gap:12px}
+.titlerow h1 .glyph{width:14px;height:14px;border-radius:50%;background:conic-gradient(from 200deg,var(--sun),var(--gain),var(--s3),var(--sun));flex:none}
+.titlerow p{margin:6px 0 0;color:var(--ink-2);font-size:15px;line-height:22px}
+.controls{display:flex;gap:8px;align-items:center}
+.tabsrow{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:14px;flex:none}
+.tabs{display:flex;gap:4px;padding:4px;border-radius:999px;background:var(--pill)}
+.tabs button{height:34px;padding:0 16px;border:0;border-radius:999px;background:transparent;color:var(--ink-2);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.tabs button[aria-selected="true"]{background:var(--sun);color:var(--sun-ink);font-weight:600;border:1px solid color-mix(in srgb,var(--sun-ink) 28%,transparent)}
+.scope{display:flex;gap:16px;font-size:12px;color:var(--ink-3);white-space:nowrap}
+.scope b{color:var(--ink-2);font-weight:600}
+
+/* Grid and tiles */
+.grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:224px 124px minmax(0,1fr) 136px;gap:16px;margin-top:14px}
+.tile{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column;padding:18px 20px;border-radius:32px;background:var(--tile);border:1px solid var(--line);overflow:hidden}
+.head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex:none}
+.lbl{font-size:13px;line-height:18px;font-weight:600;color:var(--ink-2);white-space:nowrap}
+.eyebrow{font-size:12px;line-height:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap}
+.sub{font-size:12px;line-height:16px;color:var(--ink-3)}
+.pill{display:inline-flex;align-items:center;height:26px;padding:0 11px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;flex:none}
+.pill.ok{background:color-mix(in srgb,var(--gain) 14%,transparent);color:var(--gain)}
+.pill.w{background:color-mix(in srgb,var(--warn) 12%,transparent);color:var(--warn);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--warn) 40%,transparent)}
+.pill.l{background:color-mix(in srgb,var(--loss) 14%,transparent);color:var(--loss)}
+.pill.vi{background:color-mix(in srgb,var(--s3) 15%,transparent);color:var(--s3)}
+.pill.g{background:color-mix(in srgb,var(--sun) 30%,transparent);color:var(--ink)}
+
+/* Row 1: hero, bridge, rule clearance */
+.hero{grid-column:1 / 5;grid-row:1;color:var(--hero-ink);border:0;padding:20px 24px;background:radial-gradient(120% 90% at 100% 0%,color-mix(in srgb,var(--sun) 38%,transparent) 0%,transparent 55%),linear-gradient(158deg,var(--hero) 0%,color-mix(in srgb,var(--hero) 70%,#000) 100%)}
+.hero > *{position:relative;z-index:1}
+.hero > svg.orbit{position:absolute;z-index:0;right:-86px;top:-86px;width:280px;height:280px;pointer-events:none}
+.hero .eyebrow{color:var(--hero-2)}
+.hero .pill.ok{background:var(--hero-line);color:var(--hero)}
+.hero .big{margin-top:auto;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:46px;line-height:50px;font-weight:600;letter-spacing:-0.035em;color:var(--hero-line);white-space:nowrap}
+.hero .hsub{margin:6px 0 0;font-size:14px;line-height:20px;color:var(--hero-2)}
+.chips{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;background:var(--hero-chip);color:var(--hero-ink);font-size:12px;font-weight:600;white-space:nowrap}
+.hero .foot{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px;padding-top:10px;border-top:1px solid var(--hero-rule);font-size:12px;line-height:18px;color:var(--hero-2);white-space:nowrap}
+.hero .foot .mono{color:var(--hero-ink)}
+
+.bridge{grid-column:5 / 10;grid-row:1}
+.bridge svg{width:100%;flex:1;min-height:0;margin-top:6px;display:block}
+
+.comp{grid-column:10 / 13;grid-row:1}
+.comp .body{display:flex;align-items:center;gap:14px;flex:1;min-height:0;margin-top:8px}
+.comp .body > svg{width:104px;height:104px;flex:none}
+.stats{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
+.stat{display:flex;flex-direction:column;padding:4px 10px;border-radius:14px;background:var(--pill);box-shadow:inset 3px 0 0 var(--c)}
+.stat b{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:18px;line-height:22px;font-weight:600}
+.stat span{font-size:12px;line-height:15px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Row 2: KPIs with micro visuals */
+.kpi{grid-row:2;justify-content:space-between;padding:14px 18px}
+.kpi .v{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:30px;line-height:32px;font-weight:600;letter-spacing:-0.02em;margin-top:2px;white-space:nowrap}
+.kpi .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.k1{grid-column:1 / 4;background:linear-gradient(160deg,color-mix(in srgb,var(--gain) 15%,var(--tile)) 0%,var(--tile) 72%)}
+.k2{grid-column:4 / 7;background:linear-gradient(160deg,color-mix(in srgb,var(--sun) 22%,var(--tile)) 0%,var(--tile) 72%)}
+.k3{grid-column:7 / 10;background:linear-gradient(160deg,color-mix(in srgb,var(--s3) 14%,var(--tile)) 0%,var(--tile) 72%)}
+.k4{grid-column:10 / 13;background:linear-gradient(160deg,color-mix(in srgb,var(--loss) 13%,var(--tile)) 0%,var(--tile) 72%)}
+.segs{display:flex;gap:4px;margin-top:8px}
+.segs i{flex:1;height:8px;border-radius:999px}
+.micro{position:relative;height:8px;margin-top:8px;border-radius:999px;background:var(--track)}
+.micro i{position:absolute;top:0;bottom:0;border-radius:999px}
+.micro i.g{background:var(--gain)}
+.micro i.l{background:var(--loss)}
+.dots{position:relative;height:8px;margin-top:8px;border-radius:999px;background:var(--track)}
+.dots i{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;border:2px solid var(--tile)}
+.dots::after{content:"";position:absolute;left:25%;top:-3px;bottom:-3px;width:1px;background:var(--ink-3)}
+
+/* Row 3: execution table and strategy donut */
+.exec{grid-column:1 / 9;grid-row:3;padding:18px 20px 14px}
+table.ex{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px;line-height:17px}
+table.ex th{text-align:left;font-size:12px;line-height:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);padding:0 10px 8px 0;border-bottom:1px solid var(--line-strong);white-space:nowrap}
+table.ex td{padding:10px 10px 10px 0;border-bottom:1px solid var(--line);vertical-align:middle}
+table.ex tfoot td{border-bottom:0;padding-top:10px;font-weight:600}
+table.ex .mono{font-size:12.5px;white-space:nowrap}
+table.ex .num{text-align:right}
+.asset{font-weight:700;white-space:nowrap}
+.side{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.02em}
+.side.buy{background:var(--buy-bg);color:var(--buy-ink)}
+.side.sell{background:var(--sell-bg);color:var(--sell-ink)}
+.strat{color:var(--ink-2);font-size:12.5px;line-height:16px;white-space:nowrap}
+.rcell{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.rb{position:relative;width:64px;height:8px;border-radius:999px;background:var(--track);flex:none}
+.rb::after{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--line-strong)}
+.rb i{position:absolute;top:0;bottom:0;border-radius:999px}
+.rb i.p{background:var(--gain)}
+.rb i.n{background:var(--loss)}
+.rn{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:600;font-size:12.5px}
+
+.strat-tile{grid-column:9 / 13;grid-row:3;padding:18px 20px}
+.donut{display:flex;align-items:center;gap:18px;flex:1;min-height:0;margin-top:10px}
+.donut > svg{width:148px;height:148px;flex:none}
+.lgs{flex:1;min-width:0;display:flex;flex-direction:column}
+.lg{display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:10px;row-gap:1px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.lg:first-child{border-top:0;padding-top:2px}
+.lg i{width:10px;height:10px;border-radius:4px}
+.lg b{font-size:13px;line-height:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lg .mono{font-size:13px;font-weight:600}
+.lg .sub{grid-column:2 / 4;font-size:12px;line-height:15px;white-space:nowrap}
+.sumline{margin-top:auto;padding-top:10px;border-top:1px solid var(--line-strong);display:flex;justify-content:space-between;align-items:baseline;font-size:13px}
+.sumline .mono{font-weight:700}
+
+/* Row 4: rule limits and certification */
+.rules{grid-column:1 / 9;grid-row:4;padding:14px 16px;gap:10px}
+.rgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;flex:1;min-height:0}
+.rule{display:flex;flex-direction:column;justify-content:space-between;min-width:0;padding:10px 14px;border-radius:22px;background:var(--pill);box-shadow:inset 3px 0 0 var(--c)}
+.rule .t{font-size:12px;line-height:16px;font-weight:600;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rule .v{font-size:17px;line-height:20px;font-weight:600;color:var(--ink);white-space:nowrap}
+.rule .s{font-size:12px;line-height:15px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meter{height:6px;margin-top:6px;border-radius:999px;background:var(--track);overflow:hidden}
+.meter i{display:block;height:100%;border-radius:999px;background:var(--c)}
+
+.cert{grid-column:9 / 13;grid-row:4;flex-direction:row;align-items:center;gap:16px;padding:14px 20px;background:linear-gradient(120deg,color-mix(in srgb,var(--sun) 26%,var(--tile)) 0%,color-mix(in srgb,var(--gain) 9%,var(--tile)) 100%)}
+.cert .seal{width:76px;height:76px;flex:none}
+.cert .txt{display:flex;flex-direction:column;gap:5px;min-width:0}
+.cert .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cert p{margin:0;font-size:12.5px;line-height:17px}
+.cert .fine{font-size:12px;line-height:15px;color:var(--ink-3)}
+
+.place{grid-column:var(--gc) !important;grid-row:var(--gr) !important}
+.big2{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:40px;line-height:44px;font-weight:600;letter-spacing:-0.03em;white-space:nowrap}
+.hero .big2{margin-top:auto;color:var(--hero-line)}
+.hero .pill{background:var(--hero-line);color:var(--hero)}
+.hero .big2.sm{font-size:30px;line-height:34px}
+.barrow{display:grid;grid-template-columns:minmax(0,1fr) 62px;gap:4px 12px;align-items:center;margin-top:12px}
+.barrow .lab{font-size:12.5px;line-height:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.barrow .val{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-weight:600;text-align:right;white-space:nowrap}
+.barrow .track{grid-column:1 / 3;height:10px;border-radius:999px;background:var(--track);overflow:hidden;display:flex}
+.barrow .track i{display:block;height:100%}
+.days{display:flex;gap:10px;margin-top:14px;flex:1;min-height:0}
+.day{flex:1;display:flex;flex-direction:column;justify-content:space-between;padding:12px 14px;border-radius:22px;background:var(--pill);min-width:0}
+.day.done{background:color-mix(in srgb,var(--gain) 15%,var(--tile));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--gain) 40%,transparent)}
+.day.todo{background:transparent;border:1.5px dashed var(--line-strong)}
+.day b{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:14px;line-height:20px;font-weight:600;white-space:nowrap}
+.day span{font-size:12px;line-height:15px;color:var(--ink-3);white-space:nowrap}
+.day .dd{width:12px;height:12px;border-radius:50%;background:var(--gain)}
+.day.todo .dd{background:transparent;border:1.5px solid var(--line-strong)}
+.actions{display:flex;flex-direction:column;gap:10px;margin-top:12px;flex:1;min-height:0}
+.action{display:flex;gap:12px;align-items:center;padding:10px 14px;border-radius:22px;background:var(--pill);flex:1;min-width:0}
+.action .n{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;background:var(--sun);color:var(--sun-ink);flex:none}
+.action b{display:block;font-size:13px;line-height:17px;font-weight:600}
+.action span{display:block;font-size:12px;line-height:16px;color:var(--ink-3)}
+.checks{display:flex;flex-direction:column;margin-top:6px}
+.ck{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line)}
+.ck:first-child{border-top:0}
+.ck .dot{width:22px;height:22px;border-radius:50%;background:color-mix(in srgb,var(--gain) 16%,transparent);display:grid;place-items:center}
+.ck b{font-size:13px;line-height:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ck .mono{font-size:12.5px;font-weight:600;color:var(--ink-2);white-space:nowrap}
+.note{padding:14px 16px;border-radius:22px;flex:1;display:flex;flex-direction:column;justify-content:center;gap:6px;min-height:0}
+.note p{margin:0;font-size:13px;line-height:18px}
+.note .fine{font-size:12px;line-height:15px;color:var(--ink-3)}
+.srow{display:flex;gap:10px;margin-top:10px;flex:1;min-height:0}
+.stile{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;padding:12px 14px;border-radius:22px;background:var(--pill)}
+.stile b{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:20px;line-height:24px;font-weight:600;white-space:nowrap}
+.stile span{font-size:12px;line-height:15px;color:var(--ink-3)}
+.insight{display:flex;flex-direction:column;gap:8px;margin-top:10px;flex:1;min-height:0;justify-content:space-between}
+.insight div{padding:8px 12px;border-radius:16px;background:var(--pill);font-size:12.5px;line-height:17px;box-shadow:inset 3px 0 0 var(--c)}
+table.ex td.l{font-weight:600;white-space:nowrap}
+.actions{flex-direction:row;gap:10px}
+.action{flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:8px}
+.insight{flex-direction:row;gap:10px}
+.insight div{flex:1;min-width:0}
+table.ex.tight td{padding:6px 10px 6px 0}
+.note{padding:10px 12px}
+
+/* Unified Light Elevation, Interaction, Scrollbar, Empty & Reduced Motion Polish */
+.tile{border:1px solid var(--line);box-shadow:var(--shadow)}
+.hero,.sunt,.mint,.best,.setups,.capital,.alerts,.trend{box-shadow:var(--shadow)}
+::selection{background:var(--hero-line);color:var(--ink)}
+input,textarea,select{caret-color:var(--focus)}
+button,a,.btn,.chip,.pill,.seg button,.tabs button,.lrow,.sess,.cat,.acct{transition:background-color 175ms ease,border-color 175ms ease,color 175ms ease,box-shadow 175ms ease,transform 175ms ease}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.btn:active,.seg button:active,.tabs button:active,.chip:active{transform:translateY(1px)}
+button:disabled,.btn:disabled,.chip:disabled{opacity:.48;cursor:not-allowed;pointer-events:none}
+table tbody tr{transition:background-color 165ms ease}
+table tbody tr:hover{background:color-mix(in srgb,var(--ink) 4%,transparent)}
+table thead th{position:sticky;top:0;background:var(--tile);z-index:1}
+.lbody::-webkit-scrollbar,.scroll-y::-webkit-scrollbar{width:8px;height:8px}
+.lbody::-webkit-scrollbar-track,.scroll-y::-webkit-scrollbar-track{background:var(--bg)}
+.lbody::-webkit-scrollbar-thumb,.scroll-y::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:999px}
+.lbody::-webkit-scrollbar-thumb:hover,.scroll-y::-webkit-scrollbar-thumb:hover{background:var(--ink-3)}
+.empty-state,.zero-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:24px;border-radius:20px;border:1px dashed var(--line-strong);background:var(--pill);color:var(--ink-2);text-align:center}
+.loading-shimmer{background:linear-gradient(90deg,var(--pill) 25%,var(--track) 50%,var(--pill) 75%);border-radius:12px}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms !important;animation-iteration-count:1 !important;transition-duration:0.01ms !important;scroll-behavior:auto !important}}
+</style>
+</head>
+<body>
+<div class="board">
+  <header class="top">
+    <div class="brand"><span class="mark">E</span>EdgeLedger</div>
+    <nav class="nav" aria-label="Sections">
+      <a href="#">Overview</a><a href="#">Accounts</a><a href="#">Trades</a><a href="#">Calendar</a><a href="#">Journal</a><a href="#">Risk</a><a href="#" aria-current="page">Reports</a>
+    </nav>
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Period">
+        <button type="button" aria-pressed="true">Week</button>
+        <button type="button" aria-pressed="false">Month</button>
+        <button type="button" aria-pressed="false">All time</button>
+      </div>
+      <button class="btn" type="button">All accounts, 3</button>
+      <button class="btn" type="button">Dark</button>
+      <button class="btn quiet" type="button">Search <kbd>⌘K</kbd></button>
+    </div>
+  </header>
+  <div class="titlerow">
+    <div>
+      <h1><span class="glyph" aria-hidden="true"></span>Prop-firm compliance audit</h1>
+      <p>Rule-by-rule check against the stated limits, with what is still pending.</p>
+    </div>
+    <div class="controls">
+      <button class="btn" type="button">Import CSV</button>
+      <button class="btn" type="button">Export CSV</button>
+      <button class="btn sun" type="button">Print report</button>
+    </div>
+  </div>
+  <div class="tabsrow">
+    <div class="tabs" role="tablist" aria-label="Report type">
+      <button type="button" role="tab" aria-selected="false">Executive tear sheet</button>
+      <button type="button" role="tab" aria-selected="true">Prop-firm compliance audit</button>
+      <button type="button" role="tab" aria-selected="false">Strategy attribution</button>
+      <button type="button" role="tab" aria-selected="false">Drawdown &amp; risk stress</button>
+    </div>
+    <div class="scope">
+      <span>Scope <b>Consolidated desk</b></span>
+      <span><b>3</b> accounts</span>
+      <span>Currency <b>USD</b></span>
+      <span>Period <b>All time</b></span>
+    </div>
+  </div>
+  <main class="grid">
+<section class="tile place hero" style="--gc:1 / 5;--gr:1" aria-label="Headline result"><svg class="orbit" viewBox="0 0 280 280" aria-hidden="true">
+<circle cx="140" cy="140" r="60" style="fill:none;stroke:var(--hero-rule);stroke-width:1.25"></circle>
+<circle cx="140" cy="140" r="96" style="fill:none;stroke:var(--hero-rule);stroke-width:1.25"></circle>
+<circle cx="140" cy="140" r="132" style="fill:none;stroke:var(--hero-rule);stroke-width:1.25"></circle>
+<circle cx="140" cy="140" r="96" style="fill:none;stroke:var(--sun);stroke-width:3;stroke-linecap:round;stroke-dasharray:150 603;transform:rotate(-90deg);transform-origin:140px 140px"></circle>
+</svg>
+  <div class="head"><span class="eyebrow">Audit status</span><span class="pill ok">1 pending</span></div>
+  <div class="big2 ">3 / 4</div>
+  <p class="hsub">Rules clear. Minimum trading days is the one open item.</p>
+  <div class="chips"><span class="chip">4 closed trades</span><span class="chip">18–19 Mar 2024</span><span class="chip">USD</span></div>
+  <div class="foot"><span>Ref <span class="mono">EL-AUD-143335</span></span><span>24 Nov 2026 · 13:49 GMT</span></div></section>
+<section class="tile place " style="--gc:5 / 10;--gr:1" aria-label="Minimum trading days"><div class="head"><div><span class="eyebrow">Minimum trading days</span><p class="sub" style="margin:4px 0 0">2 of 4 required days complete</p></div><span class="pill w">2 of 4</span></div>
+      <div class="days">
+        <div class="day done"><span>Day 1 · 18 Mar</span><b>+$4,115.00</b><i class="dd" style="display:block"></i></div>
+        <div class="day done"><span>Day 2 · 19 Mar</span><b>+$2,956.00</b><i class="dd" style="display:block"></i></div>
+        <div class="day todo"><span>Day 3</span><b class="sub">Not yet</b><i class="dd" style="display:block"></i></div>
+        <div class="day todo"><span>Day 4</span><b class="sub">Not yet</b><i class="dd" style="display:block"></i></div>
+      </div></section>
+<section class="tile place " style="--gc:10 / 13;--gr:1" aria-label="Breaches"><div class="head"><span class="eyebrow">Breaches</span><span class="pill ok">None</span></div>
+      <div style="display:flex;flex-direction:column;justify-content:center;flex:1">
+        <div class="big2 gain" style="font-size:56px;line-height:60px">0</div>
+        <p class="sub" style="margin:6px 0 0">No limit broken across 4 trades</p>
+        <p class="sub" style="margin:4px 0 0"><span class="warn">1 warning</span>, minimum trading days</p>
+      </div></section>
+<section class="tile place kpi" style="--gc:1 / 4;--gr:2;background:linear-gradient(160deg,color-mix(in srgb,var(--gain) 15%,var(--tile)) 0%,var(--tile) 72%)" style="--gc:1 / 4;--gr:2" aria-label="Lowest day"><div class="head"><span class="lbl">Lowest day</span><span class="pill ok">No loss day</span></div>
+  <div><div class="v" style="color:var(--gain)">+$2,956</div><div class="sub">19 Mar · no daily loss</div></div></section>
+<section class="tile place kpi" style="--gc:4 / 7;--gr:2;background:linear-gradient(160deg,color-mix(in srgb,var(--gain) 15%,var(--tile)) 0%,var(--tile) 72%)" style="--gc:4 / 7;--gr:2" aria-label="Equity floor"><div class="head"><span class="lbl">Equity floor</span><span class="pill ok">Held</span></div>
+  <div><div class="v" style="font-size:20px;line-height:30px;font-family:inherit;font-weight:600">Never below start</div><div class="sub">Lowest close +$2,880.00</div></div></section>
+<section class="tile place kpi" style="--gc:7 / 10;--gr:2;background:linear-gradient(160deg,color-mix(in srgb,var(--s1) 15%,var(--tile)) 0%,var(--tile) 72%)" style="--gc:7 / 10;--gr:2" aria-label="Risk per trade"><div class="head"><span class="lbl">Risk per trade</span><span class="pill vi">Stated</span></div>
+  <div><div class="v" style="color:var(--s1)">1.0% max</div><div class="sub">All 4 trades within limit</div></div></section>
+<section class="tile place kpi" style="--gc:10 / 13;--gr:2;background:linear-gradient(160deg,color-mix(in srgb,var(--warn) 15%,var(--tile)) 0%,var(--tile) 72%)" style="--gc:10 / 13;--gr:2" aria-label="Open requirement"><div class="head"><span class="lbl">Open requirement</span><span class="pill w">Pending</span></div>
+  <div><div class="v" style="color:var(--warn)">2 days</div><div class="sub">Needed to reach 4 minimum</div></div></section>
+<section class="tile place exec" style="--gc:1 / 9;--gr:3" aria-label="Rule audit"><div class="head"><span class="eyebrow">Rule audit</span><span class="sub">5 checks · consolidated desk</span></div>
+      <table class="ex tight"><thead><tr><th>Rule</th><th>Requirement</th><th>Observed</th><th>Status</th></tr></thead>
+      <tbody><tr><td class="l">Daily loss limit</td><td class="strat">No losing day breaches limit</td><td class="mono">Lowest day +$2,956.00</td><td><span class="pill ok">Clear</span></td></tr><tr><td class="l">Total loss floor</td><td class="strat">Equity stays above start</td><td class="mono">Never below start</td><td><span class="pill ok">Clear</span></td></tr><tr><td class="l">Minimum trading days</td><td class="strat">4 trading days</td><td class="mono">2 trading days</td><td><span class="pill w">Pending</span></td></tr><tr><td class="l">Risk per trade</td><td class="strat">At most 1.0% of account</td><td class="mono">1.0% stated, all 4 trades</td><td><span class="pill ok">Clear</span></td></tr><tr><td class="l">Calculation integrity</td><td class="strat">Deterministic engine</td><td class="mono">No floating-point approximation</td><td><span class="pill ok">Verified</span></td></tr></tbody></table></section>
+<section class="tile place strat-tile" style="--gc:9 / 13;--gr:3" aria-label="Audit checklist"><div class="head"><span class="eyebrow">Audit checklist</span><span class="sub">Record and certificate</span></div>
+      <div class="checks">
+        <div class="ck"><span class="dot"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.2 L5 8.5 L9.5 3.8" fill="none" style="stroke:var(--gain)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><b>Calculation engine applied</b><span class="mono">Yes</span></div>
+        <div class="ck"><span class="dot"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.2 L5 8.5 L9.5 3.8" fill="none" style="stroke:var(--gain)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><b>Closed trades reconciled</b><span class="mono">4 of 4</span></div>
+        <div class="ck"><span class="dot"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.2 L5 8.5 L9.5 3.8" fill="none" style="stroke:var(--gain)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><b>Reference issued</b><span class="mono">EL-AUD-143335</span></div>
+        <div class="ck"><span class="dot"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.2 L5 8.5 L9.5 3.8" fill="none" style="stroke:var(--gain)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><b>Scope</b><span class="mono">3 accounts</span></div>
+        <div class="ck"><span class="dot"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.2 L5 8.5 L9.5 3.8" fill="none" style="stroke:var(--gain)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><b>Currency</b><span class="mono">USD</span></div>
+      </div></section>
+<section class="tile place rules" style="--gc:1 / 9;--gr:4" aria-label="Actions before the next audit"><div class="head"><span class="eyebrow">Before the next audit</span><span class="sub">Ordered by impact</span></div>
+      <div class="actions">
+        <div class="action"><span class="n">1</span><div><b>Log trading on two more days</b><span>Clears minimum days</span></div></div>
+        <div class="action"><span class="n">2</span><div><b>Keep each trade at or under 1.0%</b><span>Holds risk rule clear</span></div></div>
+        <div class="action"><span class="n">3</span><div><b>Recheck the app status</b><span>Reads compliant with one pending</span></div></div>
+      </div></section>
+<section class="tile place cert" style="--gc:9 / 13;--gr:4" aria-label="Audit certification"><svg class="seal" viewBox="0 0 76 76" aria-hidden="true">
+        <circle cx="38" cy="38" r="36" style="fill:var(--sun)"></circle>
+        <circle cx="38" cy="38" r="30" style="fill:none;stroke:var(--sun-ink);stroke-width:1.25;stroke-dasharray:2 3;opacity:.45"></circle>
+        <path d="M26 39 L34 47 L51 29" style="fill:none;stroke:var(--sun-ink);stroke-width:4.5;stroke-linecap:round;stroke-linejoin:round"></path>
+      </svg>
+      <div class="txt"><div class="row"><span class="eyebrow">Audit certification</span><span class="pill ok">Compliant</span></div>
+      <p>Derived by EdgeLedger's calculation engine, with zero floating-point approximation.</p>
+      <span class="fine">Record-keeping and analytics, not investment, legal or tax advice.</span></div></section>
+  </main>
+</div>
+</body>
+</html>

@@ -1,6 +1,15 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+  ReactNode,
+} from 'react';
 import {
   TradingAccount,
   Trade,
@@ -28,6 +37,23 @@ import {
   calculateDecisionQualityScore
 } from '../lib/calculations/financialEngine';
 import { getAppConfig } from '../lib/config/env';
+import { SupabaseService } from '../lib/supabase/service';
+import { isSupabaseConfigured } from '../lib/supabase/client';
+import {
+  SyncEntityType,
+  SyncTombstone,
+  clearOutbox,
+  enqueueMutation,
+  loadOutbox,
+  loadTombstones,
+  mergeAccount,
+  mergeTrade,
+  reconcileEntityLists,
+  recordTombstone,
+  removeOutboxItems,
+  saveTombstones,
+} from '../lib/sync/syncEngine';
+import { emitSyncBridgeEvent } from '../lib/sync/mutationBridge';
 
 interface TradingContextType {
   baseCurrency: string;
@@ -49,6 +75,13 @@ interface TradingContextType {
   isPnlHidden: boolean;
   setIsPnlHidden: (hidden: boolean) => void;
   togglePnlPrivacy: () => void;
+
+  // Cloud & Supabase Sync
+  isCloudConfigured: boolean;
+  syncStatus: 'synced' | 'syncing' | 'offline' | 'error';
+  lastSyncedAt: string | null;
+  pendingSyncCount: number;
+  syncWithCloud: () => Promise<boolean>;
 
   // Actions
   addAccount: (accountData: Partial<TradingAccount>) => void;
@@ -74,6 +107,7 @@ interface TradingContextType {
 
   addJournalEntry: (entry: Partial<JournalEntry>) => void;
   updateJournalEntry: (entry: JournalEntry) => void;
+  deleteJournalEntry: (id: string) => void;
 
   dismissAlert: (alertId: string) => void;
   updateRule: (accountId: string, rule: AccountRule) => void;
@@ -131,40 +165,388 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
-  // Load state from localStorage on mount
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.accounts && parsed.accounts.length > 0) {
-          // Merge rich seed rules if stored accounts have missing/outdated rules
-          const hydratedAccounts = parsed.accounts.map((acc: TradingAccount) => {
-            const seed = SEED_ACCOUNTS.find((s) => s.id === acc.id);
-            if (seed && (!acc.rules || acc.rules.length < seed.rules.length)) {
-              return { ...acc, rules: seed.rules };
-            }
-            if (!acc.rules || acc.rules.length === 0) {
-              return {
-                ...acc,
-                rules: generatePersonalizedRules(acc.id, acc.accountType, acc.brokerOrFirm, acc.accountSize),
-              };
-            }
-            return acc;
-          });
-          setAccounts(hydratedAccounts);
-        }
-        if (parsed.trades && parsed.trades.length > 0) setTrades(parsed.trades);
-        if (parsed.strategies && parsed.strategies.length > 0) setStrategies(parsed.strategies);
-        if (parsed.journalEntries && parsed.journalEntries.length > 0) setJournalEntries(parsed.journalEntries);
-        if (parsed.riskAlerts) setRiskAlerts(parsed.riskAlerts);
+  // Cloud & Supabase Sync State
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>(() =>
+    isSupabaseConfigured ? 'synced' : 'offline'
+  );
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+
+  const latestStateRef = useRef({
+    accounts,
+    trades,
+    strategies,
+    journalEntries,
+    riskAlerts,
+  });
+  latestStateRef.current = {
+    accounts,
+    trades,
+    strategies,
+    journalEntries,
+    riskAlerts,
+  };
+  const isSyncingRef = useRef<boolean>(false);
+
+  const enqueueAndMarkPending = useCallback(
+    (entityType: SyncEntityType, entityId: string, operation: 'upsert' | 'delete', payload?: unknown) => {
+      const nextQueue = enqueueMutation(entityType, entityId, operation, payload);
+      setPendingSyncCount(nextQueue.length);
+    },
+    []
+  );
+
+  const persistUpsertToCloud = useCallback(
+    async (
+      entityType: SyncEntityType,
+      entityId: string,
+      syncCall: () => Promise<boolean>
+    ) => {
+      if (!isSupabaseConfigured) return;
+      const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+      if (!isOnline) {
+        setSyncStatus('offline');
+        enqueueAndMarkPending(entityType, entityId, 'upsert');
+        return;
       }
-    } catch (e) {
-      console.warn('Failed to parse stored EdgeLedger data', e);
-    } finally {
-      setIsLoaded(true);
+      try {
+        const ok = await syncCall();
+        if (!ok) {
+          enqueueAndMarkPending(entityType, entityId, 'upsert');
+        }
+      } catch (err) {
+        console.warn(`Background Supabase upsert(${entityType}) queued:`, err);
+        enqueueAndMarkPending(entityType, entityId, 'upsert');
+      }
+    },
+    [enqueueAndMarkPending]
+  );
+
+  const persistDeleteToCloud = useCallback(
+    async (
+      entityType: SyncEntityType,
+      entityId: string,
+      deleteCall: () => Promise<boolean>
+    ) => {
+      recordTombstone(entityType, entityId);
+      if (!isSupabaseConfigured) return;
+      const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+      if (!isOnline) {
+        setSyncStatus('offline');
+        enqueueAndMarkPending(entityType, entityId, 'delete');
+        return;
+      }
+      try {
+        const ok = await deleteCall();
+        if (!ok) {
+          enqueueAndMarkPending(entityType, entityId, 'delete');
+        }
+      } catch (err) {
+        console.warn(`Background Supabase delete(${entityType}) queued:`, err);
+        enqueueAndMarkPending(entityType, entityId, 'delete');
+      }
+    },
+    [enqueueAndMarkPending]
+  );
+
+  const runNonOverridingSync = useCallback(
+    async (localSnapshot: {
+      accounts: TradingAccount[];
+      trades: Trade[];
+      strategies: Strategy[];
+      journalEntries: JournalEntry[];
+      riskAlerts: RiskAlert[];
+    }): Promise<boolean> => {
+      if (!isSupabaseConfigured) {
+        setSyncStatus('offline');
+        return false;
+      }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setSyncStatus('offline');
+        return false;
+      }
+      if (isSyncingRef.current) {
+        return true;
+      }
+
+      isSyncingRef.current = true;
+      setSyncStatus('syncing');
+
+      try {
+        const tombstones = loadTombstones();
+        const [cloudAccounts, cloudTrades, cloudStrategies, cloudJournal, cloudAlerts] =
+          await Promise.all([
+            SupabaseService.fetchAccounts(),
+            SupabaseService.fetchTrades(),
+            SupabaseService.fetchStrategies(),
+            SupabaseService.fetchJournalEntries(),
+            SupabaseService.fetchAlerts(),
+          ]);
+
+        const accRec =
+          cloudAccounts !== null
+            ? reconcileEntityLists<TradingAccount>({
+                local: localSnapshot.accounts,
+                remote: cloudAccounts,
+                tombstones,
+                entityType: 'account',
+                getId: (a) => a.id,
+                getUpdatedAt: (a) => a.updatedAt || a.createdAt,
+                mergeItem: mergeAccount,
+              })
+            : null;
+
+        const tradeRec =
+          cloudTrades !== null
+            ? reconcileEntityLists<Trade>({
+                local: localSnapshot.trades,
+                remote: cloudTrades,
+                tombstones,
+                entityType: 'trade',
+                getId: (t) => t.id,
+                getUpdatedAt: (t) => t.updatedAt || t.createdAt,
+                mergeItem: mergeTrade,
+              })
+            : null;
+
+        const stratRec =
+          cloudStrategies !== null
+            ? reconcileEntityLists<Strategy>({
+                local: localSnapshot.strategies,
+                remote: cloudStrategies,
+                tombstones,
+                entityType: 'strategy',
+                getId: (s) => s.id,
+                getUpdatedAt: (s) => s.updatedAt || s.createdAt,
+              })
+            : null;
+
+        const journalRec =
+          cloudJournal !== null
+            ? reconcileEntityLists<JournalEntry>({
+                local: localSnapshot.journalEntries,
+                remote: cloudJournal,
+                tombstones,
+                entityType: 'journal',
+                getId: (j) => j.id,
+                getUpdatedAt: (j) => j.updatedAt || `${j.entryDate}T23:59:59.000Z`,
+              })
+            : null;
+
+        const alertRec =
+          cloudAlerts !== null
+            ? reconcileEntityLists<RiskAlert>({
+                local: localSnapshot.riskAlerts,
+                remote: cloudAlerts,
+                tombstones,
+                entityType: 'alert',
+                getId: (a) => a.id,
+                getUpdatedAt: (a) => a.createdAt,
+              })
+            : null;
+
+        if (accRec) setAccounts(accRec.merged);
+        if (tradeRec) setTrades(tradeRec.merged);
+        if (stratRec) setStrategies(stratRec.merged);
+        if (journalRec) setJournalEntries(journalRec.merged);
+        if (alertRec) setRiskAlerts(alertRec.merged);
+
+        const accountsToPush = accRec?.toPushToCloud ?? [];
+        const tradesToPush = tradeRec?.toPushToCloud ?? [];
+        const strategiesToPush = stratRec?.toPushToCloud ?? [];
+        const journalsToPush = journalRec?.toPushToCloud ?? [];
+        const alertsToPush = alertRec?.toPushToCloud ?? [];
+
+        const deleteTombstones: SyncTombstone[] = [
+          ...(accRec?.toDeleteFromCloud ?? []).map((id) => ({
+            id,
+            entityType: 'account' as const,
+            deletedAt: new Date().toISOString(),
+          })),
+          ...(tradeRec?.toDeleteFromCloud ?? []).map((id) => ({
+            id,
+            entityType: 'trade' as const,
+            deletedAt: new Date().toISOString(),
+          })),
+          ...(stratRec?.toDeleteFromCloud ?? []).map((id) => ({
+            id,
+            entityType: 'strategy' as const,
+            deletedAt: new Date().toISOString(),
+          })),
+          ...(journalRec?.toDeleteFromCloud ?? []).map((id) => ({
+            id,
+            entityType: 'journal' as const,
+            deletedAt: new Date().toISOString(),
+          })),
+          ...(alertRec?.toDeleteFromCloud ?? []).map((id) => ({
+            id,
+            entityType: 'alert' as const,
+            deletedAt: new Date().toISOString(),
+          })),
+        ];
+
+        // Also include queued delete tombstones for tables that may have returned empty
+        const outbox = loadOutbox();
+        const queuedDeletes = outbox
+          .filter((m) => m.operation === 'delete')
+          .map((m) => ({
+            id: m.entityId,
+            entityType: m.entityType,
+            deletedAt: m.timestamp,
+          }));
+        const combinedDeletes = [...deleteTombstones, ...queuedDeletes];
+
+        const hasPushWork =
+          accountsToPush.length > 0 ||
+          tradesToPush.length > 0 ||
+          strategiesToPush.length > 0 ||
+          journalsToPush.length > 0 ||
+          alertsToPush.length > 0;
+
+        let syncOk = true;
+        if (hasPushWork) {
+          const pushResult = await SupabaseService.syncLocalToCloud(
+            accountsToPush,
+            tradesToPush,
+            strategiesToPush,
+            journalsToPush,
+            alertsToPush
+          );
+          syncOk = pushResult.success;
+        }
+
+        if (combinedDeletes.length > 0) {
+          await SupabaseService.applyTombstones(combinedDeletes);
+        }
+
+        if (syncOk) {
+          const flushedKeys = new Set<string>([
+            ...accountsToPush.map((a) => `account:${a.id}`),
+            ...tradesToPush.map((t) => `trade:${t.id}`),
+            ...strategiesToPush.map((s) => `strategy:${s.id}`),
+            ...journalsToPush.map((j) => `journal:${j.id}`),
+            ...alertsToPush.map((a) => `alert:${a.id}`),
+            ...combinedDeletes.map((d) => `${d.entityType}:${d.id}`),
+          ]);
+          const remaining = removeOutboxItems(flushedKeys);
+          setPendingSyncCount(remaining.length);
+          setSyncStatus('synced');
+          setLastSyncedAt(new Date().toLocaleTimeString());
+        } else {
+          setSyncStatus('error');
+        }
+
+        return syncOk;
+      } catch (e) {
+        console.error('Failed to reconcile with Supabase cloud:', e);
+        setSyncStatus('error');
+        return false;
+      } finally {
+        isSyncingRef.current = false;
+      }
+    },
+    []
+  );
+
+  // Load state from localStorage on mount, then perform non-overriding reconciliation with Supabase
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function initializeData() {
+      let initialAccounts: TradingAccount[] = appConfig.app.enableDemoData ? SEED_ACCOUNTS : [];
+      let initialTrades: Trade[] = appConfig.app.enableDemoData ? SEED_TRADES : [];
+      let initialStrategies: Strategy[] = appConfig.app.enableDemoData ? SEED_STRATEGIES : [];
+      let initialJournal: JournalEntry[] = appConfig.app.enableDemoData ? SEED_JOURNAL : [];
+      let initialAlerts: RiskAlert[] = appConfig.app.enableDemoData ? SEED_ALERTS : [];
+
+      try {
+        setPendingSyncCount(loadOutbox().length);
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed.accounts)) {
+            const hydratedAccounts = parsed.accounts.map((acc: TradingAccount) => {
+              const seed = SEED_ACCOUNTS.find((s) => s.id === acc.id);
+              if (seed && (!acc.rules || acc.rules.length < seed.rules.length)) {
+                return { ...acc, rules: seed.rules };
+              }
+              if (!acc.rules || acc.rules.length === 0) {
+                return {
+                  ...acc,
+                  rules: generatePersonalizedRules(
+                    acc.id,
+                    acc.accountType,
+                    acc.brokerOrFirm,
+                    acc.accountSize
+                  ),
+                };
+              }
+              return acc;
+            });
+            initialAccounts = hydratedAccounts;
+            setAccounts(hydratedAccounts);
+          }
+          if (Array.isArray(parsed.trades)) {
+            initialTrades = parsed.trades;
+            setTrades(parsed.trades);
+          }
+          if (Array.isArray(parsed.strategies)) {
+            initialStrategies = parsed.strategies;
+            setStrategies(parsed.strategies);
+          }
+          if (Array.isArray(parsed.journalEntries)) {
+            initialJournal = parsed.journalEntries;
+            setJournalEntries(parsed.journalEntries);
+          }
+          if (Array.isArray(parsed.riskAlerts)) {
+            initialAlerts = parsed.riskAlerts;
+            setRiskAlerts(parsed.riskAlerts);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to parse stored EdgeLedger data', e);
+      }
+
+      if (isSupabaseConfigured && !isCancelled) {
+        await runNonOverridingSync({
+          accounts: initialAccounts,
+          trades: initialTrades,
+          strategies: initialStrategies,
+          journalEntries: initialJournal,
+          riskAlerts: initialAlerts,
+        });
+      } else if (!isCancelled) {
+        setSyncStatus('offline');
+      }
+
+      if (!isCancelled) setIsLoaded(true);
     }
-  }, []);
+
+    initializeData();
+
+    const handleOnline = () => {
+      if (isSupabaseConfigured) {
+        runNonOverridingSync(latestStateRef.current);
+      }
+    };
+    const handleOffline = () => {
+      setSyncStatus('offline');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      isCancelled = true;
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [runNonOverridingSync]);
+
+  // Sync current memory state to cloud without overriding newer local or remote edits
+  const syncWithCloud = useCallback(async (): Promise<boolean> => {
+    return runNonOverridingSync(latestStateRef.current);
+  }, [runNonOverridingSync]);
 
   // Save state to localStorage whenever state changes
   useEffect(() => {
@@ -541,21 +923,43 @@ function generatePersonalizedRules(
     };
 
     setAccounts((prev) => [newAccount, ...prev]);
+    emitSyncBridgeEvent({ entity: 'account', entityId: newAccount.id, op: 'create', payload: newAccount as unknown as Record<string, unknown>, baseVersion: 0 });
+    void persistUpsertToCloud('account', newAccount.id, () =>
+      SupabaseService.saveAccount(newAccount)
+    );
   };
 
   const updateAccount = (updated: TradingAccount) => {
-    setAccounts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    const stamped: TradingAccount = {
+      ...updated,
+      updatedAt: new Date().toISOString(),
+    };
+    setAccounts((prev) => prev.map((a) => (a.id === stamped.id ? stamped : a)));
+    emitSyncBridgeEvent({ entity: 'account', entityId: stamped.id, op: 'update', payload: stamped as unknown as Record<string, unknown> });
+    void persistUpsertToCloud('account', stamped.id, () =>
+      SupabaseService.saveAccount(stamped)
+    );
   };
 
   const deleteAccount = (id: string) => {
+    const removedAlerts = latestStateRef.current.riskAlerts.filter((al) => al.accountId === id);
     setAccounts((prev) => prev.filter((a) => a.id !== id));
+    setRiskAlerts((prev) => prev.filter((al) => al.accountId !== id));
     if (selectedAccountId === id) setSelectedAccountId('ALL');
+    emitSyncBridgeEvent({ entity: 'account', entityId: id, op: 'delete', payload: { id } });
+    void persistDeleteToCloud('account', id, () => SupabaseService.deleteAccount(id));
+    removedAlerts.forEach((al) => {
+      void persistDeleteToCloud('alert', al.id, () => SupabaseService.deleteAlert(al.id));
+    });
   };
 
   const addTrade = (tradeData: Partial<Trade>) => {
     const now = new Date().toISOString();
     const tradeId = `tr-${Date.now()}`;
     const targetAccount = selectedAccount || accounts[0];
+    const targetAccountId = targetAccount?.id || 'unassigned';
+    const targetAccountName = targetAccount?.name || 'Primary Desk';
+    const targetEquity = targetAccount?.currentEquity || 100000;
     const riskUsd = tradeData.plannedRiskUsd || 500;
     const entryPrice = tradeData.entryPrice || 100;
     const stopLoss = tradeData.stopLoss || 95;
@@ -571,11 +975,11 @@ function generatePersonalizedRules(
           {
             id: `alloc-${Date.now()}`,
             tradeId,
-            accountId: targetAccount.id,
-            accountName: targetAccount.name,
+            accountId: targetAccountId,
+            accountName: targetAccountName,
             allocatedPositionSize: 1.0,
             allocatedRiskUsd: riskUsd,
-            allocatedRiskPct: Math.round((riskUsd / targetAccount.currentEquity) * 1000) / 10,
+            allocatedRiskPct: Math.round((riskUsd / targetEquity) * 1000) / 10,
             entryPrice,
             stopLoss,
             takeProfit: tradeData.takeProfit,
@@ -589,7 +993,7 @@ function generatePersonalizedRules(
               {
                 id: `exec-${Date.now()}`,
                 tradeId,
-                accountId: targetAccount.id,
+                accountId: targetAccountId,
                 executionType: 'ENTRY',
                 price: entryPrice,
                 size: 1.0,
@@ -645,6 +1049,10 @@ function generatePersonalizedRules(
     };
 
     setTrades((prev) => [newTrade, ...prev]);
+    emitSyncBridgeEvent({ entity: 'trade', entityId: newTrade.id, op: 'create', payload: newTrade as unknown as Record<string, unknown>, baseVersion: 0 });
+    void persistUpsertToCloud('trade', newTrade.id, () =>
+      SupabaseService.saveTrade(newTrade)
+    );
   };
 
   const updateTrade = (updated: Trade) => {
@@ -653,11 +1061,36 @@ function generatePersonalizedRules(
     if (existing && existing.status === 'CLOSED' && updated.status !== 'CLOSED') {
       throw new Error('A closed trade cannot be reopened. Record a new trade execution instead.');
     }
-    setTrades((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    const now = new Date().toISOString();
+    // Closed trades are append-only: create a correction record instead of overwriting closed trade
+    if (existing && existing.status === 'CLOSED') {
+      emitSyncBridgeEvent({
+        entity: 'trade_correction',
+        entityId: `corr-${existing.id}-${Date.now()}`,
+        op: 'correction',
+        payload: {
+          targetTradeId: existing.id,
+          previousNetPnl: existing.netPnl,
+          correctedFields: { ...updated, updatedAt: now },
+        },
+      });
+      return;
+    }
+    const stamped: Trade = {
+      ...updated,
+      updatedAt: now,
+    };
+    setTrades((prev) => prev.map((t) => (t.id === stamped.id ? stamped : t)));
+    emitSyncBridgeEvent({ entity: 'trade', entityId: stamped.id, op: 'update', payload: stamped as unknown as Record<string, unknown> });
+    void persistUpsertToCloud('trade', stamped.id, () =>
+      SupabaseService.saveTrade(stamped)
+    );
   };
 
   const deleteTrade = (id: string) => {
     setTrades((prev) => prev.filter((t) => t.id !== id));
+    emitSyncBridgeEvent({ entity: 'trade', entityId: id, op: 'delete', payload: { id } });
+    void persistDeleteToCloud('trade', id, () => SupabaseService.deleteTrade(id));
   };
 
   const executePartialClose = (
@@ -708,20 +1141,24 @@ function generatePersonalizedRules(
       const newRealizedPnl = alloc.realizedPnl + pnlResult.grossPnl;
       const newNetPnl = alloc.netPnl + pnlResult.netPnl;
 
-      // Update account balance and equity in ledger
+      // Update account balance and equity in ledger and queue sync
       setAccounts((prevAccs) =>
         prevAccs.map((acc) => {
           if (acc.id !== alloc.accountId) return acc;
           const newBal = acc.currentBalance + pnlResult.netPnl;
           const newEq = acc.currentEquity + pnlResult.netPnl;
           const newHwm = Math.max(acc.highWaterMark, newEq);
-          return {
+          const updatedAcc: TradingAccount = {
             ...acc,
             currentBalance: Math.round(newBal * 100) / 100,
             currentEquity: Math.round(newEq * 100) / 100,
             highWaterMark: Math.round(newHwm * 100) / 100,
             updatedAt: now,
           };
+          void persistUpsertToCloud('account', updatedAcc.id, () =>
+            SupabaseService.saveAccount(updatedAcc)
+          );
+          return updatedAcc;
         })
       );
 
@@ -757,9 +1194,13 @@ function generatePersonalizedRules(
     };
 
     setTrades((prev) => prev.map((t) => (t.id === tradeId ? updatedTrade : t)));
+    void persistUpsertToCloud('trade', updatedTrade.id, () =>
+      SupabaseService.saveTrade(updatedTrade)
+    );
   };
 
   const addStrategy = (strategyData: Partial<Strategy>) => {
+    const now = new Date().toISOString();
     const newStrategy: Strategy = {
       id: `strat-${Date.now()}`,
       name: strategyData.name || 'New Strategy',
@@ -775,17 +1216,29 @@ function generatePersonalizedRules(
       checklistItems: strategyData.checklistItems || ['Confirm bias', 'Check risk limit'],
       currentVersion: 1,
       isActive: true,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
     setStrategies((prev) => [newStrategy, ...prev]);
+    void persistUpsertToCloud('strategy', newStrategy.id, () =>
+      SupabaseService.saveStrategy(newStrategy)
+    );
   };
 
   const updateStrategy = (updated: Strategy) => {
-    setStrategies((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    const stamped: Strategy = {
+      ...updated,
+      updatedAt: new Date().toISOString(),
+    };
+    setStrategies((prev) => prev.map((s) => (s.id === stamped.id ? stamped : s)));
+    void persistUpsertToCloud('strategy', stamped.id, () =>
+      SupabaseService.saveStrategy(stamped)
+    );
   };
 
   const deleteStrategy = (id: string) => {
     setStrategies((prev) => prev.filter((s) => s.id !== id));
+    void persistDeleteToCloud('strategy', id, () => SupabaseService.deleteStrategy(id));
   };
 
   const addJournalEntry = (entryData: Partial<JournalEntry>) => {
@@ -829,27 +1282,67 @@ function generatePersonalizedRules(
       prematureExit: entryData.prematureExit ?? false,
       ignoredRules: entryData.ignoredRules ?? false,
       isLocked: false,
+      updatedAt: new Date().toISOString(),
     };
     setJournalEntries((prev) => [newEntry, ...prev]);
+    emitSyncBridgeEvent({ entity: 'journal', entityId: newEntry.id, op: 'create', payload: newEntry as unknown as Record<string, unknown>, baseVersion: 0 });
+    void persistUpsertToCloud('journal', newEntry.id, () =>
+      SupabaseService.saveJournalEntry(newEntry)
+    );
   };
 
   const updateJournalEntry = (updated: JournalEntry) => {
-    setJournalEntries((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
+    const stamped: JournalEntry = {
+      ...updated,
+      updatedAt: new Date().toISOString(),
+    };
+    setJournalEntries((prev) => prev.map((j) => (j.id === stamped.id ? stamped : j)));
+    emitSyncBridgeEvent({ entity: 'journal', entityId: stamped.id, op: 'update', payload: stamped as unknown as Record<string, unknown> });
+    void persistUpsertToCloud('journal', stamped.id, () =>
+      SupabaseService.saveJournalEntry(stamped)
+    );
+  };
+
+  const deleteJournalEntry = (id: string) => {
+    setJournalEntries((prev) => prev.filter((j) => j.id !== id));
+    emitSyncBridgeEvent({ entity: 'journal', entityId: id, op: 'delete', payload: { id } });
+    void persistDeleteToCloud('journal', id, () => SupabaseService.deleteJournalEntry(id));
   };
 
   const dismissAlert = (alertId: string) => {
     setRiskAlerts((prev) => prev.filter((a) => a.id !== alertId));
+    void persistDeleteToCloud('alert', alertId, () => SupabaseService.deleteAlert(alertId));
   };
 
-  const updateRule = (accountId: string, updatedRule: AccountRule) => {
+  const updateAccountRulesAndSync = (
+    accountId: string,
+    transformRules: (rules: AccountRule[]) => AccountRule[]
+  ) => {
+    const now = new Date().toISOString();
     setAccounts((prev) =>
       prev.map((acc) => {
         if (acc.id !== accountId) return acc;
-        return {
+        const nextAcc: TradingAccount = {
           ...acc,
-          rules: acc.rules.map((r) => (r.id === updatedRule.id ? updatedRule : r)),
+          updatedAt: now,
+          rules: transformRules(acc.rules),
         };
+        emitSyncBridgeEvent({ entity: 'risk_rule', entityId: nextAcc.id, op: 'update', payload: { id: nextAcc.id, accountId: nextAcc.id, rules: nextAcc.rules } });
+        void persistUpsertToCloud('account', nextAcc.id, () =>
+          SupabaseService.saveAccount(nextAcc)
+        );
+        return nextAcc;
       })
+    );
+  };
+
+  const updateRule = (accountId: string, updatedRule: AccountRule) => {
+    updateAccountRulesAndSync(accountId, (rules) =>
+      rules.map((r) =>
+        r.id === updatedRule.id
+          ? { ...updatedRule, version: (updatedRule.version ?? 1) + 1 }
+          : r
+      )
     );
   };
 
@@ -871,41 +1364,28 @@ function generatePersonalizedRules(
       effectiveFrom: new Date().toISOString(),
     };
 
-    setAccounts((prev) =>
-      prev.map((acc) => {
-        if (acc.id !== accountId) return acc;
-        return {
-          ...acc,
-          rules: [...acc.rules, newRule],
-        };
-      })
-    );
+    updateAccountRulesAndSync(accountId, (rules) => [...rules, newRule]);
   };
 
   const toggleRule = (accountId: string, ruleId: string) => {
-    setAccounts((prev) =>
-      prev.map((acc) => {
-        if (acc.id !== accountId) return acc;
-        return {
-          ...acc,
-          rules: acc.rules.map((r) =>
-            r.id === ruleId ? { ...r, isEnabled: !r.isEnabled } : r
-          ),
-        };
-      })
+    updateAccountRulesAndSync(accountId, (rules) =>
+      rules.map((r) =>
+        r.id === ruleId
+          ? { ...r, isEnabled: !r.isEnabled, version: (r.version ?? 1) + 1 }
+          : r
+      )
     );
   };
 
   const deleteRule = (accountId: string, ruleId: string) => {
-    setAccounts((prev) =>
-      prev.map((acc) => {
-        if (acc.id !== accountId) return acc;
-        return {
-          ...acc,
-          rules: acc.rules.filter((r) => r.id !== ruleId),
-        };
-      })
+    updateAccountRulesAndSync(accountId, (rules) =>
+      rules.filter((r) => r.id !== ruleId)
     );
+    if (isSupabaseConfigured) {
+      SupabaseService.deleteRule(ruleId).catch((err) =>
+        console.warn('Background Supabase deleteRule error:', err)
+      );
+    }
   };
 
   const importTrades = (newTrades: Trade[]) => {
@@ -913,6 +1393,9 @@ function generatePersonalizedRules(
     const existingIds = new Set(trades.map((t) => t.id));
     const uniqueNew = newTrades.filter((t) => !existingIds.has(t.id));
     setTrades((prev) => [...uniqueNew, ...prev]);
+    uniqueNew.forEach((t) => {
+      void persistUpsertToCloud('trade', t.id, () => SupabaseService.saveTrade(t));
+    });
   };
 
   const resetToDemoData = () => {
@@ -923,27 +1406,52 @@ function generatePersonalizedRules(
     setRiskAlerts(SEED_ALERTS);
     setSelectedAccountId('ALL');
     setEnvironmentFilter('live');
+    saveTombstones([]);
+    clearOutbox();
+    setPendingSyncCount(0);
     localStorage.removeItem(STORAGE_KEY);
   };
 
   const clearDemoData = () => {
-    // Remove all demo accounts and their associated trades
-    const demoAccountIds = new Set(accounts.filter((a) => a.isDemo).map((a) => a.id));
-    setAccounts((prev) => prev.filter((a) => !a.isDemo));
-    setTrades((prev) =>
-      prev.filter((t) => !t.allocations.some((a) => demoAccountIds.has(a.accountId)) && t.environment !== 'demo')
+    // Remove all demo and seed accounts and their associated trades with tombstones
+    const seedAccountIds = new Set(SEED_ACCOUNTS.map((a) => a.id));
+    const removedAccounts = accounts.filter((a) => a.isDemo || seedAccountIds.has(a.id));
+    const removedTrades = trades.filter(
+      (t) =>
+        t.allocations.some((a) => seedAccountIds.has(a.accountId)) ||
+        t.environment === 'demo' ||
+        t.id.startsWith('tr-seed')
     );
-    if (demoAccountIds.has(selectedAccountId)) {
-      setSelectedAccountId('ALL');
-    }
+
+    removedAccounts.forEach((a) => recordTombstone('account', a.id));
+    removedTrades.forEach((t) => recordTombstone('trade', t.id));
+
+    setAccounts((prev) => prev.filter((a) => !a.isDemo && !seedAccountIds.has(a.id)));
+    setTrades((prev) =>
+      prev.filter(
+        (t) =>
+          !t.allocations.some((a) => seedAccountIds.has(a.accountId)) &&
+          t.environment !== 'demo' &&
+          !t.id.startsWith('tr-seed')
+      )
+    );
+    setSelectedAccountId('ALL');
+    localStorage.removeItem(STORAGE_KEY);
   };
 
   const clearAllUserData = () => {
+    latestStateRef.current.accounts.forEach((a) => recordTombstone('account', a.id));
+    latestStateRef.current.trades.forEach((t) => recordTombstone('trade', t.id));
+    latestStateRef.current.journalEntries.forEach((j) => recordTombstone('journal', j.id));
+    latestStateRef.current.riskAlerts.forEach((al) => recordTombstone('alert', al.id));
+
     setAccounts([]);
     setTrades([]);
     setJournalEntries([]);
     setRiskAlerts([]);
     setSelectedAccountId('ALL');
+    clearOutbox();
+    setPendingSyncCount(0);
     localStorage.removeItem(STORAGE_KEY);
   };
 
@@ -981,6 +1489,7 @@ function generatePersonalizedRules(
         deleteStrategy,
         addJournalEntry,
         updateJournalEntry,
+        deleteJournalEntry,
         dismissAlert,
         updateRule,
         addRule,
@@ -991,6 +1500,11 @@ function generatePersonalizedRules(
         clearDemoData,
         clearAllUserData,
         portfolioMetrics,
+        isCloudConfigured: isSupabaseConfigured,
+        syncStatus,
+        lastSyncedAt,
+        pendingSyncCount,
+        syncWithCloud,
       }}
     >
       {children}

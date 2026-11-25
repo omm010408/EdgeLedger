@@ -1,18 +1,21 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useTrading } from '../../context/TradingContext';
 import { JournalEntry } from '../../lib/data/seedData';
 import { Plus, X, ExternalLink, ShieldAlert, Check } from 'lucide-react';
+import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
 
 export default function JournalPage() {
   const {
     journalEntries,
     addJournalEntry,
     updateJournalEntry,
+    deleteJournalEntry,
     accounts,
     trades,
+    isLoaded,
     selectedAccountId,
     setSelectedAccountId,
   } = useTrading();
@@ -27,6 +30,19 @@ export default function JournalPage() {
   const [selectedEntryId, setSelectedEntryId] = useState<string>(() => {
     return journalEntries[0]?.id || 'j-2024-03-18';
   });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const dateParam = new URLSearchParams(window.location.search).get('date');
+    if (dateParam) {
+      const matched = journalEntries.find(
+        (e) => e.entryDate === dateParam || e.id === `j-${dateParam}`
+      );
+      if (matched) {
+        setSelectedEntryId(matched.id);
+      }
+    }
+  }, [journalEntries]);
 
   // Filtered and Sorted entries (newest date first)
   const sortedEntries = useMemo(() => {
@@ -269,12 +285,19 @@ export default function JournalPage() {
                   : 'tw-score-low';
 
               return (
-                <button
+                <div
                   key={entry.id}
                   className="tw-journal-sess"
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   aria-current={isSelected}
                   onClick={() => setSelectedEntryId(entry.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedEntryId(entry.id);
+                    }
+                  }}
                 >
                   <div className="row1">
                     <span className="d">{entry.entryDate}</span>
@@ -285,16 +308,28 @@ export default function JournalPage() {
                   <p>{entry.dailySummary || entry.tradingPlan || 'No summary recorded.'}</p>
                   <div className="row2">
                     <span>Mood: {entry.emotionalState}</span>
-                    {hasLeaks ? (
-                      <span className="tw-journal-flagp">
-                        <ShieldAlert size={12} />
-                        Behavioral leak
-                      </span>
-                    ) : (
-                      <span>Self-scored</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {hasLeaks ? (
+                        <span className="tw-journal-flagp">
+                          <ShieldAlert size={12} />
+                          Behavioral leak
+                        </span>
+                      ) : (
+                        <span>Self-scored</span>
+                      )}
+                      <DeleteConfirmButton
+                        variant="icon"
+                        size={13}
+                        title="Delete journal entry"
+                        ariaLabel={`Delete journal entry for ${entry.entryDate}`}
+                        onConfirm={() => {
+                          deleteJournalEntry(entry.id);
+                          if (activeEntry?.id === entry.id) setSelectedEntryId('');
+                        }}
+                      />
+                    </div>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -400,6 +435,16 @@ export default function JournalPage() {
                   <span className="text-xs text-[var(--tw-ink-2)] font-medium">
                     {linkedTrades.length > 0 ? `${linkedTrades.length} trades · ` : ''}Self-scored
                   </span>
+                  <DeleteConfirmButton
+                    variant="pill"
+                    label="Delete entry"
+                    title="Delete this journal entry"
+                    ariaLabel={`Delete journal entry ${activeEntry.entryDate}`}
+                    onConfirm={() => {
+                      deleteJournalEntry(activeEntry.id);
+                      setSelectedEntryId('');
+                    }}
+                  />
                 </div>
               </div>
 
@@ -492,7 +537,7 @@ export default function JournalPage() {
                       : 'Linked executions: none recorded today'}
                   </span>
                   <Link
-                    href="/trades"
+                    href={activeEntry ? `/trades?date=${activeEntry.entryDate}` : '/trades'}
                     className="btn quiet text-xs inline-flex items-center gap-1 hover:text-[var(--tw-ink)]"
                     style={{ height: '28px', padding: '0 12px' }}
                   >

@@ -360,6 +360,27 @@ export class AccountRepository {
     return { success: true, account: updated };
   }
 
+  static deleteAccount(id: string, actor: string = 'trader'): boolean {
+    const existing = state.accounts.get(id);
+    if (!existing) return false;
+
+    state.accounts.delete(id);
+    state.rulesets.delete(id);
+    state.gateCache.delete(id);
+    state.executions.delete(id);
+
+    this.recordAuditEvent({
+      accountId: id,
+      actor,
+      eventType: 'account.deleted',
+      beforeState: existing,
+      afterState: null,
+      reason: 'Account deleted by trader',
+    });
+
+    return true;
+  }
+
   static createRuleSetVersion(
     accountId: string,
     ruleSetDraft: Omit<RuleSet, 'id' | 'accountId' | 'version' | 'createdAt' | 'effectiveFrom' | 'isActive'>,

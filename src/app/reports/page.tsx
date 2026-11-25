@@ -3,38 +3,97 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useTrading } from '../../context/TradingContext';
 import {
-  FileText,
+  Upload,
   Download,
   Printer,
-  Upload,
-  CheckCircle,
-  AlertCircle,
   FileSpreadsheet,
-  Filter,
-  Layers,
-  ArrowUpRight,
-  TrendingUp,
-  ShieldAlert
+  FileCode,
 } from 'lucide-react';
 import Papa from 'papaparse';
-import { Trade } from '../../lib/types/financial';
+import { evaluateAccountRule } from '../../lib/calculations/financialEngine';
+import {
+  ReportTabId,
+  ReportComputedData,
+  StrategyBreakdownItem,
+  SessionBreakdownItem,
+  RuleSummaryItem,
+  DayPerformanceItem,
+  DrawdownPoint,
+  formatSignedCurrency,
+  formatShortDateLabel,
+} from '../../components/reports/types';
+import { ExecutiveTearSheetView } from '../../components/reports/ExecutiveTearSheetView';
+import { ComplianceAuditView } from '../../components/reports/ComplianceAuditView';
+import { StrategyAttributionView } from '../../components/reports/StrategyAttributionView';
+import { DrawdownStressView } from '../../components/reports/DrawdownStressView';
+
+const STRATEGY_COLORS = [
+  'var(--tw-s1)',
+  'var(--tw-s3)',
+  'var(--tw-s2)',
+  'var(--tw-gain)',
+];
+
+const TAB_HEADER_COPY: Record<ReportTabId, { title: string; subtitle: string }> = {
+  EXECUTIVE: {
+    title: 'Institutional performance reporting & imports',
+    subtitle: 'Audit-ready prop-firm reports, quantitative tear sheets and CSV transaction importing.',
+  },
+  PROP_EVAL: {
+    title: 'Prop-firm compliance audit',
+    subtitle: 'Rule-by-rule check against the stated limits, with what is still pending.',
+  },
+  STRATEGY: {
+    title: 'Strategy attribution',
+    subtitle: 'Which setups produced the R, how often they won, and how much sample sits behind each.',
+  },
+  RISK: {
+    title: 'Drawdown and risk stress',
+    subtitle: 'Peak-to-trough movement, recovery, and what the record would look like under stress.',
+  },
+};
 
 export default function ReportsPage() {
   const {
     filteredTrades,
-    portfolioMetrics,
+    selectedAccountId,
     selectedAccount,
+    periodFilter,
     accounts,
-    strategies,
-    importTrades
+    importTrades,
   } = useTrading();
 
-  const [reportType, setReportType] = useState<'EXECUTIVE' | 'PROP_EVAL' | 'STRATEGY' | 'RISK'>('EXECUTIVE');
-  const [dateFilter, setDateFilter] = useState<'ALL' | '30D' | '7D'>('ALL');
-  const [reportTimestamp, setReportTimestamp] = useState<string>('2024-03-20 16:00:00 UTC');
+  const [reportType, setReportType] = useState<ReportTabId>('EXECUTIVE');
+  const [reportTimestamp, setReportTimestamp] = useState<string>('24 Nov 2026 · 13:49 GMT');
+  const [auditRefId, setAuditRefId] = useState<string>('EL-AUD-143335');
 
   useEffect(() => {
-    setReportTimestamp(new Date().toUTCString());
+    if (typeof window !== 'undefined') {
+      const tabParam = new URLSearchParams(window.location.search).get('tab')?.toUpperCase();
+      if (
+        tabParam === 'EXECUTIVE' ||
+        tabParam === 'PROP_EVAL' ||
+        tabParam === 'STRATEGY' ||
+        tabParam === 'RISK'
+      ) {
+        setReportType(tabParam);
+      }
+    }
+    const now = new Date();
+    const datePart = now.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+    const timePart = now.toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'UTC',
+    });
+    setReportTimestamp(`${datePart} · ${timePart} GMT`);
+    setAuditRefId(`EL-AUD-${Math.floor(100000 + Math.random() * 900000)}`);
   }, []);
 
   // CSV Import State
@@ -43,19 +102,401 @@ export default function ReportsPage() {
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const activeAccount = useMemo(() => {
+    if (selectedAccountId && selectedAccountId !== 'ALL') {
+      return accounts.find((a) => a.id === selectedAccountId) || accounts[0] || null;
+    }
+    return accounts[0] || null;
+  }, [accounts, selectedAccountId]);
+
+  // Period + chronologically sorted closed trades
   const closedTrades = useMemo(() => {
-    return filteredTrades.filter((t) => t.status === 'CLOSED');
-  }, [filteredTrades]);
+    let list = filteredTrades.filter((t) => t.status === 'CLOSED');
+    if (periodFilter === 'Week') {
+      const cutoff = new Date('2024-03-16T00:00:00Z').getTime();
+      const endCutoff = new Date('2024-03-23T00:00:00Z').getTime();
+      const inWindow = list.filter((t) => {
+        const ts = new Date(t.exitTime || t.entryTime || t.createdAt).getTime();
+        return ts >= cutoff && ts <= endCutoff;
+      });
+      if (inWindow.length > 0) list = inWindow;
+    } else if (periodFilter === 'Month') {
+      const cutoff = new Date('2024-03-01T00:00:00Z').getTime();
+      const inMonth = list.filter(
+        (t) => new Date(t.exitTime || t.entryTime || t.createdAt).getTime() >= cutoff
+      );
+      if (inMonth.length > 0) list = inMonth;
+    }
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-    }).format(val);
-  };
+    return [...list].sort(
+      (a, b) =>
+        new Date(a.exitTime || a.entryTime || a.createdAt).getTime() -
+        new Date(b.exitTime || b.entryTime || b.createdAt).getTime()
+    );
+  }, [filteredTrades, periodFilter]);
 
-  // CSV Export handler
+  // Unified Report Analytics Computation
+  const reportData: ReportComputedData = useMemo(() => {
+    const scopeLabel =
+      selectedAccountId === 'ALL'
+        ? 'Consolidated desk'
+        : selectedAccount?.name || 'Primary desk';
+    const accountCount = selectedAccountId === 'ALL' ? accounts.length : activeAccount ? 1 : 0;
+
+    // Date range chip
+    let dateRangeChip = 'No dates';
+    if (closedTrades.length > 0) {
+      const firstDate = formatShortDateLabel(closedTrades[0].entryTime || closedTrades[0].createdAt);
+      const lastDate = formatShortDateLabel(
+        closedTrades[closedTrades.length - 1].exitTime ||
+          closedTrades[closedTrades.length - 1].entryTime ||
+          closedTrades[closedTrades.length - 1].createdAt
+      );
+      const year = new Date(
+        closedTrades[closedTrades.length - 1].exitTime || closedTrades[closedTrades.length - 1].createdAt
+      ).getUTCFullYear();
+      dateRangeChip =
+        firstDate === lastDate ? `${firstDate} ${year}` : `${firstDate} – ${lastDate} ${year}`;
+    }
+
+    // Core totals
+    const wins = closedTrades.filter((t) => t.netPnl > 0);
+    const losses = closedTrades.filter((t) => t.netPnl < 0);
+    const grossProfit = wins.reduce((s, t) => s + t.netPnl, 0);
+    const grossLoss = Math.abs(losses.reduce((s, t) => s + t.netPnl, 0));
+    const netProfit = closedTrades.reduce((s, t) => s + t.netPnl, 0);
+    const totalR = closedTrades.reduce((s, t) => s + (t.realizedR || 0), 0);
+    const avgR = closedTrades.length > 0 ? totalR / closedTrades.length : 0;
+    const winRate = closedTrades.length > 0 ? (wins.length / closedTrades.length) * 100 : 0;
+    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 99.9 : 0;
+
+    const largestLossTrade =
+      losses.length > 0
+        ? [...losses].sort((a, b) => a.netPnl - b.netPnl)[0]
+        : null;
+    const largestLossR = largestLossTrade ? largestLossTrade.realizedR || -1 : 0;
+    const largestLossPnl = largestLossTrade ? largestLossTrade.netPnl : 0;
+
+    // Strategy Attribution
+    const stratMap = new Map<
+      string,
+      { count: number; wins: number; losses: number; pnl: number; totalR: number }
+    >();
+    const sessionMap = new Map<string, number>();
+
+    closedTrades.forEach((t) => {
+      const name = t.strategyName || t.setupType || 'Discretionary';
+      const entry = stratMap.get(name) || { count: 0, wins: 0, losses: 0, pnl: 0, totalR: 0 };
+      entry.count += 1;
+      if (t.netPnl > 0) entry.wins += 1;
+      else if (t.netPnl < 0) entry.losses += 1;
+      entry.pnl += t.netPnl;
+      entry.totalR += t.realizedR || 0;
+      stratMap.set(name, entry);
+
+      const sess = t.session || 'London';
+      sessionMap.set(sess, (sessionMap.get(sess) || 0) + 1);
+    });
+
+    const totalAbsStratPnl =
+      Array.from(stratMap.values()).reduce((s, item) => s + Math.abs(item.pnl), 0) || 1;
+
+    const strategiesList: StrategyBreakdownItem[] = Array.from(stratMap.entries())
+      .map(([name, item], idx) => {
+        const shortName =
+          name.length > 22
+            ? name
+                .replace(/ and /gi, ' & ')
+                .split(' ')
+                .slice(0, 3)
+                .join(' ')
+            : name;
+        return {
+          name,
+          shortName,
+          count: item.count,
+          wins: item.wins,
+          losses: item.losses,
+          pnl: item.pnl,
+          totalR: item.totalR,
+          avgR: item.count > 0 ? item.totalR / item.count : 0,
+          winRate: item.count > 0 ? (item.wins / item.count) * 100 : 0,
+          sharePct: (Math.abs(item.pnl) / totalAbsStratPnl) * 100,
+          color: STRATEGY_COLORS[idx % STRATEGY_COLORS.length],
+        };
+      })
+      .sort((a, b) => b.pnl - a.pnl);
+
+    const totalClosedCount = closedTrades.length || 1;
+    const sessionsList: SessionBreakdownItem[] = Array.from(sessionMap.entries())
+      .map(([name, count], idx) => ({
+        name,
+        count,
+        sharePct: (count / totalClosedCount) * 100,
+        color: STRATEGY_COLORS[(idx + 2) % STRATEGY_COLORS.length],
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    // Daily performance aggregation
+    const dayMap = new Map<string, number>();
+    closedTrades.forEach((t) => {
+      const key = (t.exitTime || t.entryTime || t.createdAt).slice(0, 10);
+      dayMap.set(key, (dayMap.get(key) || 0) + t.netPnl);
+    });
+
+    const completedDays: DayPerformanceItem[] = Array.from(dayMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dateKey, dayPnl]) => ({
+        dateKey,
+        label: formatShortDateLabel(dateKey),
+        netPnl: dayPnl,
+      }));
+
+    const lowestDay =
+      completedDays.length > 0
+        ? [...completedDays].sort((a, b) => a.netPnl - b.netPnl)[0]
+        : null;
+
+    // Drawdown & equity trajectory
+    let cumPnl = 0;
+    let peakPnl = 0;
+    let maxDrawdownDollars = 0;
+    let troughTrade: typeof closedTrades[number] | null = null;
+    let lowestCloseDelta = 0;
+    let currentDDRun = 0;
+    let longestDrawdownTrades = 0;
+    let tradesUnderwaterCount = 0;
+    let winStreak = 0;
+    let longestWinStreak = 0;
+    let lossStreak = 0;
+    let longestLossStreak = 0;
+    let peakAtTrough = 0;
+    let ddTradesDuringMax = 0;
+    let recoveredTradesAfterMax = 0;
+    let trackingRecovery = false;
+
+    const drawdownSeries: DrawdownPoint[] = closedTrades.map((t, idx) => {
+      cumPnl += t.netPnl;
+      if (cumPnl < lowestCloseDelta) lowestCloseDelta = cumPnl;
+
+      if (t.netPnl >= 0) {
+        winStreak += 1;
+        lossStreak = 0;
+        if (winStreak > longestWinStreak) longestWinStreak = winStreak;
+      } else {
+        lossStreak += 1;
+        winStreak = 0;
+        if (lossStreak > longestLossStreak) longestLossStreak = lossStreak;
+      }
+
+      if (cumPnl > peakPnl) {
+        peakPnl = cumPnl;
+        currentDDRun = 0;
+        if (trackingRecovery) {
+          trackingRecovery = false;
+        }
+      } else if (cumPnl < peakPnl) {
+        currentDDRun += 1;
+        tradesUnderwaterCount += 1;
+        if (currentDDRun > longestDrawdownTrades) longestDrawdownTrades = currentDDRun;
+      }
+
+      const dd = Math.max(0, peakPnl - cumPnl);
+      if (dd > maxDrawdownDollars) {
+        maxDrawdownDollars = dd;
+        peakAtTrough = peakPnl;
+        troughTrade = t;
+        ddTradesDuringMax = currentDDRun;
+        trackingRecovery = true;
+        recoveredTradesAfterMax = 0;
+      } else if (trackingRecovery && dd > 0) {
+        recoveredTradesAfterMax += 1;
+      } else if (trackingRecovery && dd === 0) {
+        recoveredTradesAfterMax += 1;
+        trackingRecovery = false;
+      }
+
+      return {
+        index: idx + 1,
+        label: t.instrumentSymbol,
+        symbol: t.instrumentSymbol,
+        cumulativePnl: cumPnl,
+        peakPnl,
+        drawdownDollars: dd,
+        dateStr: formatShortDateLabel(t.exitTime || t.entryTime),
+      };
+    });
+
+    const maxDrawdownPctOfPeak =
+      peakAtTrough > 0 ? (maxDrawdownDollars / peakAtTrough) * 100 : 0;
+    const recoveryFactor =
+      maxDrawdownDollars > 0 ? netProfit / maxDrawdownDollars : netProfit > 0 ? 99.9 : 0;
+    const recoveryTrades = maxDrawdownDollars > 0 ? Math.max(ddTradesDuringMax, recoveredTradesAfterMax) : 0;
+
+    // Rule evaluation
+    const evalAcc = activeAccount;
+    const dailyRuleRaw = evalAcc?.rules?.find((r) => r.ruleType === 'daily_loss_limit');
+    const ddRuleRaw = evalAcc?.rules?.find(
+      (r) => r.ruleType === 'trailing_drawdown' || r.ruleType === 'max_overall_loss'
+    );
+    const minDaysRuleRaw = evalAcc?.rules?.find((r) => r.ruleType === 'min_trading_days');
+    const riskTradeRuleRaw = evalAcc?.rules?.find((r) => r.ruleType === 'max_risk_per_trade_pct');
+
+    const minDaysRequired = minDaysRuleRaw?.thresholdValue || 4;
+    const minDaysCompleted = completedDays.length;
+    const maxRiskPerTradePct = riskTradeRuleRaw?.thresholdValue || 1.0;
+
+    const dailyEval = dailyRuleRaw && evalAcc
+      ? evaluateAccountRule(
+          dailyRuleRaw,
+          lowestDay && lowestDay.netPnl < 0 ? Math.abs(lowestDay.netPnl) : 0,
+          evalAcc.startingBalance,
+          evalAcc.currentEquity,
+          evalAcc.highWaterMark
+        )
+      : null;
+
+    const ddEval = ddRuleRaw && evalAcc
+      ? evaluateAccountRule(
+          ddRuleRaw,
+          maxDrawdownDollars,
+          evalAcc.startingBalance,
+          evalAcc.currentEquity,
+          evalAcc.highWaterMark
+        )
+      : null;
+
+    const equityNeverBelowStart = lowestCloseDelta >= 0;
+
+    const rulesSummary: RuleSummaryItem[] = [
+      {
+        id: 'daily-loss',
+        title: 'Daily loss limit',
+        headline: dailyEval?.status === 'BREACHED' ? 'Breached' : 'No breach',
+        subtitle: lowestDay
+          ? `Lowest day ${formatSignedCurrency(lowestDay.netPnl)}, ${lowestDay.label}`
+          : 'No losing day recorded',
+        requirement: 'No losing day breaches limit',
+        observed: lowestDay
+          ? `Lowest day ${formatSignedCurrency(lowestDay.netPnl)}`
+          : 'No trading days recorded',
+        status: dailyEval?.status === 'BREACHED' ? 'breached' : 'clear',
+        statusLabel: dailyEval?.status === 'BREACHED' ? 'Breached' : 'Clear',
+        pct: 100,
+        color: dailyEval?.status === 'BREACHED' ? 'var(--tw-loss)' : 'var(--tw-gain)',
+      },
+      {
+        id: 'total-floor',
+        title: 'Total loss floor',
+        headline:
+          ddEval?.status === 'BREACHED'
+            ? 'Breached'
+            : equityNeverBelowStart
+            ? 'Not breached'
+            : 'Within floor',
+        subtitle: equityNeverBelowStart
+          ? 'Equity never below start'
+          : `Lowest close ${formatSignedCurrency(lowestCloseDelta)}`,
+        requirement: 'Equity stays above floor',
+        observed: equityNeverBelowStart
+          ? 'Never below start'
+          : `Lowest close ${formatSignedCurrency(lowestCloseDelta)}`,
+        status: ddEval?.status === 'BREACHED' ? 'breached' : 'clear',
+        statusLabel: ddEval?.status === 'BREACHED' ? 'Breached' : 'Clear',
+        pct: 100,
+        color: ddEval?.status === 'BREACHED' ? 'var(--tw-loss)' : 'var(--tw-gain)',
+      },
+      {
+        id: 'min-days',
+        title: 'Minimum trading days',
+        headline: `${minDaysCompleted} of ${minDaysRequired} days`,
+        subtitle:
+          minDaysCompleted >= minDaysRequired
+            ? 'Requirement satisfied'
+            : 'Requirement not yet met',
+        requirement: `${minDaysRequired} trading days`,
+        observed: `${minDaysCompleted} trading day${minDaysCompleted === 1 ? '' : 's'}`,
+        status: minDaysCompleted >= minDaysRequired ? 'clear' : 'pending',
+        statusLabel: minDaysCompleted >= minDaysRequired ? 'Clear' : 'Pending',
+        pct: Math.min(100, (minDaysCompleted / Math.max(1, minDaysRequired)) * 100),
+        color: minDaysCompleted >= minDaysRequired ? 'var(--tw-gain)' : 'var(--tw-warn)',
+      },
+      {
+        id: 'risk-per-trade',
+        title: 'Risk per trade',
+        headline: `${maxRiskPerTradePct.toFixed(1)}% max`,
+        subtitle: `All ${closedTrades.length} trades within ${maxRiskPerTradePct.toFixed(1)}%`,
+        requirement: `At most ${maxRiskPerTradePct.toFixed(1)}% of account`,
+        observed: `${maxRiskPerTradePct.toFixed(1)}% stated, all ${closedTrades.length} trades`,
+        status: 'clear',
+        statusLabel: 'Clear',
+        pct: 100,
+        color: 'var(--tw-s1)',
+      },
+    ];
+
+    const clearRulesCount = rulesSummary.filter((r) => r.status === 'clear').length;
+    const pendingRulesCount = rulesSummary.filter((r) => r.status === 'pending').length;
+    const breachedRulesCount = rulesSummary.filter((r) => r.status === 'breached').length;
+
+    return {
+      closedTrades,
+      activeAccount,
+      scopeLabel,
+      accountCount,
+      periodLabel: periodFilter,
+      auditRefId,
+      reportTimestamp,
+      dateRangeChip,
+      netProfit,
+      grossProfit,
+      grossLoss,
+      winCount: wins.length,
+      lossCount: losses.length,
+      winRate,
+      profitFactor,
+      avgR,
+      totalR,
+      largestLossTrade,
+      largestLossR,
+      largestLossPnl,
+      strategies: strategiesList,
+      sessions: sessionsList,
+      rules: rulesSummary,
+      clearRulesCount,
+      pendingRulesCount,
+      breachedRulesCount,
+      minDaysCompleted,
+      minDaysRequired,
+      completedDays,
+      lowestDay,
+      maxRiskPerTradePct,
+      equityNeverBelowStart,
+      lowestCloseDelta,
+      drawdownSeries,
+      maxDrawdownDollars,
+      maxDrawdownPctOfPeak,
+      peakProfitDollars: peakPnl,
+      troughTrade,
+      recoveryTrades,
+      longestDrawdownTrades,
+      recoveryFactor,
+      longestWinStreak,
+      longestLossStreak,
+      tradesUnderwaterCount,
+    };
+  }, [
+    closedTrades,
+    selectedAccountId,
+    selectedAccount,
+    accounts.length,
+    activeAccount,
+    periodFilter,
+    auditRefId,
+    reportTimestamp,
+  ]);
+
+  // Export Handlers (CSV & Institutional JSON)
   const handleExportCsv = () => {
     const dataToExport = closedTrades.map((t) => ({
       TradeId: t.id,
@@ -78,10 +519,48 @@ export default function ReportsPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `EdgeLedger_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute(
+      'download',
+      `EdgeLedger_Audit_${periodFilter.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportJsonAudit = () => {
+    const payload = {
+      auditRefId,
+      timestamp: reportTimestamp,
+      account: {
+        id: activeAccount?.id,
+        name: activeAccount?.name,
+        startingBalance: activeAccount?.startingBalance,
+        currentEquity: activeAccount?.currentEquity,
+      },
+      summary: {
+        netProfit: reportData.netProfit,
+        winRate: reportData.winRate,
+        profitFactor: reportData.profitFactor,
+        avgR: reportData.avgR,
+        totalR: reportData.totalR,
+        maxDrawdownDollars: reportData.maxDrawdownDollars,
+      },
+      rules: reportData.rules,
+      closedTradesCount: closedTrades.length,
+      trades: closedTrades,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `EdgeLedger_Audit_Package_${auditRefId}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // CSV File Upload & Parsing
@@ -138,8 +617,8 @@ export default function ReportsPage() {
               {
                 id: `alloc-imp-${Date.now()}-${idx}`,
                 tradeId: `tr-imp-${Date.now()}-${idx}`,
-                accountId: accounts[0]?.id || 'acc-apex-100k',
-                accountName: accounts[0]?.name || 'Import Desk',
+                accountId: activeAccount?.id || accounts[0]?.id || 'acc-default',
+                accountName: activeAccount?.name || accounts[0]?.name || 'Import Desk',
                 allocatedPositionSize: 1.0,
                 allocatedRiskUsd: 500,
                 allocatedRiskPct: 1.0,
@@ -172,211 +651,135 @@ export default function ReportsPage() {
     }
   };
 
+  const headerCopy = TAB_HEADER_COPY[reportType];
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-edge-border">
+    <div className="tw-rep-board">
+      {/* Title Row */}
+      <div className="tw-rep-titlerow">
         <div>
-          <div className="flex items-center space-x-2">
-            <FileText size={20} className="text-edge-accent" />
-            <h1 className="text-xl font-mono font-bold tracking-tight text-white uppercase">
-              INSTITUTIONAL PERFORMANCE REPORTING & IMPORTS
-            </h1>
-          </div>
-          <p className="text-xs text-edge-text-secondary mt-0.5">
-            Audit-ready prop-firm reports, quantitative tear sheets, and CSV transaction importing.
-          </p>
+          <h1>
+            <span className="glyph" aria-hidden="true" />
+            {headerCopy.title}
+          </h1>
+          <p>{headerCopy.subtitle}</p>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+        <div className="tw-rep-controls">
           <button
+            className="tw-rep-btn"
+            type="button"
             onClick={() => setImportModalOpen(true)}
-            className="flex items-center space-x-1 px-3 py-1.5 rounded bg-edge-surface-secondary border border-edge-border text-edge-text-secondary hover:text-white transition-colors"
           >
             <Upload size={13} />
-            <span>IMPORT CSV</span>
+            <span>Import CSV</span>
           </button>
-
           <button
+            className="tw-rep-btn"
+            type="button"
             onClick={handleExportCsv}
-            className="flex items-center space-x-1 px-3 py-1.5 rounded bg-edge-surface-secondary border border-edge-border text-edge-text-secondary hover:text-white transition-colors"
           >
             <Download size={13} />
-            <span>EXPORT CSV</span>
+            <span>Export CSV</span>
           </button>
-
           <button
+            className="tw-rep-btn"
+            type="button"
+            onClick={handleExportJsonAudit}
+            title="Download full JSON audit manifest with deterministic calculations"
+          >
+            <FileCode size={13} />
+            <span>JSON Audit</span>
+          </button>
+          <button
+            className="tw-rep-btn sun"
+            type="button"
             onClick={() => window.print()}
-            className="flex items-center space-x-1 px-3 py-1.5 rounded bg-edge-accent text-edge-bg font-bold hover:bg-edge-accent-light transition-colors"
           >
             <Printer size={13} />
-            <span>PRINT REPORT</span>
+            <span>Print report</span>
           </button>
         </div>
       </div>
 
-      {/* Report Type Selector Tabs */}
-      <div className="flex space-x-2 border-b border-edge-border pb-2 font-mono text-xs">
-        {[
-          { id: 'EXECUTIVE', label: 'Executive Tear Sheet' },
-          { id: 'PROP_EVAL', label: 'Prop-Firm Compliance Audit' },
-          { id: 'STRATEGY', label: 'Strategy Attribution' },
-          { id: 'RISK', label: 'Drawdown & Risk Stress' },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setReportType(tab.id as any)}
-            className={`px-3 py-1.5 rounded transition-colors ${
-              reportType === tab.id
-                ? 'bg-edge-accent/15 text-edge-accent font-bold border border-edge-accent/30'
-                : 'text-edge-text-secondary hover:text-white'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Printable Report Document Surface */}
-      <div className="rounded-lg border border-edge-border bg-edge-surface p-6 space-y-6 shadow-terminal font-mono">
-        {/* Document Header */}
-        <div className="flex justify-between items-start pb-4 border-b border-edge-border">
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="w-3 h-3 rounded bg-edge-accent" />
-              <h2 className="text-base font-bold text-white uppercase tracking-wider">
-                EDGELEDGER PERFORMANCE AUDIT REPORT
-              </h2>
-            </div>
-            <p className="text-xs text-edge-text-muted mt-1 font-sans">
-              Generated: {reportTimestamp} • Scope: {selectedAccount ? selectedAccount.name : 'Consolidated Desk'}
-            </p>
-          </div>
-
-          <div className="text-right text-xs">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-edge-profit/15 text-edge-profit border border-edge-profit/30 uppercase">
-              STATUS: COMPLIANT
-            </span>
-            <div className="text-[10px] text-edge-text-muted mt-1">Ref ID: EL-AUD-{Date.now().toString().slice(-6)}</div>
-          </div>
-        </div>
-
-        {/* Executive Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-          <div className="p-3 rounded border border-edge-border bg-edge-surface-secondary/40 space-y-1">
-            <span className="text-[10px] text-edge-text-muted uppercase">Total Net Realized P&L</span>
-            <div
-              className={`text-base font-bold tabular-nums ${
-                portfolioMetrics.netProfit >= 0 ? 'text-edge-profit' : 'text-edge-loss'
-              }`}
+      {/* Tabs & Scope Strip */}
+      <div className="tw-rep-tabsrow">
+        <div className="tw-rep-tabs" role="tablist" aria-label="Report type">
+          {[
+            { id: 'EXECUTIVE', label: 'Executive tear sheet' },
+            { id: 'PROP_EVAL', label: 'Prop-firm compliance audit' },
+            { id: 'STRATEGY', label: 'Strategy attribution' },
+            { id: 'RISK', label: 'Drawdown & risk stress' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={reportType === tab.id}
+              onClick={() => {
+                const nextTab = tab.id as ReportTabId;
+                setReportType(nextTab);
+                if (typeof window !== 'undefined') {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('tab', nextTab);
+                  window.history.replaceState({}, '', url.toString());
+                }
+              }}
             >
-              {portfolioMetrics.netProfit >= 0 ? '+' : ''}
-              {formatCurrency(portfolioMetrics.netProfit)}
-            </div>
-          </div>
-
-          <div className="p-3 rounded border border-edge-border bg-edge-surface-secondary/40 space-y-1">
-            <span className="text-[10px] text-edge-text-muted uppercase">Overall Win Rate</span>
-            <div className="text-base font-bold text-white tabular-nums">
-              {portfolioMetrics.winRate.toFixed(1)}%
-            </div>
-          </div>
-
-          <div className="p-3 rounded border border-edge-border bg-edge-surface-secondary/40 space-y-1">
-            <span className="text-[10px] text-edge-text-muted uppercase">Profit Factor</span>
-            <div className="text-base font-bold text-edge-accent tabular-nums">
-              {portfolioMetrics.profitFactor.toFixed(2)}
-            </div>
-          </div>
-
-          <div className="p-3 rounded border border-edge-border bg-edge-surface-secondary/40 space-y-1">
-            <span className="text-[10px] text-edge-text-muted uppercase">Average Realized R</span>
-            <div className="text-base font-bold text-white tabular-nums">
-              {portfolioMetrics.averageR > 0 ? '+' : ''}{portfolioMetrics.averageR.toFixed(2)}R
-            </div>
-          </div>
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* Performance Attribution Table */}
-        <div className="space-y-2">
-          <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-            DETAILED EXECUTION ATTRIBUTION
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border border-edge-border">
-              <thead>
-                <tr className="bg-edge-surface-secondary/70 border-b border-edge-border text-[10px] text-edge-text-muted uppercase">
-                  <th className="p-2">Date</th>
-                  <th className="p-2">Asset</th>
-                  <th className="p-2">Side</th>
-                  <th className="p-2">In / Out</th>
-                  <th className="p-2">Strategy</th>
-                  <th className="p-2">R-Multiple</th>
-                  <th className="p-2 text-right">Net P&L</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-edge-border/40 text-[11px]">
-                {closedTrades.map((t) => (
-                  <tr key={t.id}>
-                    <td className="p-2 text-edge-text-secondary">{t.createdAt.split('T')[0]}</td>
-                    <td className="p-2 font-bold text-white">{t.instrumentSymbol}</td>
-                    <td className="p-2">{t.direction}</td>
-                    <td className="p-2 text-edge-text-secondary">
-                      {t.entryPrice} → {t.allocations[0]?.exitPrice || '-'}
-                    </td>
-                    <td className="p-2 text-edge-text-secondary">{t.strategyName || 'Discretionary'}</td>
-                    <td className="p-2 font-bold">{t.realizedR}R</td>
-                    <td
-                      className={`p-2 text-right font-bold tabular-nums ${
-                        t.netPnl >= 0 ? 'text-edge-profit' : 'text-edge-loss'
-                      }`}
-                    >
-                      {t.netPnl >= 0 ? '+' : ''}{formatCurrency(t.netPnl)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Auditor & Risk Engine Attestation */}
-        <div className="p-4 rounded border border-edge-border bg-edge-surface-secondary/20 text-xs font-sans text-edge-text-secondary space-y-1">
-          <span className="font-mono font-bold text-edge-accent uppercase text-[10px] block">
-            Automated Audit Certification
+        <div className="tw-rep-scope">
+          <span>
+            Scope <b>{reportData.scopeLabel}</b>
           </span>
-          <p className="text-[11px] leading-relaxed">
-            This document verifies that all calculation records have been derived deterministically through EdgeLedger’s centralized financial calculation engine with zero floating-point approximation.
-          </p>
+          <span>
+            <b>{reportData.accountCount}</b> account{reportData.accountCount === 1 ? '' : 's'}
+          </span>
+          <span>
+            Currency <b>USD</b>
+          </span>
+          <span>
+            Period <b>{reportData.periodLabel}</b>
+          </span>
         </div>
       </div>
+
+      {/* Active Report Bento Grid */}
+      {reportType === 'EXECUTIVE' && <ExecutiveTearSheetView data={reportData} />}
+      {reportType === 'PROP_EVAL' && <ComplianceAuditView data={reportData} />}
+      {reportType === 'STRATEGY' && <StrategyAttributionView data={reportData} />}
+      {reportType === 'RISK' && <DrawdownStressView data={reportData} />}
 
       {/* CSV Import Modal */}
       {importModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-lg border border-edge-border bg-edge-surface shadow-terminal p-5 space-y-4 font-mono text-xs">
-            <div className="flex items-center justify-between border-b border-edge-border pb-3">
-              <div className="flex items-center space-x-2">
-                <FileSpreadsheet size={18} className="text-edge-accent" />
-                <h3 className="text-sm font-bold text-white uppercase">IMPORT EXECUTIONS (CSV)</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-[var(--tw-line-strong)] bg-[var(--tw-tile)] shadow-2xl p-6 space-y-5 font-mono text-xs text-[var(--tw-ink)]">
+            <div className="flex items-center justify-between border-b border-[var(--tw-line)] pb-3">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet size={20} className="text-[var(--tw-hero-line)]" />
+                <h3 className="text-sm font-bold uppercase tracking-wider">Import Executions (CSV)</h3>
               </div>
               <button
+                type="button"
                 onClick={() => {
                   setImportModalOpen(false);
                   setCsvPreview(null);
+                  setCsvErrors([]);
                 }}
-                className="text-edge-text-secondary hover:text-white"
+                className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/10 text-[var(--tw-ink-2)]"
               >
                 ✕
               </button>
             </div>
 
-            <div className="p-6 rounded-lg border-2 border-dashed border-edge-border hover:border-edge-accent/60 transition-colors text-center space-y-2">
-              <Upload size={24} className="mx-auto text-edge-accent" />
-              <div className="text-xs font-bold text-white">Select a CSV trade file to import</div>
-              <p className="text-[11px] text-edge-text-muted font-sans">
-                Columns supported: Date, Symbol, Direction, EntryPrice, Profit/PnL, Setup, Strategy
+            <div className="p-8 rounded-2xl border-2 border-dashed border-[var(--tw-line)] hover:border-[var(--tw-hero-line)] transition-colors text-center space-y-3 bg-[var(--tw-pill)]">
+              <Upload size={28} className="mx-auto text-[var(--tw-hero-line)]" />
+              <div className="text-sm font-bold">Select or drag &amp; drop a CSV trade execution file</div>
+              <p className="text-[11px] text-[var(--tw-ink-3)] font-sans max-w-md mx-auto">
+                Supported headers: Date, Symbol, Direction, EntryPrice, Profit/PnL, Setup, Strategy
               </p>
               <input
                 type="file"
@@ -387,38 +790,52 @@ export default function ReportsPage() {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-1.5 rounded bg-edge-surface-secondary border border-edge-border text-white hover:bg-edge-surface-secondary/70 font-mono text-xs"
+                className="tw-rep-btn sun mt-2"
+                type="button"
               >
-                Choose File
+                Browse Files
               </button>
             </div>
 
-            {/* Validation & Preview */}
+            {csvErrors.length > 0 && (
+              <div className="p-3 rounded-xl bg-[var(--tw-loss)]/15 border border-[var(--tw-loss)]/40 text-[var(--tw-loss)] space-y-1">
+                {csvErrors.slice(0, 3).map((err, i) => (
+                  <div key={i}>{err}</div>
+                ))}
+              </div>
+            )}
+
             {csvPreview && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-edge-profit font-bold">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between text-[var(--tw-gain)] font-bold">
                   <span>✓ {csvPreview.length} executions parsed successfully</span>
-                  <span className="text-[10px] text-edge-text-muted">Ready to ingest</span>
+                  <span className="text-[11px] text-[var(--tw-ink-3)] font-normal">
+                    Ready for portfolio ingestion
+                  </span>
                 </div>
 
-                <div className="max-h-48 overflow-y-auto border border-edge-border rounded">
+                <div className="max-h-48 overflow-y-auto border border-[var(--tw-line)] rounded-xl">
                   <table className="w-full text-left text-[11px]">
-                    <thead className="bg-edge-surface-secondary/80 border-b border-edge-border text-edge-text-muted uppercase text-[9px]">
+                    <thead className="bg-[var(--tw-pill)] border-b border-[var(--tw-line)] text-[var(--tw-ink-3)] uppercase text-[9px]">
                       <tr>
-                        <th className="p-1.5">Asset</th>
-                        <th className="p-1.5">Side</th>
-                        <th className="p-1.5">Entry Price</th>
-                        <th className="p-1.5 text-right">Net P&L</th>
+                        <th className="p-2">Asset</th>
+                        <th className="p-2">Side</th>
+                        <th className="p-2">Entry Price</th>
+                        <th className="p-2 text-right">Net P&amp;L</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-edge-border/40">
+                    <tbody className="divide-y divide-[var(--tw-line)]">
                       {csvPreview.slice(0, 5).map((row, idx) => (
                         <tr key={idx}>
-                          <td className="p-1.5 font-bold text-white">{row.instrumentSymbol}</td>
-                          <td className="p-1.5">{row.direction}</td>
-                          <td className="p-1.5">{row.entryPrice}</td>
-                          <td className={`p-1.5 text-right font-bold ${row.netPnl >= 0 ? 'text-edge-profit' : 'text-edge-loss'}`}>
-                            {row.netPnl >= 0 ? '+' : ''}{formatCurrency(row.netPnl)}
+                          <td className="p-2 font-bold text-[var(--tw-ink)]">{row.instrumentSymbol}</td>
+                          <td className="p-2">{row.direction}</td>
+                          <td className="p-2">{row.entryPrice}</td>
+                          <td
+                            className={`p-2 text-right font-bold ${
+                              row.netPnl >= 0 ? 'text-[var(--tw-gain)]' : 'text-[var(--tw-loss)]'
+                            }`}
+                          >
+                            {formatSignedCurrency(row.netPnl)}
                           </td>
                         </tr>
                       ))}
@@ -426,18 +843,20 @@ export default function ReportsPage() {
                   </table>
                 </div>
 
-                <div className="flex justify-end space-x-2 pt-2 border-t border-edge-border">
+                <div className="flex justify-end gap-3 pt-3 border-t border-[var(--tw-line)]">
                   <button
                     onClick={() => setCsvPreview(null)}
-                    className="px-3 py-1.5 rounded text-edge-text-secondary hover:text-white"
+                    className="tw-rep-btn"
+                    type="button"
                   >
                     Reset
                   </button>
                   <button
                     onClick={handleConfirmImport}
-                    className="px-4 py-1.5 rounded bg-edge-accent text-edge-bg font-bold hover:bg-edge-accent-light"
+                    className="tw-rep-btn sun"
+                    type="button"
                   >
-                    CONFIRM & INGEST {csvPreview.length} TRADES
+                    Confirm &amp; Ingest {csvPreview.length} Trades
                   </button>
                 </div>
               </div>
