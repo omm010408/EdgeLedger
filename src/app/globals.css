@@ -2664,21 +2664,29 @@ body {
 }
 
 /* Capital and phase, sun */
-.tw-capital {
+.tw-add-account-board .tw-tile.tw-capital,
+[data-theme="light"] .tw-add-account-board .tw-tile.tw-capital,
+.light .tw-add-account-board .tw-tile.tw-capital {
   grid-column: span 5;
-  background: var(--sun);
-  border: 0;
-  color: var(--sun-ink);
+  background: var(--tw-sun) !important;
+  border: 0 !important;
+  color: var(--tw-sun-ink) !important;
+  box-shadow: var(--tw-shadow-arch) !important;
 }
-.tw-capital .tw-lbl,
-.tw-capital .tw-sub,
-.tw-capital .tw-field > .tw-lbl {
-  color: var(--sun-ink);
+.tw-tile.tw-capital .tw-lbl,
+.tw-tile.tw-capital .tw-sub,
+.tw-tile.tw-capital .tw-field > .tw-lbl,
+.tw-tile.tw-capital .tw-big,
+.tw-tile.tw-capital .tw-big small {
+  color: var(--tw-sun-ink) !important;
 }
-.tw-capital .tw-input {
-  background: color-mix(in srgb, var(--sun-ink) 8%, transparent);
-  border-color: color-mix(in srgb, var(--sun-ink) 25%, transparent);
-  color: var(--sun-ink);
+.tw-tile.tw-capital .tw-input {
+  background: rgba(10, 8, 0, 0.08) !important;
+  border-color: rgba(10, 8, 0, 0.28) !important;
+  color: var(--tw-sun-ink) !important;
+}
+.tw-tile.tw-capital .tw-input input {
+  color: var(--tw-sun-ink) !important;
 }
 .tw-big {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -2705,13 +2713,16 @@ body {
 .tw-ph {
   padding: 10px 12px;
   border-radius: 16px;
-  background: color-mix(in srgb, var(--sun-ink) 8%, transparent);
+  background: rgba(10, 8, 0, 0.08);
+  border: 1px solid rgba(10, 8, 0, 0.14);
+  color: var(--tw-sun-ink);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 .tw-ph[aria-current="step"] {
-  background: var(--sun-ink);
-  color: var(--sun);
+  background: var(--tw-sun-ink);
+  border-color: var(--tw-sun-ink);
+  color: var(--tw-sun);
 }
 .tw-ph b {
   display: block;
