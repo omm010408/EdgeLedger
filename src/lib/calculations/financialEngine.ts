@@ -170,18 +170,43 @@ export function calculateMetricsForFixedSize(input: {
   takeProfitPrice?: number;
   direction?: TradeDirection;
   instrument: InstrumentSpecification;
+  plannedRiskUsd?: number;
+  riskPercentage?: number;
 }): PositionSizingResult {
-  const { accountEquity, positionSize, entryPrice, stopLossPrice, takeProfitPrice, direction, instrument } = input;
+  const {
+    accountEquity,
+    positionSize,
+    entryPrice,
+    stopLossPrice,
+    takeProfitPrice,
+    direction,
+    instrument,
+    plannedRiskUsd,
+    riskPercentage,
+  } = input;
   const equity = new Decimal(Math.max(1, accountEquity || 100000));
   const lots = new Decimal(Math.max(0.01, positionSize || 0.01));
-  const entry = new Decimal(entryPrice);
-  const sl = new Decimal(stopLossPrice);
-  const tickSize = new Decimal(instrument.tickSize);
-  const tickValue = new Decimal(instrument.tickValue);
+  const entry = new Decimal(Number.isFinite(entryPrice) && entryPrice > 0 ? entryPrice : 1);
+  const tickSize = new Decimal(instrument.tickSize || 0.01);
+  const tickValue = new Decimal(instrument.tickValue || 1.0);
 
-  const stopDist = entry.minus(sl).abs();
-  const stopTicks = stopDist.dividedBy(tickSize);
-  const actualLoss = stopTicks.times(tickValue).times(lots).toDecimalPlaces(2).toNumber();
+  const hasValidSl = Number.isFinite(stopLossPrice) && stopLossPrice > 0 && stopLossPrice !== entryPrice;
+  let actualLoss: number;
+  let stopTicks = new Decimal(0);
+
+  if (hasValidSl) {
+    const sl = new Decimal(stopLossPrice);
+    const stopDist = entry.minus(sl).abs();
+    stopTicks = stopDist.dividedBy(tickSize);
+    actualLoss = stopTicks.times(tickValue).times(lots).toDecimalPlaces(2).toNumber();
+  } else if (plannedRiskUsd && plannedRiskUsd > 0) {
+    actualLoss = plannedRiskUsd;
+    stopTicks = new Decimal(actualLoss).dividedBy(tickValue.times(lots));
+  } else {
+    const pct = riskPercentage && riskPercentage > 0 ? riskPercentage : 1.0;
+    actualLoss = equity.times(new Decimal(pct).dividedBy(100)).toDecimalPlaces(2).toNumber();
+    stopTicks = new Decimal(actualLoss).dividedBy(tickValue.times(lots));
+  }
 
   let potentialProfit: number | undefined;
   let plannedRr: number | undefined;

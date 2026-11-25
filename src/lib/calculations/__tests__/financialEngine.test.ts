@@ -184,6 +184,35 @@ describe('Financial Calculation Engine Tests (EDGELEDGER Revised)', () => {
     expect(fixed.plannedRr).toBe(2);
   });
 
+  it('safely handles missing or zero stop loss in calculateMetricsForFixedSize without ballooning risk', () => {
+    // When editing a trade with SL=0 or undefined, gold entry=2650 must NOT produce a $265,000 potential loss!
+    const withExistingPlannedRisk = calculateMetricsForFixedSize({
+      accountEquity: 100000,
+      positionSize: 1.0,
+      entryPrice: 2650,
+      stopLossPrice: 0,
+      direction: 'BUY',
+      instrument: goldSpec,
+      plannedRiskUsd: 1000,
+    });
+
+    expect(withExistingPlannedRisk.potentialLoss).toBe(1000);
+    expect(withExistingPlannedRisk.riskPctOfEquity).toBe(1.0);
+
+    const withFallbackRisk = calculateMetricsForFixedSize({
+      accountEquity: 100000,
+      positionSize: 1.0,
+      entryPrice: 2650,
+      stopLossPrice: 0,
+      direction: 'BUY',
+      instrument: goldSpec,
+      riskPercentage: 1.0,
+    });
+
+    expect(withFallbackRisk.potentialLoss).toBe(1000);
+    expect(withFallbackRisk.riskPctOfEquity).toBe(1.0);
+  });
+
   it('computes BUY and SELL execution gross/net P&L and lot-scaled commission accurately', () => {
     const comm = getDefaultCommission(eurusdSpec, 0.5);
     expect(comm).toBe(3.5);

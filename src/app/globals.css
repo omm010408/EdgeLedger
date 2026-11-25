@@ -1428,8 +1428,9 @@ body {
 .tw-rows {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-rows: repeat(4, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
   margin-top: 10px;
 }
 
@@ -1439,6 +1440,8 @@ body {
   grid-template-columns: 132px minmax(0, 1fr);
   gap: 16px;
   align-items: center;
+  flex: 1;
+  min-height: 52px;
 }
 
 .tw-rrow + .tw-rrow { border-top: 1px solid var(--tw-line); }

@@ -433,7 +433,7 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
   };
 
   return (
-    <div className={`tw-add-account-board w-full ${isModal ? 'max-w-6xl rounded-[32px] border border-[var(--line)] bg-[var(--tile)] shadow-2xl p-6 sm:p-8' : 'max-w-[1440px] mx-auto p-4 sm:p-7'}`}>
+    <div className={`tw-add-account-board w-full ${isModal ? 'p-6 sm:p-8 !bg-transparent' : 'max-w-[1440px] mx-auto p-4 sm:p-7'}`}>
       
       {/* Top Header & Steps */}
       <div className="tw-titlerow pb-4 border-b border-[var(--line)]">

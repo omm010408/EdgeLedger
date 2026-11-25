@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   filterTradesByPeriod,
   getPeriodDateRangeLabel,
-  getRollingSevenDays,
+  getCurrentWeekDays,
 } from '../lib/data/periodFilter';
 import { Fingerprint, Eye, EyeOff } from 'lucide-react';
 import { useTrading } from '../context/TradingContext';
@@ -167,16 +167,16 @@ export default function OverviewPage() {
   }, [closedTrades]);
 
   const weekDays = useMemo(() => {
-    const baseDates = getRollingSevenDays(activeTrades);
-    return baseDates.map(({ day, monthShort, dateKey }) => {
-      const dayTrades = activeTrades.filter((t) => (t.entryTime || t.createdAt).startsWith(dateKey));
+    const baseDates = getCurrentWeekDays(filteredTrades);
+    return baseDates.map(({ day, monthShort, dateKey, weekdayShort }) => {
+      const dayTrades = filteredTrades.filter((t) => (t.entryTime || t.createdAt).startsWith(dateKey));
       const dayClosed = dayTrades.filter((t) => t.status === 'CLOSED');
       const dayOpen = dayTrades.filter((t) => t.status === 'OPEN' || t.status === 'PARTIALLY_CLOSED');
       const netPnl = dayClosed.reduce((sum, t) => sum + getScopedTradePnl(t), 0);
-      return { day, monthShort, dateKey, dayTrades, dayClosed, dayOpen, netPnl };
+      return { day, monthShort, dateKey, weekdayShort, dayTrades, dayClosed, dayOpen, netPnl };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTrades, selectedAccountId]);
+  }, [filteredTrades, selectedAccountId]);
 
   const periodRangeLabel = useMemo(
     () => getPeriodDateRangeLabel(activeTrades, periodFilter),
@@ -184,7 +184,7 @@ export default function OverviewPage() {
   );
 
   const weekBubbleRangeLabel = useMemo(() => {
-    if (weekDays.length === 0) return '7-day window';
+    if (weekDays.length === 0) return 'Current week';
     const first = weekDays[0];
     const last = weekDays[weekDays.length - 1];
     const year = last.dateKey.slice(0, 4);
@@ -199,7 +199,9 @@ export default function OverviewPage() {
 
   const maxAbsR = useMemo(() => {
     const vals = rankedByR.map((t) => Math.abs(t.realizedR || 0));
-    return Math.max(3, ...vals);
+    const highest = Math.max(0, ...vals);
+    if (highest <= 0) return 3;
+    return Math.max(highest * 1.15, 0.5);
   }, [rankedByR]);
 
   const recentExecutions = useMemo(() => {
@@ -548,7 +550,10 @@ export default function OverviewPage() {
                   />
                 </div>
                 <div className="tw-dl">
-                  <div className="tw-d">{wd.day}</div>
+                  <div className="tw-d">
+                    <span className="opacity-60 text-[10px] mr-1 uppercase font-semibold">{wd.weekdayShort}</span>
+                    <span>{wd.day}</span>
+                  </div>
                   <div className={`tw-v ${!hasClosed && !hasOpen ? 'none' : ''}`}>
                     {hasClosed
                       ? isPnlHidden
@@ -563,7 +568,7 @@ export default function OverviewPage() {
                   {hasClosed ? (
                     <>
                       <b>
-                        {wd.day} {wd.monthShort},{' '}
+                        {wd.weekdayShort} {wd.day} {wd.monthShort},{' '}
                         {isPnlHidden
                           ? '••••••'
                           : `${wd.netPnl >= 0 ? '+' : '−'}${formatCur(Math.abs(wd.netPnl))}`}
@@ -572,12 +577,12 @@ export default function OverviewPage() {
                     </>
                   ) : hasOpen ? (
                     <>
-                      <b>{wd.day} {wd.monthShort}, open trade</b>
+                      <b>{wd.weekdayShort} {wd.day} {wd.monthShort}, open trade</b>
                       {syms} floating position
                     </>
                   ) : (
                     <>
-                      <b>{wd.day} {wd.monthShort}, no trades</b>Click to open calendar
+                      <b>{wd.weekdayShort} {wd.day} {wd.monthShort}, no trades</b>Click to open calendar
                     </>
                   )}
                 </div>
