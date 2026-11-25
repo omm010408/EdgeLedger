@@ -74,27 +74,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Persist to .env.local
-    const envPath = path.resolve(process.cwd(), '.env.local');
-    let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
+    // Persist to .env.local when running on a writable filesystem (skip cleanly on read-only serverless runtimes like Vercel)
+    let savedToEnvFile = false;
+    try {
+      const envPath = path.resolve(process.cwd(), '.env.local');
+      let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
 
-    const updateEnvVar = (content: string, key: string, value: string) => {
-      const regex = new RegExp(`^${key}=.*$`, 'm');
-      if (regex.test(content)) {
-        return content.replace(regex, `${key}=${value}`);
+      const updateEnvVar = (content: string, key: string, value: string) => {
+        const regex = new RegExp(`^${key}=.*$`, 'm');
+        if (regex.test(content)) {
+          return content.replace(regex, `${key}=${value}`);
+        }
+        return `${content}\n${key}=${value}`;
+      };
+
+      envContent = updateEnvVar(envContent, 'NEXT_PUBLIC_SUPABASE_URL', trimmedUrl);
+      envContent = updateEnvVar(envContent, 'NEXT_PUBLIC_SUPABASE_ANON_KEY', trimmedAnonKey);
+      if (trimmedServiceKey) {
+        envContent = updateEnvVar(envContent, 'SUPABASE_SERVICE_ROLE_KEY', trimmedServiceKey);
       }
-      return `${content}\n${key}=${value}`;
-    };
+      envContent = updateEnvVar(envContent, 'NEXT_PUBLIC_ENABLE_DEMO_DATA', 'false');
 
-    envContent = updateEnvVar(envContent, 'NEXT_PUBLIC_SUPABASE_URL', trimmedUrl);
-    envContent = updateEnvVar(envContent, 'NEXT_PUBLIC_SUPABASE_ANON_KEY', trimmedAnonKey);
-    if (trimmedServiceKey) {
-      envContent = updateEnvVar(envContent, 'SUPABASE_SERVICE_ROLE_KEY', trimmedServiceKey);
+      fs.writeFileSync(envPath, envContent.trim() + '\n', 'utf8');
+      savedToEnvFile = true;
+    } catch (fsErr: any) {
+      if (fsErr?.code !== 'EROFS' && fsErr?.code !== 'EACCES' && fsErr?.code !== 'EPERM') {
+        throw fsErr;
+      }
     }
-    // Also disable demo data when connecting a real database
-    envContent = updateEnvVar(envContent, 'NEXT_PUBLIC_ENABLE_DEMO_DATA', 'false');
-
-    fs.writeFileSync(envPath, envContent.trim() + '\n', 'utf8');
 
     // Update current process.env in memory dynamically without triggering DefinePlugin static substitution
     const envObj: Record<string, string | undefined> = process.env as any;
@@ -110,7 +117,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Successfully connected to Supabase PostgreSQL (${latencyMs}ms latency). Credentials saved to .env.local.`,
+      readOnlyRuntime: !savedToEnvFile,
+      message: savedToEnvFile
+        ? `Successfully connected to Supabase PostgreSQL (${latencyMs}ms latency). Credentials saved to .env.local.`
+        : `Connected to Supabase PostgreSQL (${latencyMs}ms latency). Hosted filesystem is read-only — manage environment variables in your Vercel project settings.`,
       latencyMs,
       schemaStatus: pingError?.code === '42P01' ? 'needs_migration' : 'ready',
     });

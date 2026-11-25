@@ -31,7 +31,7 @@ export default function SettingsPage() {
     strategies,
     importTrades,
     resetToDemoData,
-    clearDemoData,
+    clearAllUserData,
     isCloudConfigured,
     syncStatus,
     lastSyncedAt,
@@ -279,9 +279,9 @@ export default function SettingsPage() {
 
   const handleClearDemo = () => {
     if (clearWord.trim() !== 'CLEAR') return;
-    clearDemoData();
+    clearAllUserData();
     setClearWord('');
-    showToast('Demo data cleared');
+    showToast('All data cleared (local & synced)');
   };
 
   const storageStatusBadge = isCloudConfigured
@@ -491,7 +491,7 @@ export default function SettingsPage() {
               </li>
               <li>
                 <div>
-                  Run <code className="tw-set-code">supabase/migrations/001_initial_schema.sql</code> in the Supabase SQL editor.
+                  Run <code className="tw-set-code">supabase/schema_sql_editor.sql</code> in the Supabase SQL editor.
                 </div>
               </li>
               <li>

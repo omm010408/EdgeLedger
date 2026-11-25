@@ -1413,46 +1413,108 @@ function generatePersonalizedRules(
   };
 
   const clearDemoData = () => {
-    // Remove all demo and seed accounts and their associated trades with tombstones
     const seedAccountIds = new Set(SEED_ACCOUNTS.map((a) => a.id));
+    const seedTradeIds = new Set(SEED_TRADES.map((t) => t.id));
+    const seedStrategyIds = new Set(SEED_STRATEGIES.map((s) => s.id));
+    const seedJournalIds = new Set(SEED_JOURNAL.map((j) => j.id));
+    const seedAlertIds = new Set(SEED_ALERTS.map((al) => al.id));
+
     const removedAccounts = accounts.filter((a) => a.isDemo || seedAccountIds.has(a.id));
     const removedTrades = trades.filter(
       (t) =>
+        seedTradeIds.has(t.id) ||
         t.allocations.some((a) => seedAccountIds.has(a.accountId)) ||
         t.environment === 'demo' ||
         t.id.startsWith('tr-seed')
     );
-
-    removedAccounts.forEach((a) => recordTombstone('account', a.id));
-    removedTrades.forEach((t) => recordTombstone('trade', t.id));
-
-    setAccounts((prev) => prev.filter((a) => !a.isDemo && !seedAccountIds.has(a.id)));
-    setTrades((prev) =>
-      prev.filter(
-        (t) =>
-          !t.allocations.some((a) => seedAccountIds.has(a.accountId)) &&
-          t.environment !== 'demo' &&
-          !t.id.startsWith('tr-seed')
-      )
+    const removedStrategies = strategies.filter((s) => seedStrategyIds.has(s.id));
+    const removedJournals = journalEntries.filter((j) => seedJournalIds.has(j.id));
+    const removedAlerts = riskAlerts.filter(
+      (al) => seedAlertIds.has(al.id) || seedAccountIds.has(al.accountId)
     );
+
+    const now = new Date().toISOString();
+    const tombstonesToApply: SyncTombstone[] = [
+      ...removedAccounts.map((a) => ({ id: a.id, entityType: 'account' as const, deletedAt: now })),
+      ...removedTrades.map((t) => ({ id: t.id, entityType: 'trade' as const, deletedAt: now })),
+      ...removedStrategies.map((s) => ({ id: s.id, entityType: 'strategy' as const, deletedAt: now })),
+      ...removedJournals.map((j) => ({ id: j.id, entityType: 'journal' as const, deletedAt: now })),
+      ...removedAlerts.map((al) => ({ id: al.id, entityType: 'alert' as const, deletedAt: now })),
+    ];
+
+    tombstonesToApply.forEach((tb) => recordTombstone(tb.entityType, tb.id));
+
+    const nextAccounts = accounts.filter((a) => !a.isDemo && !seedAccountIds.has(a.id));
+    const nextTrades = trades.filter(
+      (t) =>
+        !seedTradeIds.has(t.id) &&
+        !t.allocations.some((a) => seedAccountIds.has(a.accountId)) &&
+        t.environment !== 'demo' &&
+        !t.id.startsWith('tr-seed')
+    );
+    const nextStrategies = strategies.filter((s) => !seedStrategyIds.has(s.id));
+    const nextJournal = journalEntries.filter((j) => !seedJournalIds.has(j.id));
+    const nextAlerts = riskAlerts.filter(
+      (al) => !seedAlertIds.has(al.id) && !seedAccountIds.has(al.accountId)
+    );
+
+    setAccounts(nextAccounts);
+    setTrades(nextTrades);
+    setStrategies(nextStrategies);
+    setJournalEntries(nextJournal);
+    setRiskAlerts(nextAlerts);
     setSelectedAccountId('ALL');
-    localStorage.removeItem(STORAGE_KEY);
+
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        accounts: nextAccounts,
+        trades: nextTrades,
+        strategies: nextStrategies,
+        journalEntries: nextJournal,
+        riskAlerts: nextAlerts,
+      })
+    );
+
+    if (isSupabaseConfigured && tombstonesToApply.length > 0) {
+      void SupabaseService.applyTombstones(tombstonesToApply);
+    }
   };
 
   const clearAllUserData = () => {
-    latestStateRef.current.accounts.forEach((a) => recordTombstone('account', a.id));
-    latestStateRef.current.trades.forEach((t) => recordTombstone('trade', t.id));
-    latestStateRef.current.journalEntries.forEach((j) => recordTombstone('journal', j.id));
-    latestStateRef.current.riskAlerts.forEach((al) => recordTombstone('alert', al.id));
+    const now = new Date().toISOString();
+    const tombstonesToApply: SyncTombstone[] = [
+      ...latestStateRef.current.accounts.map((a) => ({ id: a.id, entityType: 'account' as const, deletedAt: now })),
+      ...latestStateRef.current.trades.map((t) => ({ id: t.id, entityType: 'trade' as const, deletedAt: now })),
+      ...latestStateRef.current.strategies.map((s) => ({ id: s.id, entityType: 'strategy' as const, deletedAt: now })),
+      ...latestStateRef.current.journalEntries.map((j) => ({ id: j.id, entityType: 'journal' as const, deletedAt: now })),
+      ...latestStateRef.current.riskAlerts.map((al) => ({ id: al.id, entityType: 'alert' as const, deletedAt: now })),
+    ];
+
+    tombstonesToApply.forEach((tb) => recordTombstone(tb.entityType, tb.id));
 
     setAccounts([]);
     setTrades([]);
+    setStrategies([]);
     setJournalEntries([]);
     setRiskAlerts([]);
     setSelectedAccountId('ALL');
     clearOutbox();
     setPendingSyncCount(0);
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        accounts: [],
+        trades: [],
+        strategies: [],
+        journalEntries: [],
+        riskAlerts: [],
+      })
+    );
+
+    if (isSupabaseConfigured && tombstonesToApply.length > 0) {
+      void SupabaseService.applyTombstones(tombstonesToApply);
+    }
   };
 
   return (

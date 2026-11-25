@@ -50,7 +50,7 @@ export function getAppConfig(): AppConfig {
       env: (process.env.NEXT_PUBLIC_APP_ENV as any) || (process.env.NODE_ENV === 'production' ? 'production' : 'development'),
       url: process.env.NEXT_PUBLIC_APP_URL?.trim() || 'http://localhost:3000',
       defaultBaseCurrency: process.env.NEXT_PUBLIC_DEFAULT_BASE_CURRENCY?.trim().toUpperCase() || 'USD',
-      enableDemoData: parseBoolean(process.env.NEXT_PUBLIC_ENABLE_DEMO_DATA, true),
+      enableDemoData: parseBoolean(process.env.NEXT_PUBLIC_ENABLE_DEMO_DATA, false),
       enableWorkedFixtures: parseBoolean(process.env.NEXT_PUBLIC_WORKED_FIXTURES, true),
       decimalPrecision: parseNumber(process.env.NEXT_PUBLIC_DECIMAL_PRECISION, 28),
       riskCheckIntervalMs: parseNumber(process.env.NEXT_PUBLIC_RISK_CHECK_INTERVAL_MS, 5000),
