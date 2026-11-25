@@ -31,6 +31,16 @@ function isReadMethod(method?: string): boolean {
   return m === 'GET' || m === 'HEAD';
 }
 
+function isCrossOriginRequest(urlStr: string): boolean {
+  if (typeof window === 'undefined' || !window.location?.origin) return false;
+  if (!/^https?:\/\//i.test(urlStr)) return false;
+  try {
+    return new URL(urlStr).origin !== window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 function extractHeaders(init?: RequestInit, input?: RequestInfo | URL): Headers {
   const headers = new Headers(
     input instanceof Request ? input.headers : undefined
@@ -95,6 +105,11 @@ export function createTransportFetch(options: TransportAdapterOptions): typeof f
     init?: RequestInit
   ): Promise<Response> {
     const urlStr = extractUrlString(input);
+    // Do not inject httpOnly session credentials or session sign-out onto third-party cross-origin fetches (e.g. Supabase REST CORS)
+    if (isCrossOriginRequest(urlStr)) {
+      return baseFetch(input, init);
+    }
+
     const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
     const requestInit: RequestInit = {
       ...init,
