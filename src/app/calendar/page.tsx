@@ -45,12 +45,17 @@ export default function CalendarPage() {
   // Calendar View Mode: Monthly, Weekly, Daily
   const [viewMode, setViewMode] = useState<'Monthly' | 'Weekly' | 'Daily'>('Monthly');
 
-  // Default to March 2024 matching the closed-trade dataset (18-20 Mar 2024)
-  const [displayedYear, setDisplayedYear] = useState<number>(2024);
-  const [displayedMonth, setDisplayedMonth] = useState<number>(2); // 0-indexed: 2 = March
+  // Default to today's year, month, and day
+  const [displayedYear, setDisplayedYear] = useState<number>(() => new Date().getFullYear());
+  const [displayedMonth, setDisplayedMonth] = useState<number>(() => new Date().getMonth());
+  const [selectedDayNum, setSelectedDayNum] = useState<number>(() => new Date().getDate());
 
-  // Selected Day (defaults to 18 March)
-  const [selectedDayNum, setSelectedDayNum] = useState<number>(18);
+  const handleJumpToday = () => {
+    const today = new Date();
+    setDisplayedYear(today.getFullYear());
+    setDisplayedMonth(today.getMonth());
+    setSelectedDayNum(today.getDate());
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -62,8 +67,13 @@ export default function CalendarPage() {
         setDisplayedYear(y);
         setDisplayedMonth(m - 1);
         setSelectedDayNum(d);
+        return;
       }
     }
+    const today = new Date();
+    setDisplayedYear(today.getFullYear());
+    setDisplayedMonth(today.getMonth());
+    setSelectedDayNum(today.getDate());
   }, []);
 
   // Month navigation helpers
@@ -301,8 +311,12 @@ export default function CalendarPage() {
     const found = calendarCells.find((c) => c.isCurrentMonth && c.dateNum === selectedDayNum);
     if (found) return found;
 
-    // Default to 18th
-    return calendarCells.find((c) => c.isCurrentMonth && c.dateNum === 18) || calendarCells[15];
+    const currentMonthCells = calendarCells.filter((c) => c.isCurrentMonth);
+    return (
+      currentMonthCells[Math.min(selectedDayNum - 1, currentMonthCells.length - 1)] ||
+      currentMonthCells[0] ||
+      calendarCells[15]
+    );
   }, [calendarCells, selectedDayNum]);
 
   // Formatter helpers
@@ -368,6 +382,13 @@ export default function CalendarPage() {
               className="p-1 hover:text-[var(--tw-ink)] text-[var(--tw-ink-2)] transition-colors rounded-full cursor-pointer"
             >
               <ChevronRight size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={handleJumpToday}
+              className="ml-0.5 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-[var(--tw-tile)] text-[var(--tw-ink)] border border-[var(--tw-line)] hover:border-[var(--tw-line-strong)] transition-colors cursor-pointer"
+            >
+              Today
             </button>
           </div>
 
@@ -574,7 +595,7 @@ export default function CalendarPage() {
           <div
             className="spark"
             role="img"
-            aria-label={`Cumulative P&L for ${monthName}: flat until 18 ${monthName}, then up to ${formatCur(monthSummary.netPnl)}`}
+            aria-label={`Cumulative P&L for ${monthName}: ${formatCur(monthSummary.netPnl)}`}
           >
             <svg
               viewBox="0 0 300 90"
@@ -752,13 +773,13 @@ export default function CalendarPage() {
             {isPnlHidden
               ? '+$••••'
               : monthSummary.bestDay && monthSummary.bestDay.tradeCount > 0
-              ? `+${formatCur(monthSummary.bestDay.netPnl).replace('.00', '')}`
-              : '+$4,115'}
+              ? `${monthSummary.bestDay.netPnl >= 0 ? '+' : ''}${formatCur(monthSummary.bestDay.netPnl).replace('.00', '')}`
+              : '$0'}
           </div>
           <div className="foot">
             {monthSummary.bestDay && monthSummary.bestDay.tradeCount > 0
-              ? `${monthSummary.bestDay.dateNum} ${monthName} · ${monthSummary.bestDay.tradeCount} trades`
-              : `18 ${monthName} · 2 trades`}
+              ? `${monthSummary.bestDay.dateNum} ${monthName} · ${monthSummary.bestDay.tradeCount} trade${monthSummary.bestDay.tradeCount === 1 ? '' : 's'}`
+              : 'No closed trades'}
           </div>
         </section>
 
@@ -769,7 +790,7 @@ export default function CalendarPage() {
           <div className="lbl">Trades in view</div>
           <div className="n">{monthSummary.totalClosed} closed</div>
           <div className="foot">
-            {monthSummary.winRate.toFixed(0)}% win · 2 days · {monthSummary.totalOpen} open
+            {monthSummary.winRate.toFixed(0)}% win · {monthSummary.daysTraded} day{monthSummary.daysTraded === 1 ? '' : 's'} · {monthSummary.totalOpen} open
           </div>
         </section>
       </main>
