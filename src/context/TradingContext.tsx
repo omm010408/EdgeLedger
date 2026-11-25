@@ -1235,6 +1235,7 @@ function generatePersonalizedRules(
     const instrument = instruments.find((i) => i.symbol === trade.instrumentSymbol) || instruments[0];
 
     const now = new Date().toISOString();
+    const accountDeltas = new Map<string, number>();
 
     const updatedAllocations = trade.allocations.map((alloc) => {
       if (alloc.id !== allocationId) return alloc;
@@ -1266,33 +1267,22 @@ function generatePersonalizedRules(
 
       const remainingSize = Math.max(0, alloc.allocatedPositionSize - closeSize);
       const isFullyClosed = remainingSize <= 0.0001;
+      const entryExecSize =
+        alloc.executions?.find((ex) => ex.executionType === 'ENTRY')?.size ||
+        alloc.allocatedPositionSize;
       const newRealizedPnl = alloc.realizedPnl + pnlResult.grossPnl;
       const newNetPnl = alloc.netPnl + pnlResult.netPnl;
 
-      // Update account balance and equity in ledger and queue sync
-      setAccounts((prevAccs) =>
-        prevAccs.map((acc) => {
-          if (acc.id !== alloc.accountId) return acc;
-          const newBal = acc.currentBalance + pnlResult.netPnl;
-          const newEq = acc.currentEquity + pnlResult.netPnl;
-          const newHwm = Math.max(acc.highWaterMark, newEq);
-          const updatedAcc: TradingAccount = {
-            ...acc,
-            currentBalance: Math.round(newBal * 100) / 100,
-            currentEquity: Math.round(newEq * 100) / 100,
-            highWaterMark: Math.round(newHwm * 100) / 100,
-            updatedAt: now,
-          };
-          void persistUpsertToCloud('account', updatedAcc.id, () =>
-            SupabaseService.saveAccount(updatedAcc)
-          );
-          return updatedAcc;
-        })
-      );
+      if (pnlResult.netPnl) {
+        accountDeltas.set(
+          alloc.accountId,
+          (accountDeltas.get(alloc.accountId) || 0) + pnlResult.netPnl
+        );
+      }
 
       return {
         ...alloc,
-        allocatedPositionSize: remainingSize,
+        allocatedPositionSize: isFullyClosed ? entryExecSize : remainingSize,
         realizedPnl: Math.round(newRealizedPnl * 100) / 100,
         netPnl: Math.round(newNetPnl * 100) / 100,
         commission: alloc.commission + commission,
@@ -1322,6 +1312,13 @@ function generatePersonalizedRules(
     };
 
     setTrades((prev) => prev.map((t) => (t.id === tradeId ? updatedTrade : t)));
+    applyAccountBalanceDeltas(accountDeltas, now);
+    emitSyncBridgeEvent({
+      entity: 'trade',
+      entityId: updatedTrade.id,
+      op: 'update',
+      payload: updatedTrade as unknown as Record<string, unknown>,
+    });
     void persistUpsertToCloud('trade', updatedTrade.id, () =>
       SupabaseService.saveTrade(updatedTrade)
     );

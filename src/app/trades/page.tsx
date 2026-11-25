@@ -7,6 +7,7 @@ import { Trade, TradeAllocation } from '../../lib/types/financial';
 import { QuickTradeModal } from '../../components/modals/QuickTradeModal';
 import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
 import { filterTradesByPeriod } from '../../lib/data/periodFilter';
+import { calculateExecutionPnl, getDefaultCommission } from '../../lib/calculations/financialEngine';
 import {
   Search,
   Plus,
@@ -30,6 +31,7 @@ export default function TradesPage() {
     selectedAccountId,
     setSelectedAccountId,
     selectedAccount,
+    instruments,
     trades,
     filteredTrades,
     periodFilter,
@@ -62,10 +64,18 @@ export default function TradesPage() {
     }
   }, [setPeriodFilter]);
 
-  // Partial close modal state
+  // Partial / Full close modal state
   const [partialCloseModalOpen, setPartialCloseModalOpen] = useState(false);
+  const [exitModalMode, setExitModalMode] = useState<'partial' | 'full'>('partial');
   const [partialCloseSize, setPartialCloseSize] = useState('0.5');
   const [partialClosePrice, setPartialClosePrice] = useState('');
+  const [partialCloseCommission, setPartialCloseCommission] = useState('0');
+
+  const getScopedTradePnl = (trade: Trade) => {
+    if (selectedAccountId === 'ALL') return trade.netPnl;
+    const alloc = trade.allocations.find((a) => a.accountId === selectedAccountId);
+    return alloc ? alloc.netPnl : trade.netPnl;
+  };
 
   // 1. Period & Search filtered trades
   const tradesInPeriod = useMemo(() => {
@@ -81,9 +91,10 @@ export default function TradesPage() {
   const displayTrades = useMemo(() => {
     return tradesInPeriod.filter((t) => {
       // Status filter
+      const scopedPnl = getScopedTradePnl(t);
       if (statusFilter === 'OPEN' && t.status !== 'OPEN') return false;
-      if (statusFilter === 'WINS' && (t.status !== 'CLOSED' || t.netPnl <= 0)) return false;
-      if (statusFilter === 'LOSSES' && (t.status !== 'CLOSED' || t.netPnl >= 0)) return false;
+      if (statusFilter === 'WINS' && (t.status !== 'CLOSED' || scopedPnl <= 0)) return false;
+      if (statusFilter === 'LOSSES' && (t.status !== 'CLOSED' || scopedPnl >= 0)) return false;
 
       // Search query
       if (searchQuery.trim()) {
@@ -113,16 +124,16 @@ export default function TradesPage() {
   }, [closedTradesInView]);
 
   const totalNetPnl = useMemo(() => {
-    return closedTradesInView.reduce((sum, t) => sum + t.netPnl, 0);
-  }, [closedTradesInView]);
+    return closedTradesInView.reduce((sum, t) => sum + getScopedTradePnl(t), 0);
+  }, [closedTradesInView, selectedAccountId]);
 
   const wonTrades = useMemo(() => {
-    return closedTradesInView.filter((t) => t.netPnl > 0);
-  }, [closedTradesInView]);
+    return closedTradesInView.filter((t) => getScopedTradePnl(t) > 0);
+  }, [closedTradesInView, selectedAccountId]);
 
   const lostTrades = useMemo(() => {
-    return closedTradesInView.filter((t) => t.netPnl < 0);
-  }, [closedTradesInView]);
+    return closedTradesInView.filter((t) => getScopedTradePnl(t) < 0);
+  }, [closedTradesInView, selectedAccountId]);
 
   const winRatePct = useMemo(() => {
     if (closedTradesInView.length === 0) return 0;
@@ -265,7 +276,7 @@ export default function TradesPage() {
       groups[dayKey].trades.push(trade);
       if (trade.status === 'CLOSED') {
         groups[dayKey].closedCount += 1;
-        groups[dayKey].dayPnl += trade.netPnl;
+        groups[dayKey].dayPnl += getScopedTradePnl(trade);
       } else {
         groups[dayKey].openCount += 1;
       }
@@ -318,26 +329,60 @@ export default function TradesPage() {
     accounts.find((a) => a.id === selectedTrade?.allocations?.[0]?.accountId)?.name ||
     'Primary Desk';
 
-  // Handler for partial close
+  // Handler for partial or full close
   const handleConfirmPartialClose = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTrade || !primaryAlloc) return;
 
-    const size = parseFloat(partialCloseSize) || 0.5;
-    const price = parseFloat(partialClosePrice) || selectedTrade.entryPrice;
+    const size = Math.min(
+      primaryAlloc.allocatedPositionSize,
+      Math.max(0.01, parseFloat(partialCloseSize) || primaryAlloc.allocatedPositionSize)
+    );
+    const price = parseFloat(partialClosePrice);
+    if (!Number.isFinite(price) || price <= 0) return;
+    const comm = Math.max(0, parseFloat(partialCloseCommission) || 0);
 
     executePartialClose(
       selectedTrade.id,
       primaryAlloc.id,
-      size,
+      exitModalMode === 'full' ? primaryAlloc.allocatedPositionSize : size,
       price,
-      5, // commission
+      comm,
       0,
-      'Partial close executed from Tidewater ledger'
+      exitModalMode === 'full'
+        ? 'Full exit executed from Tidewater ledger'
+        : 'Partial close executed from Tidewater ledger'
     );
 
     setPartialCloseModalOpen(false);
   };
+
+  const exitPreview = useMemo(() => {
+    if (!partialCloseModalOpen || !selectedTrade || !primaryAlloc) return null;
+    const inst =
+      instruments.find((i) => i.symbol === selectedTrade.instrumentSymbol) || instruments[0];
+    const sz = Math.max(0.01, parseFloat(partialCloseSize) || 0);
+    const px = parseFloat(partialClosePrice);
+    const comm = Math.max(0, parseFloat(partialCloseCommission) || 0);
+    if (!inst || !Number.isFinite(px) || px <= 0 || sz <= 0) return null;
+    return calculateExecutionPnl(
+      selectedTrade.direction,
+      selectedTrade.entryPrice,
+      px,
+      sz,
+      inst,
+      comm,
+      0
+    );
+  }, [
+    partialCloseModalOpen,
+    selectedTrade,
+    primaryAlloc,
+    instruments,
+    partialCloseSize,
+    partialClosePrice,
+    partialCloseCommission,
+  ]);
 
   return (
     <div className="w-full flex flex-col">
@@ -727,9 +772,10 @@ export default function TradesPage() {
                   {/* Day Execution Rows */}
                   {group.trades.map((trade) => {
                     const isSelected = selectedTrade?.id === trade.id;
+                    const scopedTradePnl = getScopedTradePnl(trade);
                     const isClosed = trade.status === 'CLOSED';
-                    const isWin = isClosed && trade.netPnl > 0;
-                    const isLoss = isClosed && trade.netPnl < 0;
+                    const isWin = isClosed && scopedTradePnl > 0;
+                    const isLoss = isClosed && scopedTradePnl < 0;
 
                     // Compute diverging R bar position
                     // 50% is 0R. Scale: +/- 3R corresponds to 50% width
@@ -824,7 +870,7 @@ export default function TradesPage() {
                               ? 'Active'
                               : isPnlHidden
                               ? '••••••'
-                              : `${trade.netPnl >= 0 ? '+' : '−'}${formatCur(trade.netPnl)}`}
+                              : `${scopedTradePnl >= 0 ? '+' : '−'}${formatCur(scopedTradePnl)}`}
                           </span>
                           <button
                             type="button"
@@ -1101,9 +1147,18 @@ export default function TradesPage() {
                       className="tw-btn"
                       type="button"
                       onClick={() => {
+                        const inst =
+                          instruments.find((i) => i.symbol === selectedTrade.instrumentSymbol) ||
+                          instruments[0];
+                        const halfSize = Math.max(
+                          0.01,
+                          Number(((primaryAlloc?.allocatedPositionSize || 1) / 2).toFixed(2))
+                        );
+                        setExitModalMode('partial');
                         setPartialClosePrice(selectedTrade.entryPrice.toString());
-                        setPartialCloseSize(
-                          ((primaryAlloc?.allocatedPositionSize || 1) / 2).toFixed(2)
+                        setPartialCloseSize(halfSize.toString());
+                        setPartialCloseCommission(
+                          getDefaultCommission(inst, halfSize).toFixed(2)
                         );
                         setPartialCloseModalOpen(true);
                       }}
@@ -1122,17 +1177,20 @@ export default function TradesPage() {
                       }}
                       type="button"
                       onClick={() => {
-                        if (primaryAlloc) {
-                          executePartialClose(
-                            selectedTrade.id,
-                            primaryAlloc.id,
-                            primaryAlloc.allocatedPositionSize,
-                            selectedTrade.entryPrice + 5,
-                            5,
-                            0,
-                            'Full manual exit logged from ledger'
-                          );
-                        }
+                        if (!primaryAlloc) return;
+                        const inst =
+                          instruments.find((i) => i.symbol === selectedTrade.instrumentSymbol) ||
+                          instruments[0];
+                        const fullSize = primaryAlloc.allocatedPositionSize;
+                        setExitModalMode('full');
+                        setPartialCloseSize(fullSize.toString());
+                        setPartialClosePrice(
+                          String(selectedTrade.takeProfit || selectedTrade.entryPrice)
+                        );
+                        setPartialCloseCommission(
+                          getDefaultCommission(inst, fullSize).toFixed(2)
+                        );
+                        setPartialCloseModalOpen(true);
                       }}
                     >
                       <span>Log full exit</span>
@@ -1163,16 +1221,24 @@ export default function TradesPage() {
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Partial Close Exit Modal                                           */}
+      {/* Partial / Full Close Exit Modal                                    */}
       {/* ------------------------------------------------------------------ */}
       {partialCloseModalOpen && selectedTrade && primaryAlloc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPartialCloseModalOpen(false);
+          }}
+        >
           <div className="relative w-full max-w-md p-6 rounded-3xl bg-[var(--tile)] border border-[var(--line-strong)] shadow-2xl text-[var(--ink)]">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
               <div>
-                <h3 className="text-lg font-bold">Log Partial Exit</h3>
+                <h3 className="text-lg font-bold">
+                  {exitModalMode === 'full' ? 'Log Full Exit' : 'Log Partial Exit'}
+                </h3>
                 <p className="text-xs text-[var(--ink-3)] font-mono">
-                  Scale out of {selectedTrade.instrumentSymbol} ({selectedTrade.direction})
+                  {exitModalMode === 'full' ? 'Close full position on' : 'Scale out of'}{' '}
+                  {selectedTrade.instrumentSymbol} ({selectedTrade.direction} @ {selectedTrade.entryPrice})
                 </p>
               </div>
               <button
@@ -1195,23 +1261,51 @@ export default function TradesPage() {
                   min="0.01"
                   max={primaryAlloc.allocatedPositionSize}
                   value={partialCloseSize}
+                  readOnly={exitModalMode === 'full'}
                   onChange={(e) => setPartialCloseSize(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--pill)] border border-[var(--line)] text-[var(--ink)] outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-[var(--pill)] border border-[var(--line)] text-[var(--ink)] outline-none read-only:opacity-75"
                   required
                 />
               </div>
 
-              <div>
-                <label className="block text-[var(--ink-2)] mb-1">Exit Price:</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={partialClosePrice}
-                  onChange={(e) => setPartialClosePrice(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--pill)] border border-[var(--line)] text-[var(--ink)] outline-none"
-                  required
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[var(--ink-2)] mb-1">Exit Price:</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={partialClosePrice}
+                    onChange={(e) => setPartialClosePrice(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--pill)] border border-[var(--line)] text-[var(--ink)] outline-none"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[var(--ink-2)] mb-1">Commission ($):</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={partialCloseCommission}
+                    onChange={(e) => setPartialCloseCommission(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--pill)] border border-[var(--line)] text-[var(--ink)] outline-none"
+                  />
+                </div>
               </div>
+
+              {exitPreview && (
+                <div className="p-3 rounded-2xl bg-[var(--pill)] border border-[var(--line)] flex items-center justify-between">
+                  <span className="text-[var(--ink-2)]">Estimated Net P&amp;L</span>
+                  <span
+                    className={`font-bold text-sm ${
+                      exitPreview.netPnl >= 0 ? 'text-[var(--tw-gain)]' : 'text-[var(--tw-loss)]'
+                    }`}
+                  >
+                    {exitPreview.netPnl >= 0 ? '+' : '−'}
+                    {formatCur(exitPreview.netPnl)}
+                  </span>
+                </div>
+              )}
 
               <div className="pt-3 border-t border-[var(--line)] flex justify-end gap-2">
                 <button
@@ -1230,7 +1324,7 @@ export default function TradesPage() {
                     fontWeight: 600,
                   }}
                 >
-                  Confirm Partial Exit
+                  {exitModalMode === 'full' ? 'Confirm Full Exit' : 'Confirm Partial Exit'}
                 </button>
               </div>
             </form>

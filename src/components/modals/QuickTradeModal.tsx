@@ -2,7 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { useTrading } from '../../context/TradingContext';
-import { calculatePositionSize, calculateExecutionPnl } from '../../lib/calculations/financialEngine';
+import {
+  calculatePositionSize,
+  calculateMetricsForFixedSize,
+  calculateExecutionPnl,
+  getDefaultCommission,
+} from '../../lib/calculations/financialEngine';
 import { Trade, TradeDirection, TradeStatus } from '../../lib/types/financial';
 import { X, CheckSquare, Square, Calculator, AlertCircle, ArrowUpRight, ArrowDownRight, Calendar } from 'lucide-react';
 
@@ -62,6 +67,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
   const [takeProfit, setTakeProfit] = useState<string>('');
   const [exitPrice, setExitPrice] = useState<string>('');
   const [realizedNetInput, setRealizedNetInput] = useState<string>('');
+  const [isManualNetOverride, setIsManualNetOverride] = useState<boolean>(false);
   const [riskPct, setRiskPct] = useState<string>('1.0');
   const [customPositionSize, setCustomPositionSize] = useState<string>('');
   const [commissionInput, setCommissionInput] = useState<string>('');
@@ -100,17 +106,41 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       setTakeProfit(editTrade.takeProfit ? String(editTrade.takeProfit) : '');
       const existingExit = editTrade.allocations?.find((a) => a.exitPrice)?.exitPrice;
       setExitPrice(existingExit ? String(existingExit) : '');
-      setRealizedNetInput(
-        editTrade.status === 'CLOSED' && Number.isFinite(editTrade.netPnl)
-          ? String(editTrade.netPnl)
-          : ''
-      );
-      setRiskPct(editTrade.plannedRiskPct ? String(editTrade.plannedRiskPct) : '1.0');
-      const firstAllocSize = editTrade.allocations?.[0]?.allocatedPositionSize;
+      const firstAllocSize = editTrade.allocations?.[0]?.allocatedPositionSize || 1;
+      const editCommVal = Number.isFinite(editTrade.totalCommission)
+        ? editTrade.totalCommission
+        : getDefaultCommission(
+            instruments.find((i) => i.symbol === editTrade.instrumentSymbol) || instruments[0],
+            firstAllocSize
+          );
       setCustomPositionSize(firstAllocSize ? String(firstAllocSize) : '');
-      setCommissionInput(
-        Number.isFinite(editTrade.totalCommission) ? String(editTrade.totalCommission) : ''
-      );
+      setCommissionInput(Number.isFinite(editTrade.totalCommission) ? String(editTrade.totalCommission) : '');
+      if (editTrade.status === 'CLOSED' && Number.isFinite(editTrade.netPnl)) {
+        const editInst = instruments.find((i) => i.symbol === editTrade.instrumentSymbol) || instruments[0];
+        const expectedAuto =
+          existingExit && existingExit > 0
+            ? calculateExecutionPnl(
+                editTrade.direction,
+                editTrade.entryPrice,
+                existingExit,
+                firstAllocSize,
+                editInst,
+                editCommVal,
+                0
+              ).netPnl
+            : null;
+        if (expectedAuto !== null && Math.abs(expectedAuto - editTrade.netPnl) <= 0.25) {
+          setIsManualNetOverride(false);
+          setRealizedNetInput('');
+        } else {
+          setIsManualNetOverride(true);
+          setRealizedNetInput(String(editTrade.netPnl));
+        }
+      } else {
+        setIsManualNetOverride(false);
+        setRealizedNetInput('');
+      }
+      setRiskPct(editTrade.plannedRiskPct ? String(editTrade.plannedRiskPct) : '1.0');
       const entryIso = editTrade.entryTime || editTrade.createdAt;
       setTradeDate(getIsoDatePart(entryIso));
       setEntryClock(getIsoTimePart(entryIso));
@@ -135,6 +165,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       setTakeProfit('');
       setExitPrice('');
       setRealizedNetInput('');
+      setIsManualNetOverride(false);
       setRiskPct('1.0');
       setCustomPositionSize('');
       setCommissionInput('');
@@ -174,25 +205,131 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
   const numEntry = parseFloat(entryPrice) || 0;
   const numSl = parseFloat(stopLoss) || 0;
   const numTp = parseFloat(takeProfit) || 0;
+  const numExit = parseFloat(exitPrice) || 0;
   const numRisk = parseFloat(riskPct) || 1.0;
+  const explicitLots =
+    customPositionSize.trim() !== '' &&
+    Number.isFinite(parseFloat(customPositionSize)) &&
+    parseFloat(customPositionSize) > 0
+      ? parseFloat(customPositionSize)
+      : null;
+  const explicitCommTotal =
+    commissionInput.trim() !== '' &&
+    Number.isFinite(parseFloat(commissionInput)) &&
+    parseFloat(commissionInput) >= 0
+      ? parseFloat(commissionInput)
+      : null;
 
   let calcPreview: ReturnType<typeof calculatePositionSize> | null = null;
   let calcError: string | null = null;
+  let directionWarning: string | null = null;
+
+  if (numEntry > 0 && numSl > 0 && numEntry !== numSl) {
+    if (direction === 'BUY' && numSl >= numEntry) {
+      directionWarning = 'Stop Loss is at or above Entry Price for a BUY trade.';
+    } else if (direction === 'SELL' && numSl <= numEntry) {
+      directionWarning = 'Stop Loss is at or below Entry Price for a SELL trade.';
+    } else if (numTp > 0) {
+      if (direction === 'BUY' && numTp <= numEntry) {
+        directionWarning = 'Take Profit is below Entry Price for a BUY trade.';
+      } else if (direction === 'SELL' && numTp >= numEntry) {
+        directionWarning = 'Take Profit is above Entry Price for a SELL trade.';
+      }
+    }
+  }
+
+  const targetPreviewIds =
+    selectedAccountIds.length > 0
+      ? selectedAccountIds
+      : accounts.length > 0
+        ? [accounts[0].id]
+        : ['unassigned'];
 
   try {
     if (numEntry > 0 && numSl > 0 && numEntry !== numSl) {
-      const primaryAccount = accounts.find((a) => a.id === selectedAccountIds[0]) || accounts[0];
-      calcPreview = calculatePositionSize({
-        accountEquity: primaryAccount?.currentEquity || 100000,
-        riskPercentage: numRisk,
-        entryPrice: numEntry,
-        stopLossPrice: numSl,
-        takeProfitPrice: numTp > 0 ? numTp : undefined,
-        instrument: activeInstrument,
-      });
+      const primaryAccount = accounts.find((a) => a.id === targetPreviewIds[0]) || accounts[0];
+      const eq = primaryAccount?.currentEquity || 100000;
+      if (explicitLots !== null) {
+        calcPreview = calculateMetricsForFixedSize({
+          accountEquity: eq,
+          positionSize: explicitLots,
+          entryPrice: numEntry,
+          stopLossPrice: numSl,
+          takeProfitPrice: numTp > 0 ? numTp : undefined,
+          direction,
+          instrument: activeInstrument,
+        });
+      } else {
+        const riskSized = calculatePositionSize({
+          accountEquity: eq,
+          riskPercentage: numRisk,
+          entryPrice: numEntry,
+          stopLossPrice: numSl,
+          takeProfitPrice: numTp > 0 ? numTp : undefined,
+          instrument: activeInstrument,
+        });
+        calcPreview = calculateMetricsForFixedSize({
+          accountEquity: eq,
+          positionSize: riskSized.positionSize,
+          entryPrice: numEntry,
+          stopLossPrice: numSl,
+          takeProfitPrice: numTp > 0 ? numTp : undefined,
+          direction,
+          instrument: activeInstrument,
+        });
+      }
     }
   } catch (err: any) {
     calcError = err.message;
+  }
+
+  const previewAutoCommission = calcPreview
+    ? getDefaultCommission(activeInstrument, calcPreview.positionSize)
+    : 0;
+  const previewPerAccountCommission =
+    explicitCommTotal !== null
+      ? Math.round((explicitCommTotal / targetPreviewIds.length) * 100) / 100
+      : previewAutoCommission;
+
+  const manualNetNum =
+    isManualNetOverride && realizedNetInput.trim() !== '' && Number.isFinite(Number(realizedNetInput))
+      ? Number(realizedNetInput)
+      : null;
+
+  let closedCalcPreview: { gross: number; commission: number; net: number; r: number } | null = null;
+  if (status === 'CLOSED' && calcPreview) {
+    if (manualNetNum !== null) {
+      const totalCommPreview =
+        explicitCommTotal !== null
+          ? explicitCommTotal
+          : Number((previewAutoCommission * targetPreviewIds.length).toFixed(2));
+      const gross = Number((manualNetNum + totalCommPreview).toFixed(2));
+      const r =
+        calcPreview.potentialLoss > 0
+          ? Number(((manualNetNum / targetPreviewIds.length) / calcPreview.potentialLoss).toFixed(2))
+          : 0;
+      closedCalcPreview = { gross, commission: totalCommPreview, net: manualNetNum, r };
+    } else if (numExit > 0) {
+      const pnlRes = calculateExecutionPnl(
+        direction,
+        numEntry,
+        numExit,
+        calcPreview.positionSize,
+        activeInstrument,
+        previewPerAccountCommission,
+        0
+      );
+      const r =
+        calcPreview.potentialLoss > 0
+          ? Number((pnlRes.netPnl / calcPreview.potentialLoss).toFixed(2))
+          : 0;
+      closedCalcPreview = {
+        gross: Number((pnlRes.grossPnl * targetPreviewIds.length).toFixed(2)),
+        commission: Number((previewPerAccountCommission * targetPreviewIds.length).toFixed(2)),
+        net: Number((pnlRes.netPnl * targetPreviewIds.length).toFixed(2)),
+        r,
+      };
+    }
   }
 
   const allChecklistPassed = Object.values(checklist).every(Boolean);
@@ -208,9 +345,10 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         ? [accounts[0].id]
         : ['unassigned'];
 
-    const numExit = parseFloat(exitPrice) || 0;
     const explicitNetOverride =
-      realizedNetInput.trim() !== '' && Number.isFinite(Number(realizedNetInput))
+      isManualNetOverride &&
+      realizedNetInput.trim() !== '' &&
+      Number.isFinite(Number(realizedNetInput))
         ? Number(realizedNetInput)
         : null;
 
@@ -219,20 +357,24 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       status === 'CLOSED'
         ? combineDateAndTime(exitDate || tradeDate, exitClock || entryClock)
         : undefined;
-    const explicitLots =
-      customPositionSize.trim() !== '' && Number.isFinite(parseFloat(customPositionSize))
-        ? Math.max(0.01, parseFloat(customPositionSize))
-        : null;
-    const explicitCommTotal =
-      commissionInput.trim() !== '' && Number.isFinite(parseFloat(commissionInput))
-        ? Math.max(0, parseFloat(commissionInput))
+
+    const perAccountManualNet =
+      explicitNetOverride !== null
+        ? targetAccountIds.map((_, idx) => {
+            const base = Math.round((explicitNetOverride / targetAccountIds.length) * 100) / 100;
+            if (idx === 0) {
+              const others = base * (targetAccountIds.length - 1);
+              return Math.round((explicitNetOverride - others) * 100) / 100;
+            }
+            return base;
+          })
         : null;
 
-    const allocations = targetAccountIds.map((accId) => {
+    const allocations = targetAccountIds.map((accId, accIdx) => {
       const acc = accounts.find((a) => a.id === accId);
       const existingAlloc = editTrade?.allocations?.find((a) => a.accountId === accId);
       const accSize = acc ? acc.currentEquity : 100000;
-      const sizeCalc = calculatePositionSize({
+      const autoCalc = calculatePositionSize({
         accountEquity: accSize,
         riskPercentage: numRisk,
         entryPrice: numEntry,
@@ -241,21 +383,28 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         instrument: activeInstrument,
       });
 
-      const effectivePositionSize = explicitLots !== null ? explicitLots : sizeCalc.positionSize;
+      const effectivePositionSize = explicitLots !== null ? explicitLots : autoCalc.positionSize;
+      const effectiveMetrics = calculateMetricsForFixedSize({
+        accountEquity: accSize,
+        positionSize: effectivePositionSize,
+        entryPrice: numEntry,
+        stopLossPrice: numSl,
+        takeProfitPrice: numTp > 0 ? numTp : undefined,
+        direction,
+        instrument: activeInstrument,
+      });
+
       const commission =
         explicitCommTotal !== null
           ? Math.round((explicitCommTotal / targetAccountIds.length) * 100) / 100
-          : activeInstrument.category === 'forex'
-            ? 7 * effectivePositionSize
-            : 15;
+          : getDefaultCommission(activeInstrument, effectivePositionSize);
       let allocGross = existingAlloc?.realizedPnl || 0;
       let allocNet = existingAlloc?.netPnl || 0;
 
       if (status === 'CLOSED') {
-        if (explicitNetOverride !== null) {
-          const splitNet = explicitNetOverride / targetAccountIds.length;
-          allocNet = Math.round(splitNet * 100) / 100;
-          allocGross = Math.round((splitNet + commission) * 100) / 100;
+        if (perAccountManualNet !== null) {
+          allocNet = perAccountManualNet[accIdx];
+          allocGross = Math.round((allocNet + commission) * 100) / 100;
         } else if (numExit > 0) {
           const pnlRes = calculateExecutionPnl(
             direction,
@@ -266,8 +415,8 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
             commission,
             0
           );
-          allocGross = Math.round(pnlRes.grossPnl * 100) / 100;
-          allocNet = Math.round(pnlRes.netPnl * 100) / 100;
+          allocGross = pnlRes.grossPnl;
+          allocNet = pnlRes.netPnl;
         }
       } else {
         allocGross = 0;
@@ -298,8 +447,8 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         accountId: accId,
         accountName: acc?.name || existingAlloc?.accountName || 'Primary Desk',
         allocatedPositionSize: effectivePositionSize,
-        allocatedRiskUsd: sizeCalc.potentialLoss,
-        allocatedRiskPct: numRisk,
+        allocatedRiskUsd: effectiveMetrics.potentialLoss,
+        allocatedRiskPct: effectiveMetrics.riskPctOfEquity,
         entryPrice: numEntry,
         stopLoss: numSl,
         takeProfit: numTp > 0 ? numTp : undefined,
@@ -315,14 +464,15 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
     });
 
     const totalRiskUsd = allocations.reduce((sum, a) => sum + a.allocatedRiskUsd, 0);
-    const totalGrossPnl = allocations.reduce((sum, a) => sum + a.realizedPnl, 0);
-    const totalCommission = allocations.reduce((sum, a) => sum + a.commission, 0);
+    const totalGrossPnl = Math.round(allocations.reduce((sum, a) => sum + a.realizedPnl, 0) * 100) / 100;
+    const totalCommission = Math.round(allocations.reduce((sum, a) => sum + a.commission, 0) * 100) / 100;
     const totalNetPnl =
       status === 'CLOSED' && explicitNetOverride !== null
         ? explicitNetOverride
-        : allocations.reduce((sum, a) => sum + a.netPnl, 0);
+        : Math.round(allocations.reduce((sum, a) => sum + a.netPnl, 0) * 100) / 100;
     const totalRealizedR =
       totalRiskUsd > 0 ? Math.round((totalNetPnl / totalRiskUsd) * 100) / 100 : 0;
+    const effectivePlannedRiskPct = allocations[0]?.allocatedRiskPct || numRisk;
 
     if (editTrade) {
       updateTrade({
@@ -339,8 +489,8 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         stopLoss: numSl,
         takeProfit: numTp > 0 ? numTp : undefined,
         plannedRiskUsd: totalRiskUsd > 0 ? totalRiskUsd : editTrade.plannedRiskUsd,
-        plannedRiskPct: numRisk,
-        plannedRr: calcPreview?.plannedRr || editTrade.plannedRr,
+        plannedRiskPct: effectivePlannedRiskPct,
+        plannedRr: calcPreview?.plannedRr ?? editTrade.plannedRr,
         realizedPnl: totalGrossPnl,
         netPnl: totalNetPnl,
         realizedR: totalRealizedR,
@@ -365,8 +515,8 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         stopLoss: numSl,
         takeProfit: numTp > 0 ? numTp : undefined,
         plannedRiskUsd: totalRiskUsd,
-        plannedRiskPct: numRisk,
-        plannedRr: calcPreview?.plannedRr || 2.0,
+        plannedRiskPct: effectivePlannedRiskPct,
+        plannedRr: calcPreview?.plannedRr ?? 2.0,
         realizedPnl: totalGrossPnl,
         netPnl: totalNetPnl,
         realizedR: totalRealizedR,
@@ -644,7 +794,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
                 min="0"
                 value={commissionInput}
                 onChange={(e) => setCommissionInput(e.target.value)}
-                placeholder="Auto"
+                placeholder={calcPreview ? `Auto ($${previewAutoCommission.toFixed(2)})` : 'Auto'}
                 className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
               />
             </div>
@@ -666,15 +816,37 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
                 />
               </div>
               <div>
-                <label className="block font-mono text-[10px] text-edge-profit uppercase mb-1">
-                  Realized Net P&amp;L ($)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-mono text-[10px] text-edge-profit uppercase">
+                    Realized Net P&amp;L ($)
+                  </label>
+                  {isManualNetOverride && numExit > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsManualNetOverride(false);
+                        setRealizedNetInput('');
+                      }}
+                      className="text-[10px] font-mono text-edge-accent hover:underline"
+                    >
+                      Auto from exit
+                    </button>
+                  )}
+                </div>
                 <input
                   type="number"
                   step="any"
                   value={realizedNetInput}
-                  onChange={(e) => setRealizedNetInput(e.target.value)}
-                  placeholder="Auto from exit price, or enter exact $"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setRealizedNetInput(val);
+                    setIsManualNetOverride(val.trim() !== '');
+                  }}
+                  placeholder={
+                    !isManualNetOverride && numExit > 0 && closedCalcPreview
+                      ? `Auto: ${closedCalcPreview.net >= 0 ? '+' : '-'}$${Math.abs(closedCalcPreview.net).toFixed(2)}`
+                      : 'Auto from exit price, or enter exact $'
+                  }
                   className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
                 />
               </div>
@@ -727,31 +899,77 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
 
           {/* Real-time Calculation Card */}
           {calcPreview && (
-            <div className="p-3 rounded border border-edge-accent/30 bg-edge-accent/5 flex flex-wrap items-center justify-between gap-4 font-mono">
-              <div className="flex items-center space-x-2 text-edge-accent font-semibold">
-                <Calculator size={15} />
-                <span>POSITION CALCULATION</span>
+            <div className="p-3 rounded border border-edge-accent/30 bg-edge-accent/5 space-y-2 font-mono">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center space-x-2 text-edge-accent font-semibold">
+                  <Calculator size={15} />
+                  <span>POSITION CALCULATION</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px]">
+                  <div>
+                    <span className="text-edge-text-muted mr-1.5">Lot Size:</span>
+                    <span className="text-white font-bold">{calcPreview.positionSize} Lots</span>
+                  </div>
+                  <div>
+                    <span className="text-edge-text-muted mr-1.5">Monetary Risk:</span>
+                    <span className="text-edge-loss font-bold">
+                      -${calcPreview.potentialLoss.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({calcPreview.riskPctOfEquity}%)
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-edge-text-muted mr-1.5">Potential Reward:</span>
+                    <span className={`font-bold ${(calcPreview.potentialProfit || 0) < 0 ? 'text-edge-loss' : 'text-edge-profit'}`}>
+                      {(calcPreview.potentialProfit || 0) < 0 ? '-' : '+'}$
+                      {Math.abs(calcPreview.potentialProfit || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-edge-text-muted mr-1.5">Planned R:R:</span>
+                    <span className="text-edge-accent font-bold">1:{calcPreview.plannedRr ?? 0}</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center space-x-6 text-[11px]">
-                <div>
-                  <span className="text-edge-text-muted mr-1.5">Lot Size:</span>
-                  <span className="text-white font-bold">{calcPreview.positionSize} Lots</span>
-                </div>
-                <div>
-                  <span className="text-edge-text-muted mr-1.5">Monetary Risk:</span>
-                  <span className="text-edge-loss font-bold">-${calcPreview.potentialLoss.toLocaleString('en-US')}</span>
-                </div>
-                <div>
-                  <span className="text-edge-text-muted mr-1.5">Potential Reward:</span>
-                  <span className="text-edge-profit font-bold">
-                    +${(calcPreview.potentialProfit || 0).toLocaleString('en-US')}
+
+              {closedCalcPreview && (
+                <div className="pt-2 border-t border-edge-border/50 flex flex-wrap items-center justify-between gap-3 text-[11px]">
+                  <span className="text-edge-text-secondary uppercase tracking-wider font-semibold">
+                    {isManualNetOverride ? 'Manual Net Result' : 'Calculated Closed Result'}
                   </span>
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+                    <div>
+                      <span className="text-edge-text-muted mr-1.5">Gross:</span>
+                      <span className={closedCalcPreview.gross >= 0 ? 'text-edge-profit font-bold' : 'text-edge-loss font-bold'}>
+                        {closedCalcPreview.gross >= 0 ? '+' : '-'}${Math.abs(closedCalcPreview.gross).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-edge-text-muted mr-1.5">Comm:</span>
+                      <span className="text-edge-text-secondary font-semibold">
+                        -${closedCalcPreview.commission.toFixed(2)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-edge-text-muted mr-1.5">Net P&amp;L:</span>
+                      <span className={closedCalcPreview.net >= 0 ? 'text-edge-profit font-bold' : 'text-edge-loss font-bold'}>
+                        {closedCalcPreview.net >= 0 ? '+' : '-'}${Math.abs(closedCalcPreview.net).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-edge-text-muted mr-1.5">Realized R:</span>
+                      <span className={closedCalcPreview.r >= 0 ? 'text-edge-profit font-bold' : 'text-edge-loss font-bold'}>
+                        {closedCalcPreview.r >= 0 ? '+' : '-'}{Math.abs(closedCalcPreview.r).toFixed(2)}R
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-edge-text-muted mr-1.5">Planned R:R:</span>
-                  <span className="text-edge-accent font-bold">1:{calcPreview.plannedRr || 0}</span>
-                </div>
-              </div>
+              )}
+            </div>
+          )}
+
+          {directionWarning && (
+            <div className="p-2.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 flex items-center space-x-2 font-mono">
+              <AlertCircle size={15} />
+              <span>{directionWarning}</span>
             </div>
           )}
 

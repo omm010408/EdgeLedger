@@ -144,6 +144,77 @@ export function calculateExecutionPnl(
 }
 
 /**
+ * Default round-turn commission estimate scaled by lot size and instrument class.
+ */
+export function getDefaultCommission(
+  instrument: InstrumentSpecification,
+  lotSize: number
+): number {
+  const safeLots = Math.max(0, Number.isFinite(lotSize) ? lotSize : 0);
+  if (safeLots === 0) return 0;
+  const perLotRate =
+    instrument.category === 'forex' || instrument.category === 'metals' || instrument.category === 'commodities'
+      ? 7
+      : 5;
+  return new Decimal(safeLots).times(perLotRate).toDecimalPlaces(2).toNumber();
+}
+
+/**
+ * Calculates monetary risk, potential reward, and R:R for an explicit lot size override.
+ */
+export function calculateMetricsForFixedSize(input: {
+  accountEquity: number;
+  positionSize: number;
+  entryPrice: number;
+  stopLossPrice: number;
+  takeProfitPrice?: number;
+  direction?: TradeDirection;
+  instrument: InstrumentSpecification;
+}): PositionSizingResult {
+  const { accountEquity, positionSize, entryPrice, stopLossPrice, takeProfitPrice, direction, instrument } = input;
+  const equity = new Decimal(Math.max(1, accountEquity || 100000));
+  const lots = new Decimal(Math.max(0.01, positionSize || 0.01));
+  const entry = new Decimal(entryPrice);
+  const sl = new Decimal(stopLossPrice);
+  const tickSize = new Decimal(instrument.tickSize);
+  const tickValue = new Decimal(instrument.tickValue);
+
+  const stopDist = entry.minus(sl).abs();
+  const stopTicks = stopDist.dividedBy(tickSize);
+  const actualLoss = stopTicks.times(tickValue).times(lots).toDecimalPlaces(2).toNumber();
+
+  let potentialProfit: number | undefined;
+  let plannedRr: number | undefined;
+  if (takeProfitPrice && takeProfitPrice > 0) {
+    const tp = new Decimal(takeProfitPrice);
+    const tpSignedDist =
+      direction === 'BUY'
+        ? tp.minus(entry)
+        : direction === 'SELL'
+        ? entry.minus(tp)
+        : tp.minus(entry).abs();
+    const tpTicks = tpSignedDist.dividedBy(tickSize);
+    potentialProfit = tpTicks.times(tickValue).times(lots).toDecimalPlaces(2).toNumber();
+    if (actualLoss > 0) {
+      plannedRr = new Decimal(potentialProfit).dividedBy(actualLoss).toDecimalPlaces(2).toNumber();
+    }
+  }
+
+  const riskPctOfEquity = new Decimal(actualLoss).dividedBy(equity).times(100).toDecimalPlaces(2).toNumber();
+
+  return {
+    maxMonetaryRisk: actualLoss,
+    positionSize: lots.toDecimalPlaces(2).toNumber(),
+    potentialLoss: actualLoss,
+    potentialProfit,
+    plannedRr,
+    riskPctOfEquity,
+    tickRisk: stopTicks.toDecimalPlaces(1).toNumber(),
+    actualRiskAfterRounding: actualLoss,
+  };
+}
+
+/**
  * Evaluates an account rule against current metrics.
  * Rule states: SAFE, WARNING, BREACHED, UNKNOWN.
  * If required data is missing (NaN/undefined), returns UNKNOWN. UNKNOWN never displays as SAFE.

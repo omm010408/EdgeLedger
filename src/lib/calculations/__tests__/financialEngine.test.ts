@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   calculatePositionSize,
+  calculateMetricsForFixedSize,
   calculateExecutionPnl,
+  getDefaultCommission,
   evaluateAccountRule,
   calculateTradingStatistics,
   calculateWorkedTrailingDrawdown,
@@ -162,5 +164,38 @@ describe('Financial Calculation Engine Tests (EDGELEDGER Revised)', () => {
     expect(stats.totalTrades).toBe(4);
     expect(stats.netProfit).toBe(7071);
     expect(stats.averageR).toBe(1.83);
+  });
+
+  it('recalculates exact risk, reward, and R:R when custom lot size overrides risk-based sizing', () => {
+    const fixed = calculateMetricsForFixedSize({
+      accountEquity: 25000,
+      positionSize: 0.5,
+      entryPrice: 2350,
+      stopLossPrice: 2340,
+      takeProfitPrice: 2370,
+      direction: 'BUY',
+      instrument: goldSpec,
+    });
+
+    expect(fixed.positionSize).toBe(0.5);
+    expect(fixed.potentialLoss).toBe(500);
+    expect(fixed.riskPctOfEquity).toBe(2);
+    expect(fixed.potentialProfit).toBe(1000);
+    expect(fixed.plannedRr).toBe(2);
+  });
+
+  it('computes BUY and SELL execution gross/net P&L and lot-scaled commission accurately', () => {
+    const comm = getDefaultCommission(eurusdSpec, 0.5);
+    expect(comm).toBe(3.5);
+
+    const buyEurusd = calculateExecutionPnl('BUY', 1.085, 1.09, 0.5, eurusdSpec, comm, 0);
+    expect(buyEurusd.ticks).toBe(500);
+    expect(buyEurusd.grossPnl).toBe(250);
+    expect(buyEurusd.netPnl).toBe(246.5);
+
+    const sellGold = calculateExecutionPnl('SELL', 2360, 2340, 0.25, goldSpec, 1.75, 0);
+    expect(sellGold.ticks).toBe(2000);
+    expect(sellGold.grossPnl).toBe(500);
+    expect(sellGold.netPnl).toBe(498.25);
   });
 });
