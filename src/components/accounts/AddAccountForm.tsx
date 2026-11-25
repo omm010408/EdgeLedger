@@ -51,6 +51,8 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
 
   const [totalLossMode, setTotalLossMode] = useState<TotalLossMode>('trailing_peak');
   const [totalLossValue, setTotalLossValue] = useState('');
+  const [profitTargetMode, setProfitTargetMode] = useState<'pct' | 'currency'>('pct');
+  const [profitTargetValue, setProfitTargetValue] = useState('8.0');
   const [warnThresholdPct, setWarnThresholdPct] = useState(80);
   const [enforcement, setEnforcement] = useState<EnforcementMode>('enforce');
   const [newsRestricted, setNewsRestricted] = useState(false);
@@ -89,6 +91,10 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
       setDailyLossValue(activeFirmTemplate.dailyLossPct.toFixed(1));
       setTotalLossValue(activeFirmTemplate.totalLossPct.toFixed(1));
       setTotalLossMode(activeFirmTemplate.totalLossMode);
+      if (activeFirmTemplate.profitTargetPct) {
+        setProfitTargetMode('pct');
+        setProfitTargetValue(activeFirmTemplate.profitTargetPct.toFixed(1));
+      }
     }
   }, [activeFirmTemplate?.id]);
 
@@ -105,16 +111,38 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
     const totalLossPct = (parseFloat(totalLossValue) || 10) / 100;
     const totalLimitDollars = startBal * totalLossPct;
     const totalFloorDollars = startBal - totalLimitDollars;
-    const targetDollars = startBal * ((activeFirmTemplate?.profitTargetPct || 10) / 100);
+    const rawTarget = parseFloat(profitTargetValue);
+    let targetDollars = 0;
+    let targetPct = 0;
+    if (accountType !== 'live') {
+      if (Number.isFinite(rawTarget) && rawTarget > 0) {
+        targetDollars = profitTargetMode === 'pct' ? startBal * (rawTarget / 100) : rawTarget;
+        targetPct = profitTargetMode === 'pct' ? rawTarget : (rawTarget / startBal) * 100;
+      } else {
+        targetPct = activeFirmTemplate?.profitTargetPct || 8;
+        targetDollars = startBal * (targetPct / 100);
+      }
+    }
 
     return {
       dailyLimitDollars,
       totalLimitDollars,
       totalFloorDollars,
       targetDollars,
+      targetPct,
       startBal,
     };
-  }, [startingBalance, dailyLossMode, dailyLossValue, totalLossMode, totalLossValue, activeFirmTemplate]);
+  }, [
+    startingBalance,
+    dailyLossMode,
+    dailyLossValue,
+    totalLossMode,
+    totalLossValue,
+    profitTargetMode,
+    profitTargetValue,
+    accountType,
+    activeFirmTemplate,
+  ]);
 
   // Client-Side Gate Preview
   const previewGateState = useMemo(() => {
@@ -152,7 +180,10 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
         totalLossValue,
         warnThresholdPct,
         enforcement,
-        profitTargetValue: activeFirmTemplate?.profitTargetPct ? String(activeFirmTemplate.profitTargetPct) : null,
+        profitTargetValue:
+          accountType !== 'live' && calculatedLimits.targetPct > 0
+            ? calculatedLimits.targetPct.toFixed(2)
+            : null,
         minTradingDays: activeFirmTemplate?.minTradingDays || null,
         maxRiskPerTradePct: activeFirmTemplate?.maxRiskPerTradePct ? String(activeFirmTemplate.maxRiskPerTradePct) : null,
         isActive: true,
@@ -251,7 +282,10 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
         total_loss_value: totalLossValue,
         warn_threshold_pct: warnThresholdPct,
         enforcement: enforcement,
-        profit_target_value: activeFirmTemplate?.profitTargetPct,
+        profit_target_value:
+          accountType !== 'live' && calculatedLimits.targetPct > 0
+            ? Number(calculatedLimits.targetPct.toFixed(2))
+            : activeFirmTemplate?.profitTargetPct,
         min_trading_days: activeFirmTemplate?.minTradingDays,
         max_risk_per_trade_pct: activeFirmTemplate?.maxRiskPerTradePct,
         notes: notes,
@@ -318,13 +352,13 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
           version: 1,
           effectiveFrom: nowIso,
         },
-        ...(activeFirmTemplate?.profitTargetPct
+        ...(accountType !== 'live' && calculatedLimits.targetDollars > 0
           ? [
               {
                 id: `rule-${Date.now()}-target`,
                 accountId: newAccId,
                 ruleType: 'profit_target' as const,
-                thresholdValue: Math.round(size * (activeFirmTemplate.profitTargetPct / 100)),
+                thresholdValue: Math.round(calculatedLimits.targetDollars),
                 thresholdUnit: 'currency' as const,
                 calculationMethod: 'static' as const,
                 warningThresholdPct: 90,
@@ -619,7 +653,9 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
               onClick={() => setPhase(1)}
             >
               <b>Phase 1</b>
-              <small>Target ${(calculatedLimits.startBal * (activeFirmTemplate?.profitTargetPct || 10) / 100).toLocaleString('en-US')}</small>
+              <small>
+                Target ${Math.round(calculatedLimits.targetDollars).toLocaleString('en-US')}
+              </small>
             </div>
             <div
               className="tw-ph"
@@ -627,16 +663,22 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
               onClick={() => setPhase(2)}
             >
               <b>Phase 2</b>
-              <small>Target ${(calculatedLimits.startBal * 0.05).toLocaleString('en-US')}</small>
+              <small>
+                Target ${Math.round(calculatedLimits.startBal * 0.05).toLocaleString('en-US')}
+              </small>
             </div>
           </div>
         </section>
 
-        {/* Section 3: Personal Loss Limits (Cols 1-6) */}
-        <section className="tw-tile tw-limits" aria-label="Your loss limits">
+        {/* Section 3: Personal Loss & Prop Firm Profit Limits (Cols 1-6) */}
+        <section className="tw-tile tw-limits" aria-label="Your loss and profit limits">
           <div className="tw-thead">
-            <span className="tw-lbl">Your loss limits</span>
-            <span className="tw-sub">{activeFirmTemplate ? 'Stricter than the firm is allowed' : 'Trader personal risk limits'}</span>
+            <span className="tw-lbl">
+              {accountType !== 'live' ? 'Loss & profit target limits' : 'Your loss limits'}
+            </span>
+            <span className="tw-sub">
+              {activeFirmTemplate ? 'Stricter than the firm is allowed' : 'Configure risk & target thresholds'}
+            </span>
           </div>
 
           {/* Daily Loss Card */}
@@ -765,6 +807,61 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
               </div>
             )}
           </div>
+
+          {/* Prop Firm Profit Target Section */}
+          {accountType !== 'live' && (
+            <div className="tw-lim">
+              <div className="tw-limhead">
+                <b>Profit target (Prop firm)</b>
+                <span className="font-mono" style={{ color: 'var(--tw-gain)' }}>
+                  +${calculatedLimits.targetDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="tw-limrow">
+                <div className="tw-field">
+                  <span className="tw-lbl">Measured as</span>
+                  <div className="tw-seg two" role="group" aria-label="Profit target measured as">
+                    <button
+                      type="button"
+                      aria-pressed={profitTargetMode === 'pct'}
+                      onClick={() => setProfitTargetMode('pct')}
+                    >
+                      % of start
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={profitTargetMode === 'currency'}
+                      onClick={() => setProfitTargetMode('currency')}
+                    >
+                      Fixed $
+                    </button>
+                  </div>
+                </div>
+
+                <div className="tw-field">
+                  <span className="tw-lbl">Target</span>
+                  <div className="tw-input mono">
+                    <input
+                      type="number"
+                      step={profitTargetMode === 'pct' ? '0.5' : '100'}
+                      min="0"
+                      placeholder={profitTargetMode === 'pct' ? '8.0' : '8000'}
+                      value={profitTargetValue}
+                      onChange={(e) => setProfitTargetValue(e.target.value)}
+                    />
+                    <span className="tw-chev">{profitTargetMode === 'pct' ? '%' : '$'}</span>
+                  </div>
+                </div>
+
+                <div className="tw-field">
+                  <span className="tw-lbl">Stage</span>
+                  <div className="tw-input mono text-xs flex items-center px-3">
+                    {accountType === 'evaluation' ? `Phase ${phase || 1}` : accountType === 'payout' ? 'Payout' : 'Funded'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Section 4: Gate Live Preview (Cols 7-12) */}
@@ -863,11 +960,11 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
             <div className="tw-rule">
               <div>
                 <b>Profit target</b>
-                <small>{activeFirmTemplate ? `Phase ${phase || 1}` : 'Trader set'}</small>
+                <small>{accountType === 'live' ? 'No firm target' : accountType === 'evaluation' ? `Phase ${phase || 1}` : 'Prop firm target'}</small>
               </div>
               <span className="mono">
-                {activeFirmTemplate?.profitTargetPct
-                  ? `${activeFirmTemplate.profitTargetPct.toFixed(1)}% · $${(calculatedLimits.startBal * (activeFirmTemplate.profitTargetPct / 100)).toLocaleString('en-US')}`
+                {accountType !== 'live' && calculatedLimits.targetDollars > 0
+                  ? `${calculatedLimits.targetPct.toFixed(1)}% · $${Math.round(calculatedLimits.targetDollars).toLocaleString('en-US')}`
                   : 'Trader target'}
               </span>
               <span></span>

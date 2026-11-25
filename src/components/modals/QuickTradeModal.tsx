@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useTrading } from '../../context/TradingContext';
 import { calculatePositionSize, calculateExecutionPnl } from '../../lib/calculations/financialEngine';
 import { Trade, TradeDirection, TradeStatus } from '../../lib/types/financial';
-import { X, CheckSquare, Square, Calculator, AlertCircle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { X, CheckSquare, Square, Calculator, AlertCircle, ArrowUpRight, ArrowDownRight, Calendar } from 'lucide-react';
 
 interface QuickTradeModalProps {
   isOpen: boolean;
@@ -13,11 +13,37 @@ interface QuickTradeModalProps {
   defaultDate?: string;
 }
 
-function toDateTimeLocalValue(iso?: string): string {
-  const d = iso ? new Date(iso) : new Date();
-  if (Number.isNaN(d.getTime())) return '';
+function getLocalTodayDateStr(): string {
+  const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function getLocalClockStr(d: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function getIsoDatePart(iso?: string): string {
+  if (!iso) return getLocalTodayDateStr();
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return getLocalTodayDateStr();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function getIsoTimePart(iso?: string): string {
+  if (!iso) return getLocalClockStr();
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return getLocalClockStr();
+  return getLocalClockStr(d);
+}
+
+function combineDateAndTime(dateStr: string, timeStr: string): string {
+  const safeDate = dateStr || getLocalTodayDateStr();
+  const safeTime = timeStr || '09:00';
+  const d = new Date(`${safeDate}T${safeTime}:00`);
+  return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
 }
 
 export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
@@ -39,8 +65,10 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
   const [riskPct, setRiskPct] = useState<string>('1.0');
   const [customPositionSize, setCustomPositionSize] = useState<string>('');
   const [commissionInput, setCommissionInput] = useState<string>('');
-  const [entryTimeInput, setEntryTimeInput] = useState<string>(() => toDateTimeLocalValue());
-  const [exitTimeInput, setExitTimeInput] = useState<string>('');
+  const [tradeDate, setTradeDate] = useState<string>(() => defaultDate || getLocalTodayDateStr());
+  const [entryClock, setEntryClock] = useState<string>(() => getLocalClockStr());
+  const [exitDate, setExitDate] = useState<string>(() => defaultDate || getLocalTodayDateStr());
+  const [exitClock, setExitClock] = useState<string>(() => getLocalClockStr());
   const [strategyId, setStrategyId] = useState<string>('');
   const [setupType, setSetupType] = useState<string>('');
   const [session, setSession] = useState<'Asian' | 'London' | 'London Close' | 'New York' | 'Sydney'>('London');
@@ -83,10 +111,12 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       setCommissionInput(
         Number.isFinite(editTrade.totalCommission) ? String(editTrade.totalCommission) : ''
       );
-      setEntryTimeInput(toDateTimeLocalValue(editTrade.entryTime || editTrade.createdAt));
-      setExitTimeInput(
-        editTrade.exitTime ? toDateTimeLocalValue(editTrade.exitTime) : toDateTimeLocalValue()
-      );
+      const entryIso = editTrade.entryTime || editTrade.createdAt;
+      setTradeDate(getIsoDatePart(entryIso));
+      setEntryClock(getIsoTimePart(entryIso));
+      const exitIso = editTrade.exitTime || entryIso;
+      setExitDate(getIsoDatePart(exitIso));
+      setExitClock(getIsoTimePart(exitIso));
       setStrategyId(editTrade.strategyId || '');
       setSetupType(editTrade.setupType || '');
       setSession((editTrade.session as typeof session) || 'London');
@@ -108,9 +138,12 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       setRiskPct('1.0');
       setCustomPositionSize('');
       setCommissionInput('');
-      const initialEntry = defaultDate ? `${defaultDate}T09:00` : toDateTimeLocalValue();
-      setEntryTimeInput(initialEntry);
-      setExitTimeInput(defaultDate ? `${defaultDate}T11:30` : toDateTimeLocalValue());
+      const todayOrDefault = defaultDate || getLocalTodayDateStr();
+      const nowClock = getLocalClockStr();
+      setTradeDate(todayOrDefault);
+      setEntryClock(defaultDate ? '09:00' : nowClock);
+      setExitDate(todayOrDefault);
+      setExitClock(defaultDate ? '11:30' : nowClock);
       setStrategyId('');
       setSetupType('');
       setSession('London');
@@ -123,7 +156,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         setSelectedAccountIds([accounts[0].id]);
       }
     }
-  }, [isOpen, editTrade, selectedAccountId, accounts]);
+  }, [isOpen, editTrade, defaultDate, selectedAccountId, accounts]);
 
   // Close on Escape key
   useEffect(() => {
@@ -181,12 +214,10 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         ? Number(realizedNetInput)
         : null;
 
-    const parsedEntryIso = entryTimeInput ? new Date(entryTimeInput).toISOString() : new Date().toISOString();
+    const parsedEntryIso = combineDateAndTime(tradeDate, entryClock);
     const parsedExitIso =
       status === 'CLOSED'
-        ? exitTimeInput
-          ? new Date(exitTimeInput).toISOString()
-          : editTrade?.exitTime || new Date().toISOString()
+        ? combineDateAndTime(exitDate || tradeDate, exitClock || entryClock)
         : undefined;
     const explicitLots =
       customPositionSize.trim() !== '' && Number.isFinite(parseFloat(customPositionSize))
@@ -445,6 +476,84 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
             </div>
           </div>
 
+          {/* Trade Date Section (Defaults to Today) */}
+          <div className="bg-edge-surface-secondary/40 p-3 rounded border border-edge-border/60 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-1.5 font-mono text-[10px] text-edge-text-secondary uppercase tracking-wider font-semibold">
+                <Calendar size={12} className="text-edge-accent" />
+                <span>Trade Date</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const today = getLocalTodayDateStr();
+                  setTradeDate(today);
+                  setExitDate(today);
+                }}
+                className="px-2 py-0.5 rounded bg-edge-accent/15 text-edge-accent border border-edge-accent/40 font-mono text-[10px] font-semibold hover:bg-edge-accent/25 transition-colors"
+              >
+                Today ({getLocalTodayDateStr()})
+              </button>
+            </div>
+
+            <div className={`grid gap-3 ${status === 'CLOSED' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2'}`}>
+              <div>
+                <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
+                  Entry Date
+                </label>
+                <input
+                  type="date"
+                  value={tradeDate}
+                  onChange={(e) => {
+                    setTradeDate(e.target.value);
+                    if (!editTrade) setExitDate(e.target.value);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono text-[11px] focus:border-edge-accent outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
+                  Entry Time
+                </label>
+                <input
+                  type="time"
+                  value={entryClock}
+                  onChange={(e) => setEntryClock(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono text-[11px] focus:border-edge-accent outline-none"
+                />
+              </div>
+
+              {status === 'CLOSED' && (
+                <>
+                  <div>
+                    <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
+                      Exit Date
+                    </label>
+                    <input
+                      type="date"
+                      value={exitDate}
+                      onChange={(e) => setExitDate(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono text-[11px] focus:border-edge-accent outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
+                      Exit Time
+                    </label>
+                    <input
+                      type="time"
+                      value={exitClock}
+                      onChange={(e) => setExitClock(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono text-[11px] focus:border-edge-accent outline-none"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
           {/* Pricing Row: Entry, SL, TP, Risk % */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-edge-surface-secondary/40 p-3 rounded border border-edge-border/60">
             <div>
@@ -508,34 +617,8 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
             </div>
           </div>
 
-          {/* Execution Timing, Lots & Fees */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-edge-surface-secondary/40 p-3 rounded border border-edge-border/60">
-            <div>
-              <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                Entry Date &amp; Time
-              </label>
-              <input
-                type="datetime-local"
-                value={entryTimeInput}
-                onChange={(e) => setEntryTimeInput(e.target.value)}
-                className="w-full px-2 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono text-[11px] focus:border-edge-accent outline-none"
-              />
-            </div>
-
-            {status === 'CLOSED' && (
-              <div>
-                <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                  Exit Date &amp; Time
-                </label>
-                <input
-                  type="datetime-local"
-                  value={exitTimeInput}
-                  onChange={(e) => setExitTimeInput(e.target.value)}
-                  className="w-full px-2 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono text-[11px] focus:border-edge-accent outline-none"
-                />
-              </div>
-            )}
-
+          {/* Sizing & Commission */}
+          <div className="grid grid-cols-2 gap-3 bg-edge-surface-secondary/40 p-3 rounded border border-edge-border/60">
             <div>
               <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
                 Position Size (Lots)

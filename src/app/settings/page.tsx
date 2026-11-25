@@ -30,8 +30,6 @@ export default function SettingsPage() {
     trades,
     strategies,
     importTrades,
-    resetToDemoData,
-    clearAllUserData,
     isCloudConfigured,
     syncStatus,
     lastSyncedAt,
@@ -62,8 +60,6 @@ export default function SettingsPage() {
   // Contract filter
   const [contractCategory, setContractCategory] = useState<string>('all');
 
-  // Danger zone confirmation
-  const [clearWord, setClearWord] = useState('');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -272,18 +268,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handleRestoreDemo = () => {
-    resetToDemoData();
-    showToast('Demo portfolio restored');
-  };
-
-  const handleClearDemo = () => {
-    if (clearWord.trim() !== 'CLEAR') return;
-    clearAllUserData();
-    setClearWord('');
-    showToast('All data cleared (local & synced)');
-  };
-
   const storageStatusBadge = isCloudConfigured
     ? `● Cloud ${syncStatus}${lastSyncedAt ? ` · ${lastSyncedAt}` : ''}`
     : '● Local store active';
@@ -375,12 +359,10 @@ export default function SettingsPage() {
                 <strong>{envDetails.riskCheckIntervalMs} ms</strong>
               </div>
               <div>
-                <span className="tw-eyebrow !mb-0 !text-[11px]">Demo data</span>
+                <span className="tw-eyebrow !mb-0 !text-[11px]">Portfolio records</span>
                 <strong>
                   {accounts.length > 0 || trades.length > 0
                     ? `${accounts.length} desks · ${trades.length} trades`
-                    : envDetails.enableDemoData
-                    ? 'Seeded portfolio'
                     : 'Blank portfolio'}
                 </strong>
               </div>
@@ -680,7 +662,7 @@ export default function SettingsPage() {
               Backup &amp; restore
             </h2>
             <p className="text-sm m-0 leading-relaxed" style={{ color: 'var(--tw-ink-2)' }}>
-              Export a complete JSON backup, or restore the demo portfolio. Export before any reset.
+              Export a complete JSON backup, or restore executions from a saved JSON backup file.
             </p>
 
             <input
@@ -702,37 +684,6 @@ export default function SettingsPage() {
               >
                 Restore from backup
               </button>
-              <button
-                className="tw-set-btn-ghost"
-                type="button"
-                onClick={handleRestoreDemo}
-              >
-                Restore demo portfolio
-              </button>
-            </div>
-
-            <div className="tw-set-danger">
-              <h3>Clear demo data</h3>
-              <p className="text-sm m-0 leading-relaxed" style={{ color: 'var(--tw-ink-2)' }}>
-                Removes every trade, account and journal entry from this device. This cannot be undone unless you have exported a backup.
-              </p>
-              <div className="tw-set-confirm">
-                <input
-                  value={clearWord}
-                  onChange={(e) => setClearWord(e.target.value)}
-                  placeholder="Type CLEAR to confirm"
-                  aria-label="Type CLEAR to confirm"
-                  autoComplete="off"
-                />
-                <button
-                  className="tw-set-btn-danger"
-                  type="button"
-                  disabled={clearWord.trim() !== 'CLEAR'}
-                  onClick={handleClearDemo}
-                >
-                  Clear demo data
-                </button>
-              </div>
             </div>
           </article>
         </div>
