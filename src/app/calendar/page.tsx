@@ -298,6 +298,28 @@ export default function CalendarPage() {
       bestDay = currentCells[0];
     }
 
+    // Build live monthly cumulative sparkline path
+    const monthDayCells = calendarCells.filter((c) => c.isCurrentMonth);
+    const daysInMonth = monthDayCells.length || 30;
+    let running = 0;
+    const series = monthDayCells.map((c) => {
+      running += c.netPnl;
+      return running;
+    });
+    const minVal = Math.min(0, ...series);
+    const maxVal = Math.max(0, ...series);
+    const span = maxVal - minVal || 1;
+    const pts = series.map((v, i) => {
+      const x = daysInMonth > 1 ? (i / (daysInMonth - 1)) * 300 : 150;
+      const y = maxVal === minVal ? 55 : 80 - ((v - minVal) / span) * 68;
+      return { x, y };
+    });
+    const linePath =
+      pts.length > 0
+        ? pts.map((p, idx) => `${idx === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
+        : 'M0 55 L300 55';
+    const areaPath = `${linePath} L300 90 L0 90 Z`;
+
     return {
       netPnl,
       returnPct,
@@ -306,6 +328,9 @@ export default function CalendarPage() {
       winRate,
       daysTraded,
       bestDay,
+      daysInMonth,
+      linePath,
+      areaPath,
     };
   }, [calendarCells, startingBal, selectedAccountId]);
 
@@ -343,14 +368,14 @@ export default function CalendarPage() {
       : selectedAccount?.name || `All accounts, ${accounts.length}`;
 
   return (
-    <div className="w-full max-w-[1440px] mx-auto flex-1 flex flex-col min-h-0 overflow-hidden">
+    <div className="w-full max-w-[1440px] mx-auto flex-1 flex flex-col gap-3 pb-6">
       {/* Title & Top Controls Bar */}
       <div className="tw-titlerow flex-none mt-1 sm:mt-2 mb-1">
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--tw-ink)]">Trading calendar</h1>
           <p className="text-xs text-[var(--tw-ink-2)] mt-0.5">Net P&amp;L, trades and discipline for each day. Dates use the account ruleset timezone.</p>
         </div>
-        <div className="tw-cal-controls flex items-center gap-2">
+        <div className="tw-cal-controls flex flex-wrap items-center gap-2">
           {/* View Segmented Pill */}
           <div className="tw-seg" role="group" aria-label="View">
             {(['Monthly', 'Weekly', 'Daily'] as const).map((mode) => (
@@ -366,7 +391,7 @@ export default function CalendarPage() {
           </div>
 
           {/* Month Switcher Controls */}
-          <div className="flex items-center gap-1 bg-[var(--tw-pill)] p-1 rounded-full border border-[var(--tw-line-strong)]">
+          <div className="flex items-center gap-1 bg-[var(--tw-pill)] p-1 rounded-full border border-[var(--tw-line-strong)] shrink-0">
             <button
               type="button"
               onClick={handlePrevMonth}
@@ -375,7 +400,7 @@ export default function CalendarPage() {
             >
               <ChevronLeft size={16} />
             </button>
-            <span className="text-xs font-semibold px-2 text-[var(--tw-ink)] font-mono">
+            <span className="text-xs font-semibold px-2 text-[var(--tw-ink)] font-mono whitespace-nowrap">
               {monthName} {displayedYear}
             </span>
             <button
@@ -582,11 +607,17 @@ export default function CalendarPage() {
         >
           <div className="lbl">Net P&amp;L, {monthName}, closed trades</div>
           <div className="big">
-            {monthSummary.netPnl >= 0 ? '+' : '−'}
-            {isPnlHidden
-              ? '••••••'
-              : formatCur(Math.abs(monthSummary.netPnl)).replace('.00', '')}
-            <small>{isPnlHidden ? '' : '.00'}</small>
+            {(() => {
+              if (isPnlHidden) return `${monthSummary.netPnl >= 0 ? '+' : '−'}••••••`;
+              const [whole, cents = '00'] = formatCur(Math.abs(monthSummary.netPnl)).split('.');
+              return (
+                <>
+                  {monthSummary.netPnl >= 0 ? '+' : '−'}
+                  {whole}
+                  <small>.{cents}</small>
+                </>
+              );
+            })()}
           </div>
           <div className="delta">
             <span className="pill">
@@ -624,11 +655,11 @@ export default function CalendarPage() {
                 </linearGradient>
               </defs>
               <path
-                d="M0 80 L160 80 L170 39 L180 10 L300 10 L300 90 L0 90 Z"
+                d={monthSummary.areaPath}
                 fill="url(#cal-hg)"
               />
               <path
-                d="M0 80 L160 80 L170 39 L180 10 L300 10"
+                d={monthSummary.linePath}
                 fill="none"
                 style={{
                   stroke: 'var(--tw-hero-line)',
@@ -640,7 +671,9 @@ export default function CalendarPage() {
             </svg>
             <div className="axis">
               <span>1 {monthName.slice(0, 3)}</span>
-              <span>31 {monthName.slice(0, 3)}</span>
+              <span>
+                {monthSummary.daysInMonth} {monthName.slice(0, 3)}
+              </span>
             </div>
           </div>
         </section>
@@ -776,7 +809,7 @@ export default function CalendarPage() {
           })()}
 
           {/* Links to Trade Ledger, New Execution & Journal */}
-          <div className="flex flex-col gap-2 mt-auto">
+          <div className="flex flex-col gap-2 pt-1 mt-auto">
             <button
               type="button"
               onClick={() => {
@@ -812,7 +845,7 @@ export default function CalendarPage() {
             {isPnlHidden
               ? '+$••••'
               : monthSummary.bestDay && monthSummary.bestDay.tradeCount > 0
-              ? `${monthSummary.bestDay.netPnl >= 0 ? '+' : ''}${formatCur(monthSummary.bestDay.netPnl).replace('.00', '')}`
+              ? `${monthSummary.bestDay.netPnl >= 0 ? '+' : '−'}${formatCur(Math.abs(monthSummary.bestDay.netPnl)).replace(/\.00$/, '')}`
               : '$0'}
           </div>
           <div className="foot">
