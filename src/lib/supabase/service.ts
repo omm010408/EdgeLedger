@@ -55,16 +55,42 @@ export function mapSupabaseToRule(row: any): AccountRule {
   };
 }
 
+const DEFAULT_ANON_USER_ID = '00000000-0000-0000-0000-000000000000';
+const ALLOWED_DB_SESSIONS = new Set([
+  'Asia',
+  'Asian',
+  'London',
+  'London Close',
+  'New York',
+  'Sydney',
+  'Off-Hours',
+]);
+
+function normalizeTradeSession(session?: string): string {
+  if (session && ALLOWED_DB_SESSIONS.has(session)) return session;
+  return 'London';
+}
+
+function isOptionalColumnSchemaError(msg?: string): boolean {
+  if (!msg) return false;
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes('column') &&
+    (lower.includes('does not exist') || lower.includes('schema cache'))
+  );
+}
+
 /**
  * Transforms a Supabase trade row and its allocations into the application Trade domain model.
  */
 export function mapSupabaseToTrade(row: any, allocations: TradeAllocation[] = []): Trade {
   return {
     id: row.id,
-    userId: row.user_id || 'user-default',
+    userId: row.user_id || DEFAULT_ANON_USER_ID,
     instrumentSymbol: row.instrument_symbol,
     strategyId: row.strategy_id || undefined,
     strategyName: row.strategy_name || undefined,
+    strategyVersion: Number(row.strategy_version) || 1,
     direction: row.direction || 'BUY',
     status: row.status || 'CLOSED',
     environment: row.environment || 'live',
@@ -88,8 +114,14 @@ export function mapSupabaseToTrade(row: any, allocations: TradeAllocation[] = []
     tradeThesis: row.trade_thesis || '',
     technicalBias: row.technical_bias || '',
     macroBias: row.macro_bias || '',
+    macroBiasContext: row.macro_bias_context || undefined,
+    marketConditions: row.market_conditions || undefined,
     screenshots: Array.isArray(row.screenshots) ? row.screenshots : [],
     tags: Array.isArray(row.tags) ? row.tags : [],
+    checklistAnswers:
+      row.checklist_answers && typeof row.checklist_answers === 'object'
+        ? row.checklist_answers
+        : {},
     isRuleCompliant: Boolean(row.is_rule_compliant ?? true),
     createdAt: row.created_at,
     updatedAt: row.updated_at || row.created_at,
@@ -101,6 +133,31 @@ export function mapSupabaseToTrade(row: any, allocations: TradeAllocation[] = []
  * High-Level Supabase Service
  */
 export class SupabaseService {
+  /**
+   * Resolves the active authenticated user UUID, falling back to the
+   * standardized anonymous placeholder UUID instead of non-UUID placeholders
+   * like "user-default" which fail RLS and UUID column checks.
+   */
+  private static async resolveUserId(candidate?: string): Promise<string> {
+    if (supabase) {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data?.session?.user?.id) {
+          return data.session.user.id;
+        }
+      } catch {
+        // Fallback to candidate/default below
+      }
+    }
+    if (
+      candidate &&
+      candidate !== 'user-default' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate)
+    ) {
+      return candidate;
+    }
+    return DEFAULT_ANON_USER_ID;
+  }
   /**
    * Fetches all accounts and their attached rules from Supabase.
    */
@@ -191,7 +248,9 @@ export class SupabaseService {
           [],
       }));
 
-      return tradesRes.data.map((row) => mapSupabaseToTrade(row, allocations));
+      return tradesRes.data
+        .filter((row) => !row.deleted_at)
+        .map((row) => mapSupabaseToTrade(row, allocations));
     } catch (err: any) {
       console.warn('SupabaseService.fetchTrades exception:', err.message);
       return null;
@@ -199,22 +258,23 @@ export class SupabaseService {
   }
 
   /**
-   * Saves or updates a single trade with its allocations in Supabase.
+   * Saves or updates a single trade with its allocations and executions in Supabase.
    */
   static async saveTrade(trade: Trade): Promise<boolean> {
     if (!isSupabaseConfigured || !supabase) return false;
 
     try {
-      const tradePayload = {
+      const resolvedUserId = await this.resolveUserId(trade.userId);
+      const baseTradePayload = {
         id: trade.id,
-        user_id: trade.userId || '00000000-0000-0000-0000-000000000000',
+        user_id: resolvedUserId,
         instrument_symbol: trade.instrumentSymbol,
         strategy_id: trade.strategyId || null,
         direction: trade.direction,
         status: trade.status,
         environment: trade.environment || 'live',
         timeframe: trade.timeframe || '15M',
-        session: trade.session || 'London',
+        session: normalizeTradeSession(trade.session),
         setup_type: trade.setupType,
         entry_price: trade.entryPrice,
         stop_loss: trade.stopLoss,
@@ -237,15 +297,35 @@ export class SupabaseService {
         updated_at: trade.updatedAt || new Date().toISOString(),
       };
 
-      const { error: tradeErr } = await supabase.from('trades').upsert(tradePayload);
+      const extendedTradePayload = {
+        ...baseTradePayload,
+        strategy_name: trade.strategyName || null,
+        strategy_version: trade.strategyVersion || 1,
+        technical_bias: trade.technicalBias || '',
+        macro_bias: trade.macroBias || '',
+        macro_bias_context: trade.macroBiasContext || null,
+        market_conditions: trade.marketConditions || null,
+        checklist_answers: trade.checklistAnswers || {},
+      };
+
+      let { error: tradeErr } = await supabase.from('trades').upsert(extendedTradePayload);
+      if (tradeErr && isOptionalColumnSchemaError(tradeErr.message)) {
+        const retry = await supabase.from('trades').upsert(baseTradePayload);
+        tradeErr = retry.error;
+      }
+
       if (tradeErr) {
         console.warn('SupabaseService.saveTrade error:', tradeErr.message);
         return false;
       }
 
-      // Upsert allocations and nested executions
-      if (trade.allocations && trade.allocations.length > 0) {
-        const allocPayloads = trade.allocations.map((a) => ({
+      // Sync allocations and nested executions; prune removed allocations when editing
+      const validAllocs = (trade.allocations || []).filter(
+        (a) => Boolean(a.accountId) && a.accountId !== 'unassigned'
+      );
+
+      if (validAllocs.length > 0) {
+        const allocPayloads = validAllocs.map((a) => ({
           id: a.id,
           trade_id: trade.id,
           account_id: a.accountId,
@@ -264,9 +344,28 @@ export class SupabaseService {
           status: a.status,
         }));
 
-        await supabase.from('trade_allocations').upsert(allocPayloads);
+        const { error: allocErr } = await supabase
+          .from('trade_allocations')
+          .upsert(allocPayloads);
+        if (allocErr) {
+          console.warn('SupabaseService.saveTrade allocations error:', allocErr.message);
+          return false;
+        }
 
-        const execPayloads = trade.allocations.flatMap((a) =>
+        // Remove stale allocations that were deselected during edit
+        const { data: existingAllocRows } = await supabase
+          .from('trade_allocations')
+          .select('id')
+          .eq('trade_id', trade.id);
+        const keepIds = new Set(validAllocs.map((a) => a.id));
+        const staleIds = (existingAllocRows || [])
+          .map((r: { id: string }) => r.id)
+          .filter((id: string) => !keepIds.has(id));
+        if (staleIds.length > 0) {
+          await supabase.from('trade_allocations').delete().in('id', staleIds);
+        }
+
+        const execPayloads = validAllocs.flatMap((a) =>
           (a.executions || []).map((e) => ({
             id: e.id,
             trade_id: trade.id,
@@ -286,8 +385,16 @@ export class SupabaseService {
         );
 
         if (execPayloads.length > 0) {
-          await supabase.from('trade_executions').upsert(execPayloads);
+          const { error: execErr } = await supabase
+            .from('trade_executions')
+            .upsert(execPayloads);
+          if (execErr) {
+            console.warn('SupabaseService.saveTrade executions error:', execErr.message);
+            return false;
+          }
         }
+      } else {
+        await supabase.from('trade_allocations').delete().eq('trade_id', trade.id);
       }
 
       return true;
@@ -304,9 +411,10 @@ export class SupabaseService {
     if (!isSupabaseConfigured || !supabase) return false;
 
     try {
+      const resolvedUserId = await this.resolveUserId(account.userId);
       const accountPayload = {
         id: account.id,
-        user_id: '00000000-0000-0000-0000-000000000000',
+        user_id: resolvedUserId,
         name: account.name,
         broker_or_firm: account.brokerOrFirm,
         account_type: account.accountType,
@@ -395,9 +503,10 @@ export class SupabaseService {
   static async saveStrategy(strategy: Strategy): Promise<boolean> {
     if (!isSupabaseConfigured || !supabase) return false;
     try {
+      const resolvedUserId = await this.resolveUserId();
       const { error } = await supabase.from('strategies').upsert({
         id: strategy.id,
-        user_id: '00000000-0000-0000-0000-000000000000',
+        user_id: resolvedUserId,
         name: strategy.name,
         description: strategy.description,
         market_type: strategy.marketType,
@@ -462,9 +571,10 @@ export class SupabaseService {
   static async saveJournalEntry(entry: JournalEntry): Promise<boolean> {
     if (!isSupabaseConfigured || !supabase) return false;
     try {
+      const resolvedUserId = await this.resolveUserId();
       const { error } = await supabase.from('journal_entries').upsert({
         id: entry.id,
-        user_id: '00000000-0000-0000-0000-000000000000',
+        user_id: resolvedUserId,
         entry_date: entry.entryDate,
         market_conditions: entry.marketConditions,
         macro_environment: entry.macroEnvironment,
@@ -517,9 +627,10 @@ export class SupabaseService {
   static async saveAlert(alert: RiskAlert): Promise<boolean> {
     if (!isSupabaseConfigured || !supabase) return false;
     try {
+      const resolvedUserId = await this.resolveUserId();
       const { error } = await supabase.from('risk_alerts').upsert({
         id: alert.id,
-        user_id: '00000000-0000-0000-0000-000000000000',
+        user_id: resolvedUserId,
         account_id: alert.accountId,
         severity: alert.severity,
         title: alert.title,
@@ -588,30 +699,38 @@ export class SupabaseService {
       let strategiesSynced = 0;
       let journalSynced = 0;
       let alertsSynced = 0;
+      let failedCount = 0;
 
+      // Sync parent entities (accounts + strategies) BEFORE trades to satisfy FK constraints
       for (const acc of accounts) {
         if (await this.saveAccount(acc)) accountsSynced += 1;
-      }
-      for (const t of trades) {
-        if (await this.saveTrade(t)) tradesSynced += 1;
+        else failedCount += 1;
       }
       for (const s of strategies) {
         if (await this.saveStrategy(s)) strategiesSynced += 1;
+        else failedCount += 1;
+      }
+      for (const t of trades) {
+        if (await this.saveTrade(t)) tradesSynced += 1;
+        else failedCount += 1;
       }
       for (const j of journalEntries) {
         if (await this.saveJournalEntry(j)) journalSynced += 1;
+        else failedCount += 1;
       }
       for (const a of alerts) {
         if (await this.saveAlert(a)) alertsSynced += 1;
+        else failedCount += 1;
       }
 
       return {
-        success: true,
+        success: failedCount === 0,
         accountsSynced,
         tradesSynced,
         strategiesSynced,
         journalSynced,
         alertsSynced,
+        ...(failedCount > 0 ? { error: `${failedCount} entity sync operation(s) failed` } : {}),
       };
     } catch (err: any) {
       return {

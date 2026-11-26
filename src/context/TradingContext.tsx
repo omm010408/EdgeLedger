@@ -223,12 +223,19 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       }
       try {
         const ok = await syncCall();
-        if (!ok) {
+        if (ok) {
+          const remaining = removeOutboxItems(new Set([`${entityType}:${entityId}`]));
+          setPendingSyncCount(remaining.length);
+          setSyncStatus('synced');
+          setLastSyncedAt(new Date().toLocaleTimeString());
+        } else {
           enqueueAndMarkPending(entityType, entityId, 'upsert');
+          setSyncStatus('error');
         }
       } catch (err) {
         console.warn(`Background Supabase upsert(${entityType}) queued:`, err);
         enqueueAndMarkPending(entityType, entityId, 'upsert');
+        setSyncStatus('error');
       }
     },
     [enqueueAndMarkPending]
@@ -250,12 +257,19 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
       }
       try {
         const ok = await deleteCall();
-        if (!ok) {
+        if (ok) {
+          const remaining = removeOutboxItems(new Set([`${entityType}:${entityId}`]));
+          setPendingSyncCount(remaining.length);
+          setSyncStatus('synced');
+          setLastSyncedAt(new Date().toLocaleTimeString());
+        } else {
           enqueueAndMarkPending(entityType, entityId, 'delete');
+          setSyncStatus('error');
         }
       } catch (err) {
         console.warn(`Background Supabase delete(${entityType}) queued:`, err);
         enqueueAndMarkPending(entityType, entityId, 'delete');
+        setSyncStatus('error');
       }
     },
     [enqueueAndMarkPending]
@@ -363,11 +377,54 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
         if (journalRec) setJournalEntries(journalRec.merged);
         if (alertRec) setRiskAlerts(alertRec.merged);
 
-        const accountsToPush = accRec?.toPushToCloud ?? [];
-        const tradesToPush = tradeRec?.toPushToCloud ?? [];
-        const strategiesToPush = stratRec?.toPushToCloud ?? [];
-        const journalsToPush = journalRec?.toPushToCloud ?? [];
-        const alertsToPush = alertRec?.toPushToCloud ?? [];
+        // Include queued outbox upserts and deletes so failed/offline mutations always retry
+        const outbox = loadOutbox();
+        const mergeQueuedUpserts = <T extends { id: string }>(
+          baseList: T[],
+          mergedLocalList: T[],
+          type: SyncEntityType
+        ): T[] => {
+          const queuedIds = new Set(
+            outbox
+              .filter((m) => m.entityType === type && m.operation === 'upsert')
+              .map((m) => m.entityId)
+          );
+          if (queuedIds.size === 0) return baseList;
+          const byId = new Map<string, T>();
+          for (const item of baseList) byId.set(item.id, item);
+          for (const item of mergedLocalList) {
+            if (queuedIds.has(item.id) && !byId.has(item.id)) {
+              byId.set(item.id, item);
+            }
+          }
+          return Array.from(byId.values());
+        };
+
+        const accountsToPush = mergeQueuedUpserts(
+          accRec?.toPushToCloud ?? [],
+          accRec?.merged ?? localSnapshot.accounts,
+          'account'
+        );
+        const tradesToPush = mergeQueuedUpserts(
+          tradeRec?.toPushToCloud ?? [],
+          tradeRec?.merged ?? localSnapshot.trades,
+          'trade'
+        );
+        const strategiesToPush = mergeQueuedUpserts(
+          stratRec?.toPushToCloud ?? [],
+          stratRec?.merged ?? localSnapshot.strategies,
+          'strategy'
+        );
+        const journalsToPush = mergeQueuedUpserts(
+          journalRec?.toPushToCloud ?? [],
+          journalRec?.merged ?? localSnapshot.journalEntries,
+          'journal'
+        );
+        const alertsToPush = mergeQueuedUpserts(
+          alertRec?.toPushToCloud ?? [],
+          alertRec?.merged ?? localSnapshot.riskAlerts,
+          'alert'
+        );
 
         const deleteTombstones: SyncTombstone[] = [
           ...(accRec?.toDeleteFromCloud ?? []).map((id) => ({
@@ -397,8 +454,6 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
           })),
         ];
 
-        // Also include queued delete tombstones for tables that may have returned empty
-        const outbox = loadOutbox();
         const queuedDeletes = outbox
           .filter((m) => m.operation === 'delete')
           .map((m) => ({
@@ -415,7 +470,14 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
           journalsToPush.length > 0 ||
           alertsToPush.length > 0;
 
-        let syncOk = true;
+        const allFetchesOk =
+          cloudAccounts !== null &&
+          cloudTrades !== null &&
+          cloudStrategies !== null &&
+          cloudJournal !== null &&
+          cloudAlerts !== null;
+
+        let pushOk = true;
         if (hasPushWork) {
           const pushResult = await SupabaseService.syncLocalToCloud(
             accountsToPush,
@@ -424,14 +486,17 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
             journalsToPush,
             alertsToPush
           );
-          syncOk = pushResult.success;
+          pushOk = pushResult.success;
         }
 
+        let deletesOk = true;
         if (combinedDeletes.length > 0) {
-          await SupabaseService.applyTombstones(combinedDeletes);
+          const deletedCount = await SupabaseService.applyTombstones(combinedDeletes);
+          deletesOk = deletedCount === combinedDeletes.length;
         }
 
-        if (syncOk) {
+        const syncOk = allFetchesOk && pushOk && deletesOk;
+        if (pushOk && deletesOk && (hasPushWork || combinedDeletes.length > 0)) {
           const flushedKeys = new Set<string>([
             ...accountsToPush.map((a) => `account:${a.id}`),
             ...tradesToPush.map((t) => `trade:${t.id}`),
@@ -442,6 +507,9 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
           ]);
           const remaining = removeOutboxItems(flushedKeys);
           setPendingSyncCount(remaining.length);
+        }
+
+        if (syncOk) {
           setSyncStatus('synced');
           setLastSyncedAt(new Date().toLocaleTimeString());
         } else {
@@ -544,14 +612,29 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
     const handleOffline = () => {
       setSyncStatus('offline');
     };
+    const handleStorageSync = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY || !e.newValue) return;
+      try {
+        const parsed = JSON.parse(e.newValue);
+        if (Array.isArray(parsed.accounts)) setAccounts(parsed.accounts);
+        if (Array.isArray(parsed.trades)) setTrades(parsed.trades);
+        if (Array.isArray(parsed.strategies)) setStrategies(parsed.strategies);
+        if (Array.isArray(parsed.journalEntries)) setJournalEntries(parsed.journalEntries);
+        if (Array.isArray(parsed.riskAlerts)) setRiskAlerts(parsed.riskAlerts);
+      } catch {
+        // Ignore malformed cross-tab payload
+      }
+    };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('storage', handleStorageSync);
 
     return () => {
       isCancelled = true;
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('storage', handleStorageSync);
     };
   }, [runNonOverridingSync]);
 
@@ -1098,7 +1181,7 @@ function generatePersonalizedRules(
 
     const newTrade: Trade = {
       id: tradeId,
-      userId: 'user-default',
+      userId: '00000000-0000-0000-0000-000000000000',
       instrumentSymbol: tradeData.instrumentSymbol || 'XAUUSD',
       strategyId: tradeData.strategyId,
       strategyName: strategies.find((s) => s.id === tradeData.strategyId)?.name,
@@ -1156,8 +1239,8 @@ function generatePersonalizedRules(
   };
 
   const updateTrade = (updated: Trade) => {
-    // Validates that closed trade cannot reopen
-    const existing = trades.find((t) => t.id === updated.id);
+    // Validates that closed trade cannot reopen; use latestStateRef to avoid stale closures
+    const existing = latestStateRef.current.trades.find((t) => t.id === updated.id);
     if (existing && existing.status === 'CLOSED' && updated.status !== 'CLOSED') {
       throw new Error('A closed trade cannot be reopened. Record a new trade execution instead.');
     }
@@ -1218,7 +1301,7 @@ function generatePersonalizedRules(
   };
 
   const deleteTrade = (id: string) => {
-    const existing = trades.find((t) => t.id === id);
+    const existing = latestStateRef.current.trades.find((t) => t.id === id);
     if (existing && (existing.status === 'CLOSED' || existing.status === 'PARTIALLY_CLOSED')) {
       const deltas = new Map<string, number>();
       existing.allocations.forEach((a) => {
@@ -1242,7 +1325,7 @@ function generatePersonalizedRules(
     swap: number = 0,
     notes?: string
   ) => {
-    const trade = trades.find((t) => t.id === tradeId);
+    const trade = latestStateRef.current.trades.find((t) => t.id === tradeId);
     if (!trade) return;
     const instrument = instruments.find((i) => i.symbol === trade.instrumentSymbol) || instruments[0];
 
