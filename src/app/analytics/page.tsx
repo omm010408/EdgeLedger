@@ -8,7 +8,6 @@ import {
   Download,
   Filter,
   Printer,
-  ShieldAlert,
   X,
 } from 'lucide-react';
 import { useTrading } from '@/context/TradingContext';
@@ -41,6 +40,7 @@ import {
   CurrencyText,
   SampleStatusPill,
   downloadCsvFile,
+  formatCurrencySigned,
   formatPercentSigned,
   formatRSigned,
 } from '@/components/analytics/AnalyticsShared';
@@ -64,11 +64,12 @@ function getAccountDotColor(acc: TradingAccount, index: number): string {
   if (idLower.includes('apex') || nameLower.includes('apex')) return 'var(--tw-a-apex)';
   if (idLower.includes('ftmo') || nameLower.includes('ftmo')) return 'var(--tw-a-ftmo)';
   if (idLower.includes('ic') || nameLower.includes('ic markets')) return 'var(--tw-a-ic)';
+  if (idLower.includes('aqua') || nameLower.includes('aqua')) return 'var(--tw-a-aqua)';
   const fallback = [
     'var(--tw-a-apex)',
     'var(--tw-a-ftmo)',
     'var(--tw-a-ic)',
-    'var(--tw-s3)',
+    'var(--tw-a-aqua)',
     'var(--tw-s2)',
   ];
   return fallback[index % fallback.length];
@@ -308,12 +309,16 @@ export default function AnalyticsPage() {
     let rLosses = 0;
     let winCount = 0;
     let lossCount = 0;
+    let longNet = 0;
+    let shortNet = 0;
 
     for (const t of scopedClosedTrades) {
       const p = getScopedTradePnl(t, selectedAccountIds, accounts.length);
       const rVal = Number.isFinite(t.realizedR) ? t.realizedR : 0;
       netPnl += p;
       totalR += rVal;
+      if (t.direction === 'BUY') longNet += p;
+      else shortNet += p;
       if (p > 0) {
         wins++;
         winCount++;
@@ -329,7 +334,8 @@ export default function AnalyticsPage() {
     const n = scopedClosedTrades.length;
     const startCap = visibleDesks.reduce((s, a) => s + a.startingBalance, 0);
     const totalEquity = visibleDesks.reduce((s, a) => s + a.currentEquity, 0);
-    const returnPct = startCap > 0 ? (netPnl / startCap) * 100 : 0;
+    const derivedReturnPct = startCap > 0 ? (netPnl / startCap) * 100 : 0;
+    const reportedReturnPct = startCap > 0 ? ((totalEquity - startCap) / startCap) * 100 : 0;
     const winRatePct = n > 0 ? (wins / n) * 100 : 0;
     const expectancyUsd = n > 0 ? netPnl / n : 0;
     const expectancyR = n > 0 ? totalR / n : 0;
@@ -352,6 +358,8 @@ export default function AnalyticsPage() {
     return {
       n,
       netPnl,
+      longNet,
+      shortNet,
       grossProfit,
       grossLoss,
       wins,
@@ -359,7 +367,8 @@ export default function AnalyticsPage() {
       lossCount,
       startCap,
       totalEquity,
-      returnPct,
+      derivedReturnPct,
+      reportedReturnPct,
       winRatePct,
       expectancyUsd,
       expectancyR,
@@ -372,6 +381,70 @@ export default function AnalyticsPage() {
       sharpeLabel: sampleGuard.hasEnoughTradingDays ? 'Active' : 'Needs 30 trading days',
     };
   }, [scopedClosedTrades, selectedAccountIds, accounts.length, visibleDesks, sampleGuard]);
+
+  // Structured Reconciliation Rows (Stated | Derived | Gap)
+  const reconciliationRows = useMemo(() => {
+    const rows: Array<{
+      item: string;
+      stated: string;
+      derived: string;
+      gap: string;
+      isPnl?: boolean;
+    }> = [];
+
+    if (
+      selectedAccountIds.length === 0 ||
+      selectedAccountIds.length >= accounts.length
+    ) {
+      rows.push({
+        item: 'Consolidated vs desk sum',
+        stated: formatCurrencySigned(reconciliation.consolidatedNet, false),
+        derived: formatCurrencySigned(reconciliation.deskAllocationSum, false),
+        gap: formatCurrencySigned(reconciliation.netGap, true),
+        isPnl: true,
+      });
+    }
+
+    for (const d of visibleDeskStats) {
+      if (Math.abs(d.equityConflictGap) >= 0.01) {
+        rows.push({
+          item: `${d.shortLabel} equity`,
+          stated: formatCurrencySigned(d.currentEquity, false),
+          derived: formatCurrencySigned(d.impliedEquity, false),
+          gap: formatCurrencySigned(d.equityConflictGap, true),
+          isPnl: true,
+        });
+      }
+    }
+
+    rows.push({
+      item: 'Combined return',
+      stated: formatPercentSigned(headlineMetrics.reportedReturnPct),
+      derived: formatPercentSigned(headlineMetrics.derivedReturnPct),
+      gap: `${(headlineMetrics.reportedReturnPct - headlineMetrics.derivedReturnPct >= 0 ? '+' : '−')}${Math.abs(
+        headlineMetrics.reportedReturnPct - headlineMetrics.derivedReturnPct
+      ).toFixed(2)} pp`,
+      isPnl: false,
+    });
+
+    rows.push({
+      item: 'Ledger dates',
+      stated: dateRangeLabel,
+      derived: `report ${new Date().toISOString().slice(0, 10)}`,
+      gap: '—',
+      isPnl: false,
+    });
+
+    return rows;
+  }, [
+    selectedAccountIds.length,
+    accounts.length,
+    reconciliation,
+    visibleDeskStats,
+    headlineMetrics.reportedReturnPct,
+    headlineMetrics.derivedReturnPct,
+    dateRangeLabel,
+  ]);
 
   const equityDrawdown = useMemo(
     () => buildEquityAndDrawdownSeries(accounts, scopedClosedTrades, selectedAccountIds),
@@ -457,7 +530,7 @@ export default function AnalyticsPage() {
         name,
         total: entry.total,
         count: entry.count,
-        heightPct: entry.count === 0 ? 4 : Math.max(10, Math.round((Math.abs(entry.total) / maxAbs) * 86)),
+        heightPx: entry.count === 0 ? 2 : Math.max(16, Math.round((Math.abs(entry.total) / maxAbs) * 186)),
       };
     });
   }, [scopedClosedTrades, excludeSwingFromSession, selectedAccountIds, accounts.length]);
@@ -484,20 +557,21 @@ export default function AnalyticsPage() {
         name,
         total: entry.total,
         count: entry.count,
-        heightPct: entry.count === 0 ? 4 : Math.max(10, Math.round((Math.abs(entry.total) / maxAbs) * 86)),
+        heightPx: entry.count === 0 ? 2 : Math.max(16, Math.round((Math.abs(entry.total) / maxAbs) * 186)),
       };
     });
   }, [scopedClosedTrades, selectedAccountIds, accounts.length]);
 
-  const matrixScale = useMemo(() => {
-    if (visibleDeskStats.length === 0) return 1;
-    if (compareMode === 'net') {
-      return Math.max(1, ...visibleDeskStats.map((d) => Math.abs(d.netPnl)));
-    }
-    if (compareMode === 'ret') {
-      return Math.max(1, ...visibleDeskStats.map((d) => Math.abs(d.returnPct)));
-    }
-    return 100;
+  const barScaleBounds = useMemo(() => {
+    if (visibleDeskStats.length === 0) return { min: -500, max: 6500 };
+    if (compareMode === 'win') return { min: 0, max: 100 };
+    const vals = visibleDeskStats.map((d) =>
+      compareMode === 'net' ? d.netPnl : d.returnPct
+    );
+    const minVal = Math.min(0, ...vals);
+    const maxVal = Math.max(0, ...vals);
+    const pad = Math.max((maxVal - minVal) * 0.1, compareMode === 'net' ? 300 : 1);
+    return { min: minVal === 0 ? 0 : minVal - pad, max: maxVal + pad };
   }, [visibleDeskStats, compareMode]);
 
   const deskAStat = deskComparisonStats.find((d) => d.id === compareDeskA);
@@ -535,14 +609,16 @@ export default function AnalyticsPage() {
     downloadCsvFile('edgeledger-analytics-ledger.csv', headers, rows);
   };
 
+  const sharpeMeterPct = Math.min(100, Math.round((sampleGuard.tradingDaysCount / 30) * 100));
+
   return (
     <div className="tw-page-wrap">
       <section className="tw-page-head">
         <div>
-          <div className="tw-eyebrow">EdgeLedger Quantitative Desk</div>
-          <h1 className="tw-page-title">Performance Analytics</h1>
+          <div className="tw-eyebrow">EdgeLedger · Quantitative desk</div>
+          <h1 className="tw-page-title">Performance analytics</h1>
           <p className="tw-page-lede">
-            Single-ledger multi-desk attribution, equity/drawdown landmarks, firm-rule monitors, and R-multiple analysis.
+            Multi-desk attribution, equity and drawdown, firm-rule monitoring and R-multiple analysis. Every figure shows its sample size.
           </p>
         </div>
         <div>
@@ -554,7 +630,6 @@ export default function AnalyticsPage() {
       </section>
 
       <main className="tw-bento-12" aria-label="EdgeLedger Quantitative Analytics">
-
         {!isLoaded && (
           <div className="tw-bento-tile tw-ana-banner" role="status" aria-live="polite">
             <span>Loading EdgeLedger desk dataset and computing analytics...</span>
@@ -571,16 +646,17 @@ export default function AnalyticsPage() {
           </div>
         )}
 
-        <section className="tw-bento-tile tw-ana-controls-bar" aria-label="Analytics filters and controls">
+        {/* Controls */}
+        <section className="tw-bento-tile tw-ana-controls-bar" aria-label="Analytics controls">
           <div className="tw-ana-controls-row">
-            <div className="tw-ana-desk-pills" role="group" aria-label="Multi-select trading desks">
+            <div className="tw-ana-desk-pills" role="group" aria-label="Desks">
               <button
                 type="button"
-                className={`tw-ana-chip-btn ${selectedAccountIds.length === 0 ? 'on' : ''}`}
+                className="tw-ana-chipbtn"
                 aria-pressed={selectedAccountIds.length === 0}
                 onClick={selectAllDesks}
               >
-                All Desks ({accounts.length})
+                All desks ({accounts.length})
               </button>
               {accounts.map((acc, idx) => {
                 const isSelected = selectedAccountIds.includes(acc.id);
@@ -588,16 +664,18 @@ export default function AnalyticsPage() {
                   <button
                     key={acc.id}
                     type="button"
-                    className={`tw-ana-chip-btn ${isSelected ? 'on' : ''}`}
+                    className="tw-ana-chipbtn"
                     aria-pressed={isSelected}
                     onClick={() => toggleDeskSelection(acc.id)}
                   >
                     <span
                       style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: 999,
+                        width: 9,
+                        height: 9,
+                        borderRadius: '50%',
                         background: getAccountDotColor(acc, idx),
+                        display: 'inline-block',
+                        flexShrink: 0,
                       }}
                       aria-hidden="true"
                     />
@@ -607,7 +685,7 @@ export default function AnalyticsPage() {
               })}
             </div>
 
-            <div className="tw-seg" role="group" aria-label="Analytics time period">
+            <div className="tw-seg" role="group" aria-label="Period">
               {(['Week', 'Month', 'All time', 'Custom'] as const).map((p) => (
                 <button
                   key={p}
@@ -648,7 +726,7 @@ export default function AnalyticsPage() {
                 </div>
               )}
 
-              <div className="tw-seg" role="group" aria-label="Comparison metric toggle">
+              <div className="tw-seg" role="group" aria-label="Metric">
                 <button
                   type="button"
                   className={compareMode === 'net' ? 'on' : ''}
@@ -679,21 +757,23 @@ export default function AnalyticsPage() {
             <div className="tw-ana-desk-pills">
               <button
                 type="button"
-                className={`tw-ana-chip-btn ${excludeSwingFromSession ? 'on' : ''}`}
+                className="tw-ana-chip-btn"
                 aria-pressed={excludeSwingFromSession}
                 onClick={() => setExcludeSwingFromSession((v) => !v)}
               >
-                Swing Rule: {excludeSwingFromSession ? 'Excluded from Session' : 'Included in Session'}
+                {excludeSwingFromSession
+                  ? 'Swing rule: excluded from sessions'
+                  : 'Swing rule: counted in sessions'}
               </button>
 
               <button
                 type="button"
-                className={`tw-ana-chip-btn ${compareOpen ? 'on' : ''}`}
+                className="tw-ana-chip-btn"
                 aria-pressed={compareOpen}
                 onClick={() => setCompareOpen((v) => !v)}
               >
                 <Columns2 size={14} aria-hidden="true" />
-                <span>Compare 2 Desks</span>
+                <span>Compare 2 desks</span>
               </button>
 
               <button type="button" className="tw-ana-icon-btn" onClick={exportFullLedgerCsv}>
@@ -707,7 +787,7 @@ export default function AnalyticsPage() {
                 onClick={() => typeof window !== 'undefined' && window.print()}
               >
                 <Printer size={13} aria-hidden="true" />
-                <span>Print 1-Page Summary</span>
+                <span>Print summary</span>
               </button>
             </div>
           </div>
@@ -735,7 +815,7 @@ export default function AnalyticsPage() {
                   </button>
                 </span>
                 <span className="tw-ana-mod-sub">
-                  Showing {ledgerTrades.length} matching closed trade(s) in Ledger below.
+                  Showing {ledgerTrades.length} matching closed trade(s) in Scoped Trade Ledger below.
                 </span>
               </div>
             </div>
@@ -756,176 +836,103 @@ export default function AnalyticsPage() {
           </section>
         ) : (
           <>
-            <section className="tw-bento-tile tw-ana-hero tw-ana-span12" aria-label="Portfolio performance summary and reconciliation">
+            {/* HERO (7 cols) + RECONCILIATION TABLE (5 cols) */}
+            <article className="tw-bento-tile tw-ana-hero-v2 tw-ana-span7" aria-label="Consolidated portfolio performance">
               <div>
                 <div className="tw-alab">
                   {selectedAccountIds.length === 1 && visibleDesks[0]
-                    ? `${getShortDeskLabelFromAccount(visibleDesks[0])} · Single-Desk View`
+                    ? `${getShortDeskLabelFromAccount(visibleDesks[0])} · Single-desk view`
                     : selectedAccountIds.length > 1
-                    ? `${selectedAccountIds.length} Selected Desks`
-                    : 'All Desks Consolidated'}{' '}
+                    ? `${selectedAccountIds.length} Selected desks`
+                    : 'All desks consolidated'}{' '}
                   · {dateRangeLabel}
                 </div>
                 <div className="tw-abig">
                   <CurrencyText amount={headlineMetrics.netPnl} isPnlHidden={isPnlHidden} />
                 </div>
                 <p>
-                  {formatPercentSigned(headlineMetrics.returnPct)} combined return on{' '}
-                  <CurrencyText amount={headlineMetrics.startCap} isPnlHidden={isPnlHidden} signed={false} />{' '}
-                  allocated start · {headlineMetrics.n} closed trade(s) ({headlineMetrics.wins}W / {headlineMetrics.lossCount}L) · Expectancy{' '}
-                  <strong>{formatRSigned(headlineMetrics.expectancyR)}</strong>
+                  Reported return <span className="num">{formatPercentSigned(headlineMetrics.reportedReturnPct)}</span> on allocated equity. Derived ledger return is{' '}
+                  <span className="num">{formatPercentSigned(headlineMetrics.derivedReturnPct)}</span> (
+                  <CurrencyText amount={headlineMetrics.netPnl} isPnlHidden={isPnlHidden} signed={false} /> ÷{' '}
+                  <CurrencyText amount={headlineMetrics.startCap} isPnlHidden={isPnlHidden} signed={false} />
+                  ). See reconciliation.
                 </p>
               </div>
-
-              <div className={`tw-ana-recon ${reconciliation.messages.length === 0 ? 'clean' : ''}`}>
-                <h3>
-                  <ShieldAlert size={15} style={{ display: 'inline', marginRight: 6 }} aria-hidden="true" />
-                  Data Reconciliation &amp; Open Conflicts ({reconciliation.messages.length})
-                </h3>
-                {reconciliation.messages.length === 0 ? (
-                  <ul>
-                    <li>All selected desk allocations and ledger totals reconcile without open gaps.</li>
-                  </ul>
-                ) : (
-                  <ul>
-                    {reconciliation.messages.map((msg, i) => (
-                      <li key={i}>{msg}</li>
-                    ))}
-                  </ul>
-                )}
+              <div className="tw-ana-hero-stats">
+                <div>
+                  <small>Trades</small>
+                  <strong>
+                    {headlineMetrics.n} · {headlineMetrics.wins}W / {headlineMetrics.lossCount}L
+                  </strong>
+                </div>
+                <div>
+                  <small>Expectancy</small>
+                  <strong>{formatRSigned(headlineMetrics.expectancyR)}</strong>
+                </div>
+                <div>
+                  <small>Long / short net</small>
+                  <strong>
+                    <CurrencyText amount={headlineMetrics.longNet} isPnlHidden={isPnlHidden} /> /{' '}
+                    <CurrencyText amount={headlineMetrics.shortNet} isPnlHidden={isPnlHidden} />
+                  </strong>
+                </div>
               </div>
-            </section>
+            </article>
 
-            {compareOpen && accounts.length >= 2 && (
-              <section className="tw-bento-tile tw-ana-span12" aria-label="Side-by-side two-desk comparison">
-                <div className="tw-ana-mod-head">
-                  <div className="tw-ana-mod-titles">
-                    <h2 className="tw-h">Compare Two Desks Side-by-Side</h2>
-                    <p className="tw-ana-mod-sub">
-                      Direct quantitative comparison with delta (Desk A − Desk B)
-                    </p>
-                  </div>
-                </div>
-                <div className="tw-ana-compare-grid">
-                  <label>
-                    <span className="tw-ana-mod-sub">Desk A</span>
-                    <select
-                      className="tw-ana-select"
-                      value={compareDeskA}
-                      onChange={(e) => setCompareDeskA(e.target.value)}
-                    >
-                      {accounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name}
-                        </option>
+            <article className={`tw-bento-tile tw-ana-recon-v2 tw-ana-span5 ${reconciliation.messages.length === 0 ? 'clean' : ''}`} aria-labelledby="rec-h">
+              <div>
+                <div className="tw-ana-lab">Data integrity</div>
+                <h2 id="rec-h" style={{ margin: '6px 0 10px', fontSize: 18, fontWeight: 600 }}>
+                  Reconciliation · {reconciliation.messages.length} open conflict{reconciliation.messages.length === 1 ? '' : 's'}
+                </h2>
+                <div className="tw-ana-recon-table-wrap">
+                  <table className="tw-ana-recon-table">
+                    <thead>
+                      <tr>
+                        <th>Item</th>
+                        <th className="n">Stated</th>
+                        <th className="n">Derived</th>
+                        <th className="n">Gap</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reconciliationRows.map((row, i) => (
+                        <tr key={i}>
+                          <td>{row.item}</td>
+                          <td className={`n ${row.isPnl && isPnlHidden ? 'tw-pnl-blur' : ''}`}>{row.stated}</td>
+                          <td className={`n ${row.isPnl && isPnlHidden ? 'tw-pnl-blur' : ''}`}>{row.derived}</td>
+                          <td className={`n ${row.isPnl && isPnlHidden ? 'tw-pnl-blur' : ''}`}>{row.gap}</td>
+                        </tr>
                       ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span className="tw-ana-mod-sub">Desk B</span>
-                    <select
-                      className="tw-ana-select"
-                      value={compareDeskB}
-                      onChange={(e) => setCompareDeskB(e.target.value)}
-                    >
-                      {accounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                    </tbody>
+                  </table>
                 </div>
+              </div>
+              <p className="tw-ana-mod-sub" style={{ marginTop: 8 }}>
+                {!hasAquaDeskInState
+                  ? 'Aqua_Funded_01 ($5,021.37) is listed under Open Decisions when absent from seed. Resolve open conflicts at source; this page does not pick a winner.'
+                  : 'Open ledger vs equity conflicts remain visible transparently without overwriting source records.'}
+              </p>
+            </article>
 
-                {deskAStat && deskBStat && (
-                  <div className="tw-ana-table-wrap">
-                    <table className="tw-ana-table">
-                      <thead>
-                        <tr>
-                          <th>Metric</th>
-                          <th>{deskAStat.shortLabel}</th>
-                          <th>{deskBStat.shortLabel}</th>
-                          <th>Diff (A − B)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td>Closed Trades (n)</td>
-                          <td>{deskAStat.n}</td>
-                          <td>{deskBStat.n}</td>
-                          <td>{deskAStat.n - deskBStat.n >= 0 ? `+${deskAStat.n - deskBStat.n}` : deskAStat.n - deskBStat.n}</td>
-                        </tr>
-                        <tr>
-                          <td>Current Equity</td>
-                          <td>
-                            <CurrencyText amount={deskAStat.currentEquity} isPnlHidden={isPnlHidden} signed={false} />
-                          </td>
-                          <td>
-                            <CurrencyText amount={deskBStat.currentEquity} isPnlHidden={isPnlHidden} signed={false} />
-                          </td>
-                          <td>
-                            <CurrencyText amount={deskAStat.currentEquity - deskBStat.currentEquity} isPnlHidden={isPnlHidden} />
-                          </td>
-                        </tr>
-                        <tr>
-                          <td>Ledger Net P&amp;L</td>
-                          <td>
-                            <CurrencyText amount={deskAStat.netPnl} isPnlHidden={isPnlHidden} />
-                          </td>
-                          <td>
-                            <CurrencyText amount={deskBStat.netPnl} isPnlHidden={isPnlHidden} />
-                          </td>
-                          <td>
-                            <CurrencyText amount={deskAStat.netPnl - deskBStat.netPnl} isPnlHidden={isPnlHidden} />
-                          </td>
-                        </tr>
-                        <tr>
-                          <td>Return %</td>
-                          <td>{formatPercentSigned(deskAStat.returnPct)}</td>
-                          <td>{formatPercentSigned(deskBStat.returnPct)}</td>
-                          <td>{formatPercentSigned(deskAStat.returnPct - deskBStat.returnPct)}</td>
-                        </tr>
-                        <tr>
-                          <td>Win Rate</td>
-                          <td>{deskAStat.n < 5 ? 'Insufficient sample' : `${deskAStat.winRate.toFixed(1)}%`}</td>
-                          <td>{deskBStat.n < 5 ? 'Insufficient sample' : `${deskBStat.winRate.toFixed(1)}%`}</td>
-                          <td>
-                            {deskAStat.n >= 5 && deskBStat.n >= 5
-                              ? formatPercentSigned(deskAStat.winRate - deskBStat.winRate, true, 1)
-                              : 'Insufficient sample'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td>Profit Factor</td>
-                          <td>{deskAStat.profitFactorDisplay}</td>
-                          <td>{deskBStat.profitFactorDisplay}</td>
-                          <td>—</td>
-                        </tr>
-                        <tr>
-                          <td>Expectancy (R)</td>
-                          <td>{formatRSigned(deskAStat.expectancyR)}</td>
-                          <td>{formatRSigned(deskBStat.expectancyR)}</td>
-                          <td>{formatRSigned(deskAStat.expectancyR - deskBStat.expectancyR)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
-            )}
-
-            <section className="tw-bento-tile tw-ana-span12" aria-label="Per-desk performance matrix">
+            {/* PER-DESK ATTRIBUTION & INLINE TWO-DESK COMPARE */}
+            <article className="tw-bento-tile tw-ana-span12" aria-labelledby="desk-h">
               <div className="tw-ana-mod-head">
                 <div className="tw-ana-mod-titles">
-                  <div className="tw-ana-mod-toprow">
-                    <h2 className="tw-h">Per-Desk Performance Comparison</h2>
-                    <SampleStatusPill n={headlineMetrics.n} />
-                  </div>
+                  <div className="tw-ana-lab">Per-desk attribution</div>
+                  <h2 id="desk-h" className="tw-h" style={{ marginTop: 4 }}>
+                    {compareMode === 'net'
+                      ? 'Net realized P&L'
+                      : compareMode === 'ret'
+                      ? 'Growth on start capital (%)'
+                      : 'Win rate (%)'}
+                  </h2>
                   <p className="tw-ana-mod-sub">
-                    Allocated closed-trade P&amp;L per desk ({compareMode === 'net' ? 'Net USD' : compareMode === 'ret' ? 'Return %' : 'Win rate %'})
+                    Each bar starts at zero. Hatched bars have fewer than 5 trades.
                   </p>
                 </div>
                 <div className="tw-ana-mod-actions">
+                  <SampleStatusPill n={headlineMetrics.n} />
                   <button
                     type="button"
                     className="tw-ana-icon-btn"
@@ -955,39 +962,50 @@ export default function AnalyticsPage() {
                 {visibleDeskStats.map((d, idx) => {
                   const val =
                     compareMode === 'net' ? d.netPnl : compareMode === 'ret' ? d.returnPct : d.winRate;
-                  const pct = Math.min(48, Math.max(4, Math.round((Math.abs(val) / matrixScale) * 44)));
+                  const span = barScaleBounds.max - barScaleBounds.min || 1;
+                  const zeroPct = Math.max(0, Math.min(100, ((0 - barScaleBounds.min) / span) * 100));
+                  const valPct = Math.max(0, Math.min(100, ((val - barScaleBounds.min) / span) * 100));
+                  const leftPct = Math.min(zeroPct, valPct);
+                  const widthPct = d.n === 0 ? 0 : Math.max(1.5, Math.abs(valPct - zeroPct));
+                  const dotColor = getAccountDotColor(
+                    accounts.find((a) => a.id === d.id) || accounts[0],
+                    idx
+                  );
                   const isNeg = val < 0;
-                  const winDisplay = d.n < 5 ? 'Insufficient sample' : `${d.winRate.toFixed(1)}%`;
+                  const isLow = d.n > 0 && d.n < 5;
+                  const winDisplay =
+                    d.n === 0 ? '—' : d.n < 5 ? 'Insufficient sample' : `${d.winRate.toFixed(1)}%`;
+
                   return (
-                    <div key={d.id} className="tw-ana-row">
+                    <div key={d.id} className="tw-ana-drow">
                       <div className="tw-anm">
                         <span
                           style={{
-                            width: 10,
-                            height: 10,
-                            borderRadius: 999,
-                            background: getAccountDotColor(
-                              accounts.find((a) => a.id === d.id) || accounts[0],
-                              idx
-                            ),
+                            width: 9,
+                            height: 9,
+                            borderRadius: '50%',
+                            background: dotColor,
                             flexShrink: 0,
                           }}
                           aria-hidden="true"
                         />
-                        <span>{d.shortLabel} (n={d.n})</span>
+                        <span>{d.shortLabel}</span>
+                        <small>n={d.n}</small>
                       </div>
-                      <div className="tw-ana-rail">
-                        <div className="tw-ana-zero" style={{ left: '50%' }} />
-                        <div
-                          className="tw-ana-bar"
-                          style={{
-                            left: isNeg ? `${50 - pct}%` : '50%',
-                            width: `${pct}%`,
-                            background: isNeg ? 'var(--tw-loss)' : 'var(--tw-gain)',
-                          }}
-                        />
+                      <div className="tw-ana-rail" role="img" aria-label={`${d.shortLabel}: ${d.n} trades`}>
+                        <span className="tw-ana-zero" style={{ left: `${zeroPct}%` }} />
+                        {d.n > 0 && (
+                          <span
+                            className={`tw-ana-bar ${isLow ? 'low' : ''}`}
+                            style={{
+                              left: `${leftPct}%`,
+                              width: `${widthPct}%`,
+                              backgroundColor: dotColor,
+                            }}
+                          />
+                        )}
                       </div>
-                      <div className={`tw-aval ${isNeg ? 'tw-neg' : 'tw-pos'}`}>
+                      <div className={`tw-ana-dval ${isNeg ? 'tw-neg' : val > 0 ? 'tw-pos' : ''}`}>
                         {compareMode === 'net' ? (
                           <CurrencyText amount={d.netPnl} isPnlHidden={isPnlHidden} />
                         ) : compareMode === 'ret' ? (
@@ -1030,12 +1048,12 @@ export default function AnalyticsPage() {
                           <CurrencyText amount={d.impliedEquity} isPnlHidden={isPnlHidden} signed={false} />
                         </td>
                         <td>{d.n}</td>
-                        <td>{d.n < 5 ? 'Insufficient sample' : `${d.winRate.toFixed(1)}%`}</td>
+                        <td>{d.n === 0 ? '—' : d.n < 5 ? 'Insufficient sample' : `${d.winRate.toFixed(1)}%`}</td>
                         <td>{d.profitFactorDisplay}</td>
-                        <td className={d.netPnl >= 0 ? 'tw-pos' : 'tw-neg'}>
+                        <td className={d.netPnl > 0 ? 'tw-pos' : d.netPnl < 0 ? 'tw-neg' : ''}>
                           <CurrencyText amount={d.netPnl} isPnlHidden={isPnlHidden} />
                         </td>
-                        <td className={d.returnPct >= 0 ? 'tw-pos' : 'tw-neg'}>
+                        <td className={d.returnPct > 0 ? 'tw-pos' : d.returnPct < 0 ? 'tw-neg' : ''}>
                           {formatPercentSigned(d.returnPct)}
                         </td>
                       </tr>
@@ -1043,90 +1061,192 @@ export default function AnalyticsPage() {
                   </tbody>
                 </table>
               </div>
-            </section>
 
-            <section className="tw-ana-kpis" aria-label="Core KPI metrics with sample-size guards">
-              <div className="tw-bento-tile tw-ana-kpi">
-                <div className="tw-eyebrow">Win Rate (n={headlineMetrics.n})</div>
-                <div className="tw-kv">{headlineMetrics.winRateLabel}</div>
+              {compareOpen && accounts.length >= 2 && (
+                <div className="tw-ana-cmp-box" aria-label="Compare two desks side by side">
+                  <div className="tw-ana-compare-grid">
+                    <label>
+                      <span className="tw-ana-lab">Desk A</span>
+                      <select
+                        className="tw-ana-select"
+                        value={compareDeskA}
+                        onChange={(e) => setCompareDeskA(e.target.value)}
+                      >
+                        {accounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span className="tw-ana-lab">Desk B</span>
+                      <select
+                        className="tw-ana-select"
+                        value={compareDeskB}
+                        onChange={(e) => setCompareDeskB(e.target.value)}
+                      >
+                        {accounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  {deskAStat && deskBStat && (
+                    <div className="tw-ana-table-wrap" style={{ marginTop: 8 }}>
+                      <table className="tw-ana-table">
+                        <thead>
+                          <tr>
+                            <th>Metric</th>
+                            <th>{deskAStat.shortLabel}</th>
+                            <th>{deskBStat.shortLabel}</th>
+                            <th>Difference (A − B)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td>Start capital</td>
+                            <td>
+                              <CurrencyText amount={deskAStat.startingBalance} isPnlHidden={isPnlHidden} signed={false} />
+                            </td>
+                            <td>
+                              <CurrencyText amount={deskBStat.startingBalance} isPnlHidden={isPnlHidden} signed={false} />
+                            </td>
+                            <td>
+                              <CurrencyText amount={deskAStat.startingBalance - deskBStat.startingBalance} isPnlHidden={isPnlHidden} />
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>Net realized</td>
+                            <td>
+                              <CurrencyText amount={deskAStat.netPnl} isPnlHidden={isPnlHidden} />
+                            </td>
+                            <td>
+                              <CurrencyText amount={deskBStat.netPnl} isPnlHidden={isPnlHidden} />
+                            </td>
+                            <td>
+                              <CurrencyText amount={deskAStat.netPnl - deskBStat.netPnl} isPnlHidden={isPnlHidden} />
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>Growth</td>
+                            <td>{formatPercentSigned(deskAStat.returnPct)}</td>
+                            <td>{formatPercentSigned(deskBStat.returnPct)}</td>
+                            <td>{(deskAStat.returnPct - deskBStat.returnPct).toFixed(2)} pp</td>
+                          </tr>
+                          <tr>
+                            <td>Trades (n)</td>
+                            <td>{deskAStat.n}</td>
+                            <td>{deskBStat.n}</td>
+                            <td>{deskAStat.n - deskBStat.n}</td>
+                          </tr>
+                          <tr>
+                            <td>Win rate</td>
+                            <td>{deskAStat.n < 5 ? 'Insufficient sample' : `${deskAStat.winRate.toFixed(1)}%`}</td>
+                            <td>{deskBStat.n < 5 ? 'Insufficient sample' : `${deskBStat.winRate.toFixed(1)}%`}</td>
+                            <td>
+                              {deskAStat.n >= 5 && deskBStat.n >= 5
+                                ? `${(deskAStat.winRate - deskBStat.winRate).toFixed(1)} pp`
+                                : '—'}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>Profit factor</td>
+                            <td>{deskAStat.profitFactorDisplay}</td>
+                            <td>{deskBStat.profitFactorDisplay}</td>
+                            <td>—</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </article>
+
+            {/* SIX HEADLINE KPI CARDS WITH SAMPLE GUARDS & SHARPE PROGRESS METER */}
+            <div className="tw-ana-kpis" aria-label="Headline statistics">
+              <article className="tw-bento-tile tw-ana-kpi">
+                <div className="tw-ana-lab">Win rate · N={headlineMetrics.n}</div>
+                <div className={`tw-kv ${sampleGuard.isInsufficientForRatio ? 'small' : ''}`}>
+                  {headlineMetrics.winRateLabel}
+                </div>
                 <div className="tw-ks">
                   {headlineMetrics.wins}W / {headlineMetrics.lossCount}L ·{' '}
-                  {sampleGuard.isInsufficientForRatio
-                    ? 'Needs >= 5 trades'
-                    : `Actual ${headlineMetrics.winRatePct.toFixed(1)}%`}
+                  {sampleGuard.isInsufficientForRatio ? 'needs 5 trades' : 'verified sample'}
                 </div>
-              </div>
+              </article>
 
-              <div className="tw-bento-tile tw-ana-kpi">
-                <div className="tw-eyebrow">Profit Factor (n={headlineMetrics.n})</div>
-                <div className="tw-kv">{headlineMetrics.profitFactorLabel}</div>
+              <article className="tw-bento-tile tw-ana-kpi">
+                <div className="tw-ana-lab">Profit factor · N={headlineMetrics.n}</div>
+                <div className={`tw-kv ${sampleGuard.isInsufficientForRatio || headlineMetrics.lossCount === 0 ? 'small' : ''}`}>
+                  {headlineMetrics.profitFactorLabel}
+                </div>
                 <div className="tw-ks">
                   {sampleGuard.isInsufficientForRatio
-                    ? 'Insufficient sample (< 5)'
+                    ? 'Needs 5 trades or any losses to compare'
                     : 'Never capped on zero-loss desks'}
                 </div>
-              </div>
+              </article>
 
-              <div className="tw-bento-tile tw-ana-kpi">
-                <div className="tw-eyebrow">Expectancy (n={headlineMetrics.n})</div>
-                <div className="tw-kv">
+              <article className="tw-bento-tile tw-ana-kpi">
+                <div className="tw-ana-lab">Expectancy · N={headlineMetrics.n}</div>
+                <div className={`tw-kv ${headlineMetrics.expectancyUsd >= 0 ? 'tw-pos' : 'tw-neg'}`}>
                   <CurrencyText amount={headlineMetrics.expectancyUsd} isPnlHidden={isPnlHidden} />
                 </div>
                 <div className="tw-ks">{formatRSigned(headlineMetrics.expectancyR)} per trade</div>
-              </div>
+              </article>
 
-              <div className="tw-bento-tile tw-ana-kpi">
-                <div className="tw-eyebrow">Average Win (n={headlineMetrics.winCount})</div>
+              <article className="tw-bento-tile tw-ana-kpi">
+                <div className="tw-ana-lab">Average win · N={headlineMetrics.winCount}</div>
                 <div className="tw-kv tw-pos">
                   <CurrencyText amount={headlineMetrics.avgWinUsd} isPnlHidden={isPnlHidden} />
                 </div>
                 <div className="tw-ks">{formatRSigned(headlineMetrics.avgWinR)} mean winner</div>
-              </div>
+              </article>
 
-              <div className="tw-bento-tile tw-ana-kpi">
-                <div className="tw-eyebrow">Average Loss (n={headlineMetrics.lossCount})</div>
+              <article className="tw-bento-tile tw-ana-kpi">
+                <div className="tw-ana-lab">Average loss · N={headlineMetrics.lossCount}</div>
                 <div className="tw-kv tw-neg">
                   <CurrencyText amount={-headlineMetrics.avgLossUsd} isPnlHidden={isPnlHidden} />
                 </div>
                 <div className="tw-ks">
                   {headlineMetrics.lossCount > 0 ? formatRSigned(-headlineMetrics.avgLossR) : '0 losing trades'}
                 </div>
-              </div>
+              </article>
 
-              <div className="tw-bento-tile tw-ana-kpi">
-                <div className="tw-eyebrow">Sharpe / Sortino ({sampleGuard.tradingDaysCount}d)</div>
-                <div className="tw-kv" style={{ fontSize: 15 }}>
-                  {headlineMetrics.sharpeLabel}
+              <article className="tw-bento-tile tw-ana-kpi">
+                <div className="tw-ana-lab">Sharpe / Sortino</div>
+                <div className="tw-kv small">{headlineMetrics.sharpeLabel}</div>
+                <div className="tw-ana-meter" aria-label={`${sampleGuard.tradingDaysCount} of 30 daily returns`}>
+                  <span style={{ width: `${sharpeMeterPct}%` }} />
                 </div>
-                <div className="tw-ks">
-                  Requires &ge; 30 daily returns ({sampleGuard.tradingDaysCount}/30)
-                </div>
-              </div>
-            </section>
+                <div className="tw-ks">{sampleGuard.tradingDaysCount} of 30 daily returns</div>
+              </article>
+            </div>
 
-            <section className="tw-bento-tile tw-ana-span6" aria-label="Net P&L by trading session">
+            {/* SESSION & WEEKDAY ATTRIBUTION BARS */}
+            <article className="tw-bento-tile tw-ana-span6" aria-labelledby="sess-h">
               <div className="tw-ana-mod-head">
                 <div className="tw-ana-mod-titles">
-                  <div className="tw-ana-mod-toprow">
-                    <h2 className="tw-h">Net P&amp;L by Session</h2>
-                    <span className="tw-ana-unit-tag">USD · Click bar to filter</span>
-                  </div>
-                  <p className="tw-ana-mod-sub">
-                    {excludeSwingFromSession
-                      ? `Swing rule ON: ${edgeHeatmap.excludedSwingTrades.length} swing trade(s) excluded from session attribution`
-                      : 'Swing rule OFF: Swing trades attributed to their session label'}
-                  </p>
+                  <div className="tw-ana-lab">Attribution</div>
+                  <h2 id="sess-h" className="tw-h" style={{ marginTop: 4 }}>
+                    Net P&amp;L by session
+                  </h2>
                 </div>
+                <span className="tw-ana-unit-tag">USD · click to filter</span>
               </div>
-              <div className="tw-ana-cols">
+
+              <div className="tw-ana-cols-v2">
                 {sessionColumns.map((col) => {
-                  const isPos = col.total >= 0;
                   const isActive = drilldown?.type === 'session' && drilldown.value === col.name;
                   return (
                     <button
                       key={col.name}
                       type="button"
-                      className="tw-ana-col"
+                      className="tw-ana-col-v2"
                       onClick={() =>
                         col.count > 0 &&
                         setDrilldown(
@@ -1136,61 +1256,61 @@ export default function AnalyticsPage() {
                         )
                       }
                       style={{
-                        background: 'transparent',
                         border: isActive ? '1px solid var(--tw-focus)' : '1px solid transparent',
-                        borderRadius: 12,
                         cursor: col.count > 0 ? 'pointer' : 'default',
                       }}
                     >
-                      <span className="tw-cv">
-                        {col.count === 0 ? (
-                          '$0.00'
-                        ) : (
+                      {col.count === 0 ? (
+                        <span className="tw-none-v2">No trades</span>
+                      ) : (
+                        <span className="tw-cv-v2">
                           <CurrencyText amount={col.total} isPnlHidden={isPnlHidden} />
-                        )}
-                      </span>
+                        </span>
+                      )}
                       <div
-                        className="tw-cb"
+                        className="tw-cb-v2"
                         style={{
-                          height: `${col.heightPct}%`,
-                          background:
-                            col.count === 0
-                              ? 'var(--tw-line-strong)'
-                              : isPos
-                              ? 'var(--tw-gain)'
-                              : 'var(--tw-loss)',
+                          height: `${col.heightPx}px`,
+                          background: col.count === 0 ? 'transparent' : col.total < 0 ? 'var(--tw-loss)' : 'var(--tw-s1)',
+                          borderBottom: col.count === 0 ? '2px dashed var(--tw-line-strong)' : undefined,
                         }}
                       />
-                      <span className="tw-cc">
-                        {col.name} (n={col.count})
+                      <span className="tw-cc-v2">
+                        {col.name}
+                        <br />
+                        <span className="num">n={col.count}</span>
                       </span>
                     </button>
                   );
                 })}
               </div>
-            </section>
 
-            <section className="tw-bento-tile tw-ana-span6" aria-label="Net P&L by weekday">
+              <p className="tw-ana-mod-sub" style={{ marginTop: 12 }}>
+                {excludeSwingFromSession
+                  ? `Swing rule on: ${edgeHeatmap.excludedSwingTrades.length} swing trade(s) excluded from session attribution.`
+                  : 'Swing rule off: swing trades are counted under their recorded session.'}
+              </p>
+            </article>
+
+            <article className="tw-bento-tile tw-ana-span6" aria-labelledby="wd-h">
               <div className="tw-ana-mod-head">
                 <div className="tw-ana-mod-titles">
-                  <div className="tw-ana-mod-toprow">
-                    <h2 className="tw-h">Net P&amp;L by Weekday</h2>
-                    <span className="tw-ana-unit-tag">USD · Computed from ledger</span>
-                  </div>
-                  <p className="tw-ana-mod-sub">
-                    Derived dynamically from trade timestamps · Click bar to filter
-                  </p>
+                  <div className="tw-ana-lab">Calendar</div>
+                  <h2 id="wd-h" className="tw-h" style={{ marginTop: 4 }}>
+                    Net P&amp;L by weekday
+                  </h2>
                 </div>
+                <span className="tw-ana-unit-tag">Computed from ledger timestamps</span>
               </div>
-              <div className="tw-ana-cols">
+
+              <div className="tw-ana-cols-v2">
                 {weekdayColumns.map((col) => {
-                  const isPos = col.total >= 0;
                   const isActive = drilldown?.type === 'weekday' && drilldown.value === col.name;
                   return (
                     <button
                       key={col.name}
                       type="button"
-                      className="tw-ana-col"
+                      className="tw-ana-col-v2"
                       onClick={() =>
                         col.count > 0 &&
                         setDrilldown(
@@ -1200,40 +1320,41 @@ export default function AnalyticsPage() {
                         )
                       }
                       style={{
-                        background: 'transparent',
                         border: isActive ? '1px solid var(--tw-focus)' : '1px solid transparent',
-                        borderRadius: 12,
                         cursor: col.count > 0 ? 'pointer' : 'default',
                       }}
                     >
-                      <span className="tw-cv">
-                        {col.count === 0 ? (
-                          '$0.00'
-                        ) : (
+                      {col.count === 0 ? (
+                        <span className="tw-none-v2">No trades</span>
+                      ) : (
+                        <span className="tw-cv-v2">
                           <CurrencyText amount={col.total} isPnlHidden={isPnlHidden} />
-                        )}
-                      </span>
+                        </span>
+                      )}
                       <div
-                        className="tw-cb"
+                        className="tw-cb-v2"
                         style={{
-                          height: `${col.heightPct}%`,
-                          background:
-                            col.count === 0
-                              ? 'var(--tw-line-strong)'
-                              : isPos
-                              ? 'var(--tw-gain)'
-                              : 'var(--tw-loss)',
+                          height: `${col.heightPx}px`,
+                          background: col.count === 0 ? 'transparent' : col.total < 0 ? 'var(--tw-loss)' : 'var(--tw-s3)',
+                          borderBottom: col.count === 0 ? '2px dashed var(--tw-line-strong)' : undefined,
                         }}
                       />
-                      <span className="tw-cc">
-                        {col.name} (n={col.count})
+                      <span className="tw-cc-v2">
+                        {col.name}
+                        <br />
+                        <span className="num">n={col.count}</span>
                       </span>
                     </button>
                   );
                 })}
               </div>
-            </section>
 
+              <p className="tw-ana-mod-sub" style={{ marginTop: 12 }}>
+                Click any weekday bar above to cross-filter the Scoped Trade Ledger below.
+              </p>
+            </article>
+
+            {/* MODULES 1-7 */}
             <EquityDrawdownModule
               combined={equityDrawdown.combined}
               perDesk={equityDrawdown.perDesk}
@@ -1293,6 +1414,7 @@ export default function AnalyticsPage() {
               onSelectDrilldown={setDrilldown}
             />
 
+            {/* INTERACTIVE DRILL-DOWN TRADE LEDGER */}
             <section className="tw-bento-tile tw-ana-span12" aria-label="Filtered trade ledger">
               <div className="tw-ana-mod-head">
                 <div className="tw-ana-mod-titles">
@@ -1362,8 +1484,12 @@ export default function AnalyticsPage() {
               </div>
             </section>
 
+            {/* MODULE 8 & OPEN DECISIONS */}
             <section className="tw-bento-tile tw-ana-span6" aria-label="Trade quality needs fields and open decisions">
-              <h2 className="tw-h">8. Trade Quality &amp; Open Decisions</h2>
+              <div className="tw-ana-lab">8 · Trade quality gate</div>
+              <h2 className="tw-h" style={{ marginTop: 4 }}>
+                Needs Fields &amp; Open Decisions
+              </h2>
               <div className="tw-ana-recon" style={{ marginTop: 12 }}>
                 <h3>Needs Fields — Module 8 Hidden</h3>
                 <ul>
@@ -1378,21 +1504,24 @@ export default function AnalyticsPage() {
                 <ul>
                   {!hasAquaDeskInState && (
                     <li>
-                      <strong>Aqua_Funded_01 (equity $5,021.37):</strong> Appears when created locally in form/context, absent from default 3-desk seed (<code>SEED_ACCOUNTS</code>). Included dynamically whenever present in state.
+                      <strong>Aqua_Funded_01 (equity $5,021.37):</strong> Included dynamically when present in live account context; absent from default 3-desk seed (<code>SEED_ACCOUNTS</code>).
                     </li>
                   )}
                   <li>
-                    <strong>$60.00 Consolidation Gap:</strong> Consolidated net (<code>+$7,071.00</code>) differs from per-desk sum (<code>+$7,011.00</code>) in seed trade <code>tr-001</code> until source reconciliation is resolved.
+                    <strong>$60.00 Consolidation Gap:</strong> Consolidated net differs from per-desk allocation sum until reconciled at source.
                   </li>
                   <li>
-                    <strong>Swing Session Attribution Rule:</strong> Default ON excludes swing setups (<code>HTF Orderflow</code>) from intraday sessions; toggleable in the top controls.
+                    <strong>Swing Session Attribution Rule:</strong> Default ON excludes swing setups (<code>HTF Orderflow</code>) from intraday sessions; toggleable in top controls.
                   </li>
                 </ul>
               </div>
             </section>
 
             <section className="tw-bento-tile tw-ana-span6" aria-label="Metric definitions reference">
-              <h2 className="tw-h">Metric Definitions &amp; Sample Rules</h2>
+              <div className="tw-ana-lab">Documentation</div>
+              <h2 className="tw-h" style={{ marginTop: 4 }}>
+                Metric Definitions &amp; Sample Rules
+              </h2>
               <p className="tw-ana-mod-sub" style={{ marginTop: 4 }}>
                 Shared source of truth synced with <code>docs/analytics-metrics.md</code>
               </p>
@@ -1419,6 +1548,10 @@ export default function AnalyticsPage() {
                 </table>
               </div>
             </section>
+
+            <footer className="tw-ana-foot-note">
+              Figures come from one ledger dataset. Ratios are hidden under 5 trades and confidence claims are withheld under 30. Open conflicts are listed above and are not resolved by this page.
+            </footer>
           </>
         )}
       </main>

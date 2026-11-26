@@ -623,146 +623,165 @@ export function FirmRuleMonitorModule({
       />
 
       {viewMode === 'chart' ? (
-        <div className="tw-ana-rules-grid">
-          {monitors.map((desk) => (
-            <div key={desk.accountId} className="tw-ana-rule-card">
-              <div className="tw-ana-rule-card-head">
-                <div>
-                  <h3>{desk.shortLabel}</h3>
-                  <span className="tw-ana-rule-sub">{desk.accountName}</span>
+        <div className="tw-ana-rules-4">
+          {monitors.map((desk) => {
+            const hasBreach = desk.bars.some((b) => b.status === 'red');
+            const hasWarn = desk.bars.some((b) => b.status === 'amber');
+            const deskStatusClass = hasBreach ? 'breach' : hasWarn ? 'amber' : 'ok';
+            const deskStatusText = hasBreach ? 'Breach' : hasWarn ? 'Warning' : 'On track';
+            return (
+              <article key={desk.accountId} className="tw-ana-rcard">
+                <div className="tw-ana-rcard-head">
+                  <div>
+                    <h3>{desk.shortLabel}</h3>
+                    <span className="tw-ana-rule-sub">{desk.accountName}</span>
+                  </div>
+                  <span className={`tw-ana-status-tag ${deskStatusClass}`}>{deskStatusText}</span>
                 </div>
-                <button
-                  type="button"
-                  className="tw-ana-icon-btn"
-                  onClick={() => onResetConfig(desk.accountId)}
-                  title="Reset desk rule config to account defaults"
-                >
-                  <RotateCcw size={12} aria-hidden="true" />
-                  <span>Reset</span>
-                </button>
-              </div>
 
-              <div className="tw-ana-rule-bars">
-                {desk.bars.map((rule) => {
-                  const cappedFill = Math.min(100, Math.max(0, rule.usagePct));
-                  const statusClass =
-                    rule.status === 'red' ? 'breach' : rule.status === 'amber' ? 'amber' : 'ok';
-                  return (
-                    <div key={rule.id} className="tw-ana-rule-row">
-                      <div className="tw-ana-rule-meta">
-                        <span>{rule.label}</span>
-                        <span className="tw-ana-rule-nums">
-                          {rule.formattedUsage} / {rule.formattedLimit}
-                        </span>
-                      </div>
-                      <div
-                        className="tw-ana-rule-track"
-                        role="progressbar"
-                        aria-valuenow={Math.round(rule.usagePct)}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-label={`${desk.shortLabel} ${rule.label}`}
-                      >
+                <div className="tw-ana-rule-bars">
+                  {desk.bars.map((rule) => {
+                    const scaledFill = (Math.min(120, Math.max(0, rule.usagePct)) / 120) * 100;
+                    const statusClass =
+                      rule.status === 'red' ? 'breach' : rule.status === 'amber' ? 'amber' : 'ok';
+                    return (
+                      <div key={rule.id} className="tw-ana-rule-row">
+                        <div className="tw-ana-rule-meta">
+                          <span>{rule.label}</span>
+                          <span className="tw-ana-rule-nums">
+                            {rule.formattedUsage} / {rule.formattedLimit}
+                          </span>
+                        </div>
                         <div
-                          className={`tw-ana-rule-fill ${statusClass} tw-ana-chart-transition`}
-                          style={{ width: `${cappedFill}%` }}
-                        />
-                        <span className="tw-ana-rule-tick-80" title="80% Warning Threshold" />
-                        <span className="tw-ana-rule-tick-100" title="100% Limit Threshold" />
-                      </div>
-                      <div className="tw-ana-rule-foot">
-                        <span className={`tw-ana-status-tag ${statusClass}`}>
-                          {rule.status === 'red' ? (
-                            <>
-                              <XCircle size={12} aria-hidden="true" />
-                              <span>{rule.statusLabel}</span>
-                            </>
-                          ) : rule.status === 'amber' ? (
-                            <>
-                              <AlertTriangle size={12} aria-hidden="true" />
-                              <span>{rule.statusLabel}</span>
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle2 size={12} aria-hidden="true" />
-                              <span>{rule.statusLabel}</span>
-                            </>
+                          className="tw-ana-rule-track-v2"
+                          role="progressbar"
+                          aria-valuenow={Math.round(rule.usagePct)}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-label={`${desk.shortLabel} ${rule.label}`}
+                        >
+                          <div
+                            className={`tw-ana-rule-fill ${statusClass} tw-ana-chart-transition`}
+                            style={{ width: `${scaledFill}%` }}
+                          />
+                          {rule.unit === 'pct' && (
+                            <span
+                              className="tw-ana-rule-tick-80"
+                              style={{ left: `${(80 / 120) * 100}%` }}
+                              title="80% Warning Threshold"
+                            />
                           )}
-                        </span>
-                        <span className="tw-ana-rule-pct">{rule.usagePct.toFixed(1)}%</span>
+                          <span
+                            className="tw-ana-rule-tick-100"
+                            style={{ left: `${(100 / 120) * 100}%` }}
+                            title="100% Limit Threshold"
+                          />
+                        </div>
+                        <div className="tw-ana-rule-foot">
+                          <span className={`tw-ana-status-tag ${statusClass}`}>
+                            {rule.status === 'red' ? (
+                              <>
+                                <XCircle size={12} aria-hidden="true" />
+                                <span>{rule.statusLabel}</span>
+                              </>
+                            ) : rule.status === 'amber' ? (
+                              <>
+                                <AlertTriangle size={12} aria-hidden="true" />
+                                <span>{rule.statusLabel}</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 size={12} aria-hidden="true" />
+                                <span>{rule.statusLabel}</span>
+                              </>
+                            )}
+                          </span>
+                          <span className="tw-ana-rule-pct">{rule.usagePct.toFixed(1)}%</span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <details className="tw-ana-rule-config">
-                <summary>Configure {desk.shortLabel} rules</summary>
-                <div className="tw-ana-rule-inputs">
-                  <label>
-                    <span>Max Daily Loss %</span>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0.5"
-                      max="100"
-                      value={desk.config.maxDailyLossPct}
-                      onChange={(e) =>
-                        onUpdateConfig(desk.accountId, {
-                          maxDailyLossPct: Math.max(0.5, Number(e.target.value) || 0.5),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    <span>Max Total DD %</span>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0.5"
-                      max="100"
-                      value={desk.config.maxTotalDrawdownPct}
-                      onChange={(e) =>
-                        onUpdateConfig(desk.accountId, {
-                          maxTotalDrawdownPct: Math.max(0.5, Number(e.target.value) || 0.5),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    <span>Min Trading Days</span>
-                    <input
-                      type="number"
-                      step="1"
-                      min="1"
-                      max="60"
-                      value={desk.config.minTradingDays}
-                      onChange={(e) =>
-                        onUpdateConfig(desk.accountId, {
-                          minTradingDays: Math.max(1, Math.round(Number(e.target.value) || 1)),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    <span>Best-Day Share %</span>
-                    <input
-                      type="number"
-                      step="5"
-                      min="5"
-                      max="100"
-                      value={desk.config.maxBestDayProfitSharePct}
-                      onChange={(e) =>
-                        onUpdateConfig(desk.accountId, {
-                          maxBestDayProfitSharePct: Math.max(5, Number(e.target.value) || 5),
-                        })
-                      }
-                    />
-                  </label>
+                    );
+                  })}
                 </div>
-              </details>
-            </div>
-          ))}
+
+                <details className="tw-ana-rule-config">
+                  <summary>Configure rules</summary>
+                  <div className="tw-ana-rule-inputs">
+                    <label>
+                      <span>Max Daily Loss %</span>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0.5"
+                        max="100"
+                        value={desk.config.maxDailyLossPct}
+                        onChange={(e) =>
+                          onUpdateConfig(desk.accountId, {
+                            maxDailyLossPct: Math.max(0.5, Number(e.target.value) || 0.5),
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Max Total DD %</span>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0.5"
+                        max="100"
+                        value={desk.config.maxTotalDrawdownPct}
+                        onChange={(e) =>
+                          onUpdateConfig(desk.accountId, {
+                            maxTotalDrawdownPct: Math.max(0.5, Number(e.target.value) || 0.5),
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Min Trading Days</span>
+                      <input
+                        type="number"
+                        step="1"
+                        min="1"
+                        max="60"
+                        value={desk.config.minTradingDays}
+                        onChange={(e) =>
+                          onUpdateConfig(desk.accountId, {
+                            minTradingDays: Math.max(1, Math.round(Number(e.target.value) || 1)),
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Best-Day Share %</span>
+                      <input
+                        type="number"
+                        step="5"
+                        min="5"
+                        max="100"
+                        value={desk.config.maxBestDayProfitSharePct}
+                        onChange={(e) =>
+                          onUpdateConfig(desk.accountId, {
+                            maxBestDayProfitSharePct: Math.max(5, Number(e.target.value) || 5),
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div style={{ marginTop: 10 }}>
+                    <button
+                      type="button"
+                      className="tw-ana-icon-btn"
+                      onClick={() => onResetConfig(desk.accountId)}
+                      title="Reset desk rule config to account defaults"
+                    >
+                      <RotateCcw size={12} aria-hidden="true" />
+                      <span>Reset defaults</span>
+                    </button>
+                  </div>
+                </details>
+              </article>
+            );
+          })}
         </div>
       ) : (
         <div className="tw-ana-table-wrap">
