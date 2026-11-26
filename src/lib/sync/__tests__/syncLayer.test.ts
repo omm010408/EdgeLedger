@@ -412,11 +412,34 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
     const { POST: pushPost } = await import('../../../app/sync/push/route');
     const { NextRequest } = await import('next/server');
 
+    // 0. Reject unauthorized emails and passkey bypasses (email/password single account only)
+    const badEmailRes = await signInPost(
+      new NextRequest('http://localhost:3000/auth/sign-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'trader@edgeledger.io', password: 'EdgeLedger!2026' }),
+      })
+    );
+    expect(badEmailRes.status).toBe(401);
+
+    const passkeyAttemptRes = await signInPost(
+      new NextRequest('http://localhost:3000/auth/sign-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'ommroshan@gmail.com',
+          method: 'passkey',
+          credentialId: 'pk-edgeledger-device-1',
+        }),
+      })
+    );
+    expect(passkeyAttemptRes.status).toBe(401);
+
     // 1. Sign in -> sets httpOnly SameSite=Lax cookies
     const signInReq = new NextRequest('http://localhost:3000/auth/sign-in', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'trader@edgeledger.io', password: 'EdgeLedger!2026' }),
+      body: JSON.stringify({ email: 'ommroshan@gmail.com', password: 'EdgeLedger@010408' }),
     });
     const signInRes = await signInPost(signInReq);
     expect(signInRes.status).toBe(200);

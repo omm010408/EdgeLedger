@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { Fingerprint, KeyRound, Lock, Mail, AlertCircle } from 'lucide-react';
+import { KeyRound, Mail, AlertCircle } from 'lucide-react';
 import { useSessionSync } from '../../context/SessionSyncContext';
 import { EdgeLedgerLogo } from '../ui/EdgeLedgerLogo';
 
@@ -15,21 +15,15 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
   const baseId = useId();
   const emailId = `${baseId}-email`;
   const passwordId = `${baseId}-password`;
-  const passkeyEmailId = `${baseId}-passkey-email`;
-  const passkeyTokenId = `${baseId}-passkey-cred`;
   const errorBannerId = `${baseId}-error`;
 
-  const [mode, setMode] = useState<'password' | 'passkey'>('password');
-  const [email, setEmail] = useState('trader@edgeledger.io');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [passkeyCredentialId, setPasskeyCredentialId] = useState('pk-edgeledger-device-1');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; passkey?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
 
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
-  const passkeyEmailRef = useRef<HTMLInputElement>(null);
-  const passkeyCredRef = useRef<HTMLInputElement>(null);
 
   const isBusy = sessionSnapshot.state === 'signingIn';
 
@@ -73,44 +67,6 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
     }
   };
 
-  const handlePasskeySubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const errs: { email?: string; passkey?: string } = {};
-    const trimmedEmail = email.trim();
-
-    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      errs.email = 'Enter the account email associated with your passkey.';
-    }
-    if (!passkeyCredentialId || passkeyCredentialId.trim().length < 6) {
-      errs.passkey = 'Passkey credential identifier must be at least 6 characters.';
-    }
-
-    if (errs.email || errs.passkey) {
-      setFieldErrors(errs);
-      setErrorMessage(errs.email || errs.passkey || 'Passkey verification failed.');
-      if (errs.email) {
-        passkeyEmailRef.current?.focus();
-      } else if (errs.passkey) {
-        passkeyCredRef.current?.focus();
-      }
-      return;
-    }
-
-    setFieldErrors({});
-    setErrorMessage(null);
-    const ok = await signIn({
-      email: trimmedEmail,
-      method: 'passkey',
-      credentialId: passkeyCredentialId.trim(),
-    });
-    if (ok) {
-      onSuccess?.();
-    } else {
-      setErrorMessage('Passkey assertion failed. Confirm your credential and retry.');
-      passkeyCredRef.current?.focus();
-    }
-  };
-
   return (
     <div
       className="w-full max-w-md rounded-[32px] p-6 sm:p-7"
@@ -129,7 +85,7 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
               Sign in to EdgeLedger
             </h1>
             <p className="text-xs" style={{ color: 'var(--tw-ink-2)' }}>
-              HttpOnly session authentication &amp; scoped sync
+              Email &amp; password session authentication
             </p>
           </div>
         </div>
@@ -147,62 +103,6 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
             Close
           </button>
         )}
-      </div>
-
-      {/* Mode Selector: Email + Password vs Passkey */}
-      <div
-        className="grid grid-cols-2 gap-1.5 p-1 rounded-full mb-5"
-        role="tablist"
-        aria-label="Authentication method"
-        style={{ background: 'var(--tw-pill)' }}
-      >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === 'password'}
-          onClick={() => {
-            setMode('password');
-            setErrorMessage(null);
-            setFieldErrors({});
-          }}
-          className="flex items-center justify-center gap-1.5 h-9 rounded-full text-xs font-semibold transition-colors"
-          style={
-            mode === 'password'
-              ? {
-                  background: 'var(--tw-tile)',
-                  color: 'var(--tw-ink)',
-                  border: '1px solid var(--tw-line-strong)',
-                }
-              : { color: 'var(--tw-ink-2)' }
-          }
-        >
-          <Lock size={14} aria-hidden="true" />
-          <span>Email &amp; password</span>
-        </button>
-
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === 'passkey'}
-          onClick={() => {
-            setMode('passkey');
-            setErrorMessage(null);
-            setFieldErrors({});
-          }}
-          className="flex items-center justify-center gap-1.5 h-9 rounded-full text-xs font-semibold transition-colors"
-          style={
-            mode === 'passkey'
-              ? {
-                  background: 'var(--tw-tile)',
-                  color: 'var(--tw-ink)',
-                  border: '1px solid var(--tw-line-strong)',
-                }
-              : { color: 'var(--tw-ink-2)' }
-          }
-        >
-          <Fingerprint size={14} aria-hidden="true" />
-          <span>Passkey</span>
-        </button>
       </div>
 
       {/* Live Error Region */}
@@ -229,119 +129,34 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
         )}
       </div>
 
-      {mode === 'password' ? (
-        <form onSubmit={handlePasswordSubmit} noValidate className="space-y-4">
-          <div>
-            <label
-              htmlFor={emailId}
-              className="block text-xs font-semibold mb-1.5"
-              style={{ color: 'var(--tw-ink-2)' }}
-            >
-              Email address
-            </label>
-            <div className="relative">
-              <Mail
-                size={15}
-                aria-hidden="true"
-                className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                style={{ color: 'var(--tw-ink-3)' }}
-              />
-              <input
-                ref={emailRef}
-                id={emailId}
-                type="email"
-                autoComplete="email"
-                required
-                aria-invalid={Boolean(fieldErrors.email)}
-                aria-describedby={fieldErrors.email ? errorBannerId : undefined}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="trader@edgeledger.io"
-                className="w-full h-11 pl-10 pr-3.5 rounded-2xl text-sm"
-                style={{
-                  background: 'var(--tw-bg)',
-                  color: 'var(--tw-ink)',
-                  border: `1px solid ${fieldErrors.email ? 'var(--tw-loss)' : 'var(--tw-line-strong)'}`,
-                }}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label
-              htmlFor={passwordId}
-              className="block text-xs font-semibold mb-1.5"
-              style={{ color: 'var(--tw-ink-2)' }}
-            >
-              Password
-            </label>
-            <div className="relative">
-              <KeyRound
-                size={15}
-                aria-hidden="true"
-                className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                style={{ color: 'var(--tw-ink-3)' }}
-              />
-              <input
-                ref={passwordRef}
-                id={passwordId}
-                type="password"
-                autoComplete="current-password"
-                required
-                aria-invalid={Boolean(fieldErrors.password)}
-                aria-describedby={fieldErrors.password ? errorBannerId : undefined}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                className="w-full h-11 pl-10 pr-3.5 rounded-2xl text-sm"
-                style={{
-                  background: 'var(--tw-bg)',
-                  color: 'var(--tw-ink)',
-                  border: `1px solid ${fieldErrors.password ? 'var(--tw-loss)' : 'var(--tw-line-strong)'}`,
-                }}
-              />
-            </div>
-          </div>
-
-          <p className="text-xs" style={{ color: 'var(--tw-ink-3)' }}>
-            Demo workspace credential: <span className="font-mono">trader@edgeledger.io</span> /{' '}
-            <span className="font-mono">EdgeLedger!2026</span>
-          </p>
-
-          <button
-            type="submit"
-            disabled={isBusy}
-            className="w-full h-11 rounded-full text-sm font-semibold transition-colors disabled:opacity-60"
-            style={{
-              background: 'var(--tw-hero)',
-              color: 'var(--tw-hero-ink)',
-              border: '1px solid var(--tw-hero)',
-            }}
+      <form onSubmit={handlePasswordSubmit} noValidate className="space-y-4">
+        <div>
+          <label
+            htmlFor={emailId}
+            className="block text-xs font-semibold mb-1.5"
+            style={{ color: 'var(--tw-ink-2)' }}
           >
-            {isBusy ? 'Signing in...' : 'Sign in'}
-          </button>
-        </form>
-      ) : (
-        <form onSubmit={handlePasskeySubmit} noValidate className="space-y-4">
-          <div>
-            <label
-              htmlFor={passkeyEmailId}
-              className="block text-xs font-semibold mb-1.5"
-              style={{ color: 'var(--tw-ink-2)' }}
-            >
-              Account email
-            </label>
+            Email address
+          </label>
+          <div className="relative">
+            <Mail
+              size={15}
+              aria-hidden="true"
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ color: 'var(--tw-ink-3)' }}
+            />
             <input
-              ref={passkeyEmailRef}
-              id={passkeyEmailId}
+              ref={emailRef}
+              id={emailId}
               type="email"
-              autoComplete="username webauthn"
+              autoComplete="email"
               required
               aria-invalid={Boolean(fieldErrors.email)}
               aria-describedby={fieldErrors.email ? errorBannerId : undefined}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full h-11 px-3.5 rounded-2xl text-sm"
+              placeholder="ommroshan@gmail.com"
+              className="w-full h-11 pl-10 pr-3.5 rounded-2xl text-sm"
               style={{
                 background: 'var(--tw-bg)',
                 color: 'var(--tw-ink)',
@@ -349,48 +164,57 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
               }}
             />
           </div>
+        </div>
 
-          <div>
-            <label
-              htmlFor={passkeyTokenId}
-              className="block text-xs font-semibold mb-1.5"
-              style={{ color: 'var(--tw-ink-2)' }}
-            >
-              Passkey credential ID
-            </label>
+        <div>
+          <label
+            htmlFor={passwordId}
+            className="block text-xs font-semibold mb-1.5"
+            style={{ color: 'var(--tw-ink-2)' }}
+          >
+            Password
+          </label>
+          <div className="relative">
+            <KeyRound
+              size={15}
+              aria-hidden="true"
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ color: 'var(--tw-ink-3)' }}
+            />
             <input
-              ref={passkeyCredRef}
-              id={passkeyTokenId}
-              type="text"
+              ref={passwordRef}
+              id={passwordId}
+              type="password"
+              autoComplete="current-password"
               required
-              aria-invalid={Boolean(fieldErrors.passkey)}
-              aria-describedby={fieldErrors.passkey ? errorBannerId : undefined}
-              value={passkeyCredentialId}
-              onChange={(e) => setPasskeyCredentialId(e.target.value)}
-              className="w-full h-11 px-3.5 rounded-2xl text-sm font-mono"
+              aria-invalid={Boolean(fieldErrors.password)}
+              aria-describedby={fieldErrors.password ? errorBannerId : undefined}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter your password"
+              className="w-full h-11 pl-10 pr-3.5 rounded-2xl text-sm"
               style={{
                 background: 'var(--tw-bg)',
                 color: 'var(--tw-ink)',
-                border: `1px solid ${fieldErrors.passkey ? 'var(--tw-loss)' : 'var(--tw-line-strong)'}`,
+                border: `1px solid ${fieldErrors.password ? 'var(--tw-loss)' : 'var(--tw-line-strong)'}`,
               }}
             />
           </div>
+        </div>
 
-          <button
-            type="submit"
-            disabled={isBusy}
-            className="w-full h-11 rounded-full text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors disabled:opacity-60"
-            style={{
-              background: 'var(--tw-hero)',
-              color: 'var(--tw-hero-ink)',
-              border: '1px solid var(--tw-hero)',
-            }}
-          >
-            <Fingerprint size={16} aria-hidden="true" />
-            <span>{isBusy ? 'Verifying passkey...' : 'Continue with passkey'}</span>
-          </button>
-        </form>
-      )}
+        <button
+          type="submit"
+          disabled={isBusy}
+          className="w-full h-11 rounded-full text-sm font-semibold transition-colors disabled:opacity-60"
+          style={{
+            background: 'var(--tw-hero)',
+            color: 'var(--tw-hero-ink)',
+            border: '1px solid var(--tw-hero)',
+          }}
+        >
+          {isBusy ? 'Signing in...' : 'Sign in'}
+        </button>
+      </form>
     </div>
   );
 };

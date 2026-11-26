@@ -98,11 +98,11 @@ function getStore(): ServerAuthAndSyncStore {
       string,
       { userId: string; email: string; passwordHash: string; passkeyIds: string[] }
     >();
-    users.set('trader@edgeledger.io', {
+    users.set('ommroshan@gmail.com', {
       userId: 'usr-edgeledger-primary',
-      email: 'trader@edgeledger.io',
-      passwordHash: hashSecretInput('EdgeLedger!2026'),
-      passkeyIds: ['pk-edgeledger-device-1'],
+      email: 'ommroshan@gmail.com',
+      passwordHash: hashSecretInput('EdgeLedger@010408'),
+      passkeyIds: [],
     });
 
     g.__edgeledger_auth_sync_store__ = {
@@ -186,14 +186,8 @@ export function authenticateUserCredentials(params: {
     return { ok: false, error: 'Please enter a valid email address.' };
   }
 
-  const existing = store.usersByEmail.get(normalizedEmail);
-
-  if (params.method === 'passkey') {
-    if (!params.credentialId || params.credentialId.trim().length < 6) {
-      return { ok: false, error: 'Passkey verification failed. Missing valid credential.' };
-    }
-    const userId = existing?.userId || `usr-${crypto.createHash('sha1').update(normalizedEmail).digest('hex').slice(0, 12)}`;
-    return { ok: true, userId, email: normalizedEmail };
+  if (params.method && params.method !== 'password') {
+    return { ok: false, error: 'Email and password login only.' };
   }
 
   const password = params.password || '';
@@ -201,27 +195,12 @@ export function authenticateUserCredentials(params: {
     return { ok: false, error: 'Password must be at least 6 characters.' };
   }
 
-  if (existing) {
-    if (existing.passwordHash !== hashSecretInput(password)) {
-      return { ok: false, error: 'Invalid email or password.' };
-    }
-    return { ok: true, userId: existing.userId, email: existing.email };
+  const existing = store.usersByEmail.get(normalizedEmail);
+  if (!existing || existing.passwordHash !== hashSecretInput(password)) {
+    return { ok: false, error: 'Invalid email or password.' };
   }
 
-  // In non-Supabase local mode, provision user account safely on first valid sign-in
-  const config = getAppConfig();
-  if (!config.supabase.isConfigured) {
-    const userId = `usr-${crypto.createHash('sha1').update(normalizedEmail).digest('hex').slice(0, 12)}`;
-    store.usersByEmail.set(normalizedEmail, {
-      userId,
-      email: normalizedEmail,
-      passwordHash: hashSecretInput(password),
-      passkeyIds: [],
-    });
-    return { ok: true, userId, email: normalizedEmail };
-  }
-
-  return { ok: false, error: 'Invalid email or password.' };
+  return { ok: true, userId: existing.userId, email: existing.email };
 }
 
 export function issueSessionTokens(userId: string, email: string, deviceId?: string) {
