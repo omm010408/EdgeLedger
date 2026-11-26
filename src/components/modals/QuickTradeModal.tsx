@@ -1,15 +1,15 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import { useTrading } from '../../context/TradingContext';
 import {
-  calculatePositionSize,
-  calculateMetricsForFixedSize,
   calculateExecutionPnl,
+  calculateMetricsForFixedSize,
+  calculatePositionSize,
   getDefaultCommission,
 } from '../../lib/calculations/financialEngine';
 import { Trade, TradeDirection, TradeStatus } from '../../lib/types/financial';
-import { X, CheckSquare, Square, Calculator, AlertCircle, ArrowUpRight, ArrowDownRight, Calendar } from 'lucide-react';
 
 interface QuickTradeModalProps {
   isOpen: boolean;
@@ -51,15 +51,32 @@ function combineDateAndTime(dateStr: string, timeStr: string): string {
   return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
 }
 
+function formatMoney(v: number, signed = false): string {
+  const abs = Math.abs(v).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  if (v < 0) return `−$${abs}`;
+  if (signed && v > 0) return `+$${abs}`;
+  return `$${abs}`;
+}
+
 export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
   isOpen,
   onClose,
   editTrade = null,
   defaultDate,
 }) => {
-  const { accounts, selectedAccountId, instruments, strategies, addTrade, updateTrade } = useTrading();
+  const {
+    accounts,
+    selectedAccountId,
+    instruments,
+    strategies,
+    isPnlHidden,
+    addTrade,
+    updateTrade,
+  } = useTrading();
 
-  // Form State - Clean blank defaults with informative placeholders
   const [symbol, setSymbol] = useState('XAUUSD');
   const [direction, setDirection] = useState<TradeDirection>('BUY');
   const [entryPrice, setEntryPrice] = useState<string>('');
@@ -84,8 +101,8 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
   const [status, setStatus] = useState<TradeStatus>('OPEN');
   const [tradeThesis, setTradeThesis] = useState<string>('');
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [isDirty, setIsDirty] = useState<boolean>(false);
 
-  // Pre-trade checklist
   const [checklist, setChecklist] = useState({
     biasConfirmed: false,
     validTrigger: false,
@@ -97,9 +114,9 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
 
   const activeInstrument = instruments.find((i) => i.symbol === symbol) || instruments[0];
 
-  // Populate form state when opening in Edit Mode vs New Mode
   useEffect(() => {
     if (!isOpen) return;
+    setIsDirty(false);
     if (editTrade) {
       setSymbol(editTrade.instrumentSymbol || 'XAUUSD');
       setDirection(editTrade.direction || 'BUY');
@@ -163,7 +180,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       setSession((editTrade.session as typeof session) || 'London');
       setTimeframe(editTrade.timeframe || '15M');
       setStatus(editTrade.status || 'OPEN');
-      setTradeThesis(editTrade.tradeThesis || '');
+      setTradeThesis((editTrade.tradeThesis || '').slice(0, 600));
       const allocAccs = editTrade.allocations?.map((a) => a.accountId).filter(Boolean) || [];
       if (allocAccs.length > 0) {
         setSelectedAccountIds(allocAccs);
@@ -194,36 +211,114 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       setTimeframe('15M');
       setStatus('OPEN');
       setTradeThesis('');
+      setChecklist({
+        biasConfirmed: false,
+        validTrigger: false,
+        slTechnical: false,
+        riskWithinLimits: true,
+        noRedFolderNews: true,
+        noFomo: true,
+      });
       if (selectedAccountId !== 'ALL') {
         setSelectedAccountIds([selectedAccountId]);
       } else if (accounts.length > 0) {
         setSelectedAccountIds([accounts[0].id]);
       }
     }
-  }, [isOpen, editTrade, defaultDate, selectedAccountId, accounts]);
+  }, [isOpen, editTrade, defaultDate, selectedAccountId, accounts, instruments]);
 
-  // Close on Escape key
+  const handleSafeClose = React.useCallback(() => {
+    if (isDirty && typeof window !== 'undefined') {
+      if (!window.confirm('Discard this execution? Nothing has been saved.')) {
+        return;
+      }
+    }
+    setIsDirty(false);
+    onClose();
+  }, [isDirty, onClose]);
+
   useEffect(() => {
     if (!isOpen) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') handleSafeClose();
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [isOpen, onClose]);
+  }, [isOpen, handleSafeClose]);
+
+  useEffect(() => {
+    if (!isOpen || !isDirty) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isOpen, isDirty]);
 
   if (!isOpen) return null;
 
-  // Real-time calculation preview
-  const numEntry = parseFloat(entryPrice) || 0;
-  const numSl = parseFloat(stopLoss) || 0;
-  const numTp = parseFloat(takeProfit) || 0;
+  const parsedEntry = entryPrice.trim() !== '' ? parseFloat(entryPrice) : NaN;
+  const parsedSl = stopLoss.trim() !== '' ? parseFloat(stopLoss) : NaN;
+  const parsedTp = takeProfit.trim() !== '' ? parseFloat(takeProfit) : NaN;
+  const parsedRisk = riskPct.trim() !== '' ? parseFloat(riskPct) : NaN;
+
+  const numEntry = Number.isFinite(parsedEntry) ? parsedEntry : 0;
+  const numSl = Number.isFinite(parsedSl) ? parsedSl : 0;
+  const numTp = Number.isFinite(parsedTp) ? parsedTp : 0;
   const numExit = parseFloat(exitPrice) || 0;
-  const numRisk = parseFloat(riskPct) || 1.0;
+  const numRisk = Number.isFinite(parsedRisk) ? parsedRisk : 0;
+
+  // Field-level inline validation matching AddTrade.html rules
+  let entryHint = '';
+  let entryInvalid = false;
+  if (entryPrice.trim() !== '' && (!Number.isFinite(parsedEntry) || parsedEntry <= 0)) {
+    entryHint = 'Entry must be above zero';
+    entryInvalid = true;
+  }
+
+  let stopHint = '';
+  let stopInvalid = false;
+  if (numEntry > 0 && stopLoss.trim() !== '' && numSl > 0) {
+    if (direction === 'BUY' && numSl >= numEntry) {
+      stopHint = 'For a buy, the stop must be below entry';
+      stopInvalid = true;
+    } else if (direction === 'SELL' && numSl <= numEntry) {
+      stopHint = 'For a sell, the stop must be above entry';
+      stopInvalid = true;
+    }
+  }
+
+  let tpHint = '';
+  let tpInvalid = false;
+  if (numEntry > 0 && takeProfit.trim() !== '' && numTp > 0) {
+    if (direction === 'BUY' && numTp <= numEntry) {
+      tpHint = 'For a buy, the target must be above entry';
+      tpInvalid = true;
+    } else if (direction === 'SELL' && numTp >= numEntry) {
+      tpHint = 'For a sell, the target must be below entry';
+      tpInvalid = true;
+    }
+  }
+
+  let riskHint = 'Share of account equity';
+  let riskTone: '' | 'err' | 'warn' = '';
+  let riskInvalid = false;
+  if (!Number.isFinite(parsedRisk) || parsedRisk <= 0) {
+    riskHint = 'Enter a risk above 0%';
+    riskTone = 'err';
+    riskInvalid = true;
+  } else if (parsedRisk > 2) {
+    riskHint = 'Above 2% of equity. Check the account limit.';
+    riskTone = 'warn';
+  }
+
+  const levelsValid = !entryInvalid && !stopInvalid && !tpInvalid && !riskInvalid;
+
   const explicitLots =
     customPositionSize.trim() !== '' &&
     Number.isFinite(parseFloat(customPositionSize)) &&
-    parseFloat(customPositionSize) > 0
+    parseFloat(customPositionSize) >= 0.01
       ? parseFloat(customPositionSize)
       : null;
   const explicitCommTotal =
@@ -233,39 +328,20 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       ? parseFloat(commissionInput)
       : null;
 
+  const primaryAccount =
+    accounts.find((a) => a.id === selectedAccountIds[0]) || accounts[0];
+  const primaryEquity = primaryAccount?.currentEquity || 100000;
+  const riskAmountPreview = (primaryEquity * Math.max(0, numRisk)) / 100;
+
   let calcPreview: ReturnType<typeof calculatePositionSize> | null = null;
   let calcError: string | null = null;
-  let directionWarning: string | null = null;
-
-  if (numEntry > 0 && numSl > 0 && numEntry !== numSl) {
-    if (direction === 'BUY' && numSl >= numEntry) {
-      directionWarning = 'Stop Loss is at or above Entry Price for a BUY trade.';
-    } else if (direction === 'SELL' && numSl <= numEntry) {
-      directionWarning = 'Stop Loss is at or below Entry Price for a SELL trade.';
-    } else if (numTp > 0) {
-      if (direction === 'BUY' && numTp <= numEntry) {
-        directionWarning = 'Take Profit is below Entry Price for a BUY trade.';
-      } else if (direction === 'SELL' && numTp >= numEntry) {
-        directionWarning = 'Take Profit is above Entry Price for a SELL trade.';
-      }
-    }
-  }
-
-  const targetPreviewIds =
-    selectedAccountIds.length > 0
-      ? selectedAccountIds
-      : accounts.length > 0
-        ? [accounts[0].id]
-        : ['unassigned'];
 
   try {
     if (numEntry > 0) {
-      const primaryAccount = accounts.find((a) => a.id === targetPreviewIds[0]) || accounts[0];
-      const eq = primaryAccount?.currentEquity || 100000;
       const existingPlannedRisk = editTrade?.plannedRiskUsd;
       if (explicitLots !== null) {
         calcPreview = calculateMetricsForFixedSize({
-          accountEquity: eq,
+          accountEquity: primaryEquity,
           positionSize: explicitLots,
           entryPrice: numEntry,
           stopLossPrice: numSl,
@@ -273,11 +349,11 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
           direction,
           instrument: activeInstrument,
           plannedRiskUsd: existingPlannedRisk,
-          riskPercentage: numRisk,
+          riskPercentage: Math.max(0.1, numRisk),
         });
-      } else if (numSl > 0 && numEntry !== numSl) {
+      } else if (numSl > 0 && numEntry !== numSl && numRisk > 0) {
         const riskSized = calculatePositionSize({
-          accountEquity: eq,
+          accountEquity: primaryEquity,
           riskPercentage: numRisk,
           entryPrice: numEntry,
           stopLossPrice: numSl,
@@ -285,7 +361,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
           instrument: activeInstrument,
         });
         calcPreview = calculateMetricsForFixedSize({
-          accountEquity: eq,
+          accountEquity: primaryEquity,
           positionSize: riskSized.positionSize,
           entryPrice: numEntry,
           stopLossPrice: numSl,
@@ -295,23 +371,49 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
           plannedRiskUsd: existingPlannedRisk,
           riskPercentage: numRisk,
         });
-      } else {
-        calcPreview = calculateMetricsForFixedSize({
-          accountEquity: eq,
-          positionSize: 1.0,
-          entryPrice: numEntry,
-          stopLossPrice: 0,
-          takeProfitPrice: numTp > 0 ? numTp : undefined,
-          direction,
-          instrument: activeInstrument,
-          plannedRiskUsd: existingPlannedRisk,
-          riskPercentage: numRisk,
-        });
       }
     }
-  } catch (err: any) {
-    calcError = err.message;
+  } catch (err: unknown) {
+    calcError = err instanceof Error ? err.message : 'Calculation error';
   }
+
+  const riskPerUnit = numEntry > 0 && numSl > 0 ? Math.abs(numEntry - numSl) : null;
+  const rawLotsPreview =
+    riskPerUnit && riskPerUnit > 0 && activeInstrument?.contractSize
+      ? Math.floor((riskAmountPreview / (riskPerUnit * activeInstrument.contractSize)) * 100) / 100
+      : 0;
+  const effectiveLotsPreview = explicitLots !== null ? explicitLots : calcPreview?.positionSize ?? rawLotsPreview;
+  const sizeOk =
+    levelsValid &&
+    numEntry > 0 &&
+    (explicitLots !== null || (numSl > 0 && effectiveLotsPreview >= 0.01));
+
+  const plannedRrPreview =
+    numEntry > 0 &&
+    numSl > 0 &&
+    riskPerUnit &&
+    riskPerUnit > 0 &&
+    numTp > 0 &&
+    !tpInvalid &&
+    !stopInvalid
+      ? Math.abs(numTp - numEntry) / riskPerUnit
+      : null;
+
+  let levelsStateText = 'Enter entry and stop';
+  if (!levelsValid) {
+    levelsStateText = 'Fix the highlighted levels';
+  } else if (numEntry > 0 && numSl > 0 && !sizeOk) {
+    levelsStateText = 'Risk too small for 0.01 lot';
+  } else if (sizeOk) {
+    levelsStateText = 'Ready to record';
+  }
+
+  const targetPreviewIds =
+    selectedAccountIds.length > 0
+      ? selectedAccountIds
+      : accounts.length > 0
+      ? [accounts[0].id]
+      : ['unassigned'];
 
   const previewAutoCommission = calcPreview
     ? getDefaultCommission(activeInstrument, calcPreview.positionSize)
@@ -369,11 +471,19 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
     }
   }
 
-  const allChecklistPassed = Object.values(checklist).every(Boolean);
+  const checklistValues = Object.values(checklist);
+  const confirmedChecklistCount = checklistValues.filter(Boolean).length;
+  const allChecklistPassed = confirmedChecklistCount === checklistValues.length;
+
+  const canSubmit =
+    levelsValid &&
+    !calcError &&
+    selectedAccountIds.length > 0 &&
+    (sizeOk || (Boolean(editTrade) && numEntry > 0 && (numSl > 0 || explicitLots !== null)));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!calcPreview || calcError) return;
+    if (!canSubmit || !calcPreview) return;
 
     const targetAccountIds =
       selectedAccountIds.length > 0
@@ -515,7 +625,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       totalAllocatedRisk > 0
         ? totalAllocatedRisk
         : (editTrade?.plannedRiskUsd && editTrade.plannedRiskUsd > 0 ? editTrade.plannedRiskUsd : 0) ||
-          (accounts[0]?.currentEquity || 100000) * ((parseFloat(riskPct) || 1.0) / 100);
+          primaryEquity * ((parseFloat(riskPct) || 1.0) / 100);
 
     const totalGrossPnl = Math.round(allocations.reduce((sum, a) => sum + a.realizedPnl, 0) * 100) / 100;
     const totalCommission = Math.round(allocations.reduce((sum, a) => sum + a.commission, 0) * 100) / 100;
@@ -529,7 +639,7 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         ? explicitROverride
         : totalRiskUsd > 0
         ? Math.round((totalNetPnl / totalRiskUsd) * 100) / 100
-        : (editTrade?.realizedR ?? 0);
+        : editTrade?.realizedR ?? 0;
     const effectivePlannedRiskPct = allocations[0]?.allocatedRiskPct || numRisk;
 
     if (editTrade) {
@@ -549,7 +659,9 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
         plannedRiskUsd:
           numSl > 0 && totalAllocatedRisk > 0
             ? totalAllocatedRisk
-            : (editTrade.plannedRiskUsd && editTrade.plannedRiskUsd > 0 ? editTrade.plannedRiskUsd : totalRiskUsd),
+            : editTrade.plannedRiskUsd && editTrade.plannedRiskUsd > 0
+            ? editTrade.plannedRiskUsd
+            : totalRiskUsd,
         plannedRiskPct: effectivePlannedRiskPct,
         plannedRr: calcPreview?.plannedRr ?? editTrade.plannedRr,
         realizedPnl: totalGrossPnl,
@@ -591,660 +703,733 @@ export const QuickTradeModal: React.FC<QuickTradeModalProps> = ({
       });
     }
 
+    setIsDirty(false);
     onClose();
   };
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+      className="tw-trade-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tw-record-exec-title"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) handleSafeClose();
       }}
     >
-      <div className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-lg border border-edge-border bg-edge-surface shadow-terminal text-xs">
+      <form
+        className="tw-trade-modal"
+        onSubmit={handleSubmit}
+        onChange={() => setIsDirty(true)}
+        noValidate
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && canSubmit) {
+            e.preventDefault();
+            handleSubmit(e as unknown as React.FormEvent);
+          }
+        }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-edge-border bg-edge-surface-secondary/50">
-          <div className="flex items-center space-x-2">
-            <span className="w-2.5 h-2.5 rounded bg-edge-accent" />
-            <h2 className="font-mono text-sm font-bold tracking-wider text-white uppercase">
-              {editTrade ? `EDIT EXECUTION · ${editTrade.instrumentSymbol}` : 'RECORD NEW EXECUTION'}
+        <div className="tw-trade-head">
+          <div>
+            <div className="tw-trade-lab">
+              {editTrade ? `Edit execution · ${editTrade.instrumentSymbol}` : 'New trade'}
+            </div>
+            <h2 id="tw-record-exec-title">
+              {editTrade ? `Edit ${editTrade.instrumentSymbol}` : 'Record execution'}
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="text-edge-text-secondary hover:text-white p-1 rounded hover:bg-edge-surface-secondary transition-colors"
-          >
-            <X size={18} />
-          </button>
+          <div className="tw-trade-head-r">
+            <span className="tw-trade-lab" style={{ color: 'var(--tw-ink-2)' }}>
+              Entries in local time
+            </span>
+            <button
+              type="button"
+              className="tw-trade-close"
+              onClick={handleSafeClose}
+              aria-label="Close record execution modal"
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          {/* Top row: Symbol, Direction, Status */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block font-mono text-[11px] text-edge-text-secondary uppercase mb-1">
-                Instrument
-              </label>
-              <select
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value)}
-                className="w-full px-3 py-2 rounded bg-edge-surface-secondary border border-edge-border text-white font-mono focus:border-edge-accent outline-none"
+        <div className="tw-trade-body">
+          {/* 1 · Instrument and direction */}
+          <section className="tw-trade-sec" aria-labelledby="tw-sec-1">
+            <div className="tw-trade-sec-h">
+              <h3 id="tw-sec-1">1 · Instrument and direction</h3>
+            </div>
+            <div className="tw-trade-grid g3">
+              <div className="tw-trade-field">
+                <label htmlFor="tw-tr-inst">Instrument</label>
+                <select
+                  id="tw-tr-inst"
+                  className="tw-trade-input"
+                  value={symbol}
+                  onChange={(e) => setSymbol(e.target.value)}
+                >
+                  {instruments.map((i) => (
+                    <option key={i.symbol} value={i.symbol}>
+                      {i.symbol} · {i.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="tw-trade-hint">
+                  Contract size {(activeInstrument?.contractSize || 1).toLocaleString('en-US')} · from Settings
+                </span>
+              </div>
+
+              <fieldset
+                className="tw-trade-field tw-trade-span2"
+                style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
               >
-                {instruments.map((i) => (
-                  <option key={i.symbol} value={i.symbol}>
-                    {i.symbol} ({i.name})
-                  </option>
-                ))}
-              </select>
+                <legend className="tw-trade-fl" style={{ padding: 0, marginBottom: 6 }}>
+                  Direction
+                </legend>
+                <div className="tw-trade-seg" role="radiogroup" aria-label="Direction">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={direction === 'BUY'}
+                    className={direction === 'BUY' ? 'buy-on' : ''}
+                    onClick={() => {
+                      setDirection('BUY');
+                      setIsDirty(true);
+                    }}
+                  >
+                    &#8599; Buy / long
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={direction === 'SELL'}
+                    className={direction === 'SELL' ? 'sell-on' : ''}
+                    onClick={() => {
+                      setDirection('SELL');
+                      setIsDirty(true);
+                    }}
+                  >
+                    &#8600; Sell / short
+                  </button>
+                </div>
+                <span className="tw-trade-hint">
+                  {direction === 'BUY'
+                    ? 'Stop must sit below entry; target above.'
+                    : 'Stop must sit above entry; target below.'}
+                </span>
+              </fieldset>
             </div>
 
-            <div>
-              <label className="block font-mono text-[11px] text-edge-text-secondary uppercase mb-1">
-                Direction
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDirection('BUY')}
-                  className={`py-2 rounded font-mono font-bold flex items-center justify-center space-x-1 border transition-colors ${
-                    direction === 'BUY'
-                      ? 'bg-edge-profit/20 border-edge-profit text-edge-profit'
-                      : 'border-edge-border text-edge-text-secondary hover:text-white'
-                  }`}
+            <div className="tw-trade-grid g3">
+              <div className="tw-trade-field">
+                <label htmlFor="tw-tr-status">Execution status</label>
+                <select
+                  id="tw-tr-status"
+                  className="tw-trade-input"
+                  value={status}
+                  disabled={editTrade?.status === 'CLOSED'}
+                  onChange={(e) => setStatus(e.target.value as TradeStatus)}
                 >
-                  <ArrowUpRight size={14} />
-                  <span>BUY / LONG</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDirection('SELL')}
-                  className={`py-2 rounded font-mono font-bold flex items-center justify-center space-x-1 border transition-colors ${
-                    direction === 'SELL'
-                      ? 'bg-edge-loss/20 border-edge-loss text-edge-loss'
-                      : 'border-edge-border text-edge-text-secondary hover:text-white'
-                  }`}
+                  <option value="OPEN">Open (active position)</option>
+                  <option value="CLOSED">Closed (completed trade)</option>
+                  <option value="PLANNED">Planned (order limit / setup)</option>
+                </select>
+                <span className="tw-trade-hint">&nbsp;</span>
+              </div>
+
+              <div className="tw-trade-field">
+                <label htmlFor="tw-tr-strat">Strategy</label>
+                <select
+                  id="tw-tr-strat"
+                  className="tw-trade-input"
+                  value={strategyId}
+                  onChange={(e) => setStrategyId(e.target.value)}
                 >
-                  <ArrowDownRight size={14} />
-                  <span>SELL / SHORT</span>
-                </button>
+                  <option value="">No strategy linked</option>
+                  {strategies.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="tw-trade-hint">Optional. Links attribution.</span>
+              </div>
+
+              <div className="tw-trade-field">
+                <label htmlFor="tw-tr-setup">Setup type</label>
+                <input
+                  id="tw-tr-setup"
+                  className="tw-trade-input"
+                  value={setupType}
+                  onChange={(e) => setSetupType(e.target.value)}
+                  placeholder="e.g. Liquidity sweep"
+                  autoComplete="off"
+                />
+                <span className="tw-trade-hint">&nbsp;</span>
               </div>
             </div>
+          </section>
 
-            <div>
-              <label className="block font-mono text-[11px] text-edge-text-secondary uppercase mb-1">
-                Execution Status
-              </label>
-              <select
-                value={status}
-                disabled={editTrade?.status === 'CLOSED'}
-                onChange={(e) => setStatus(e.target.value as TradeStatus)}
-                className="w-full px-3 py-2 rounded bg-edge-surface-secondary border border-edge-border text-white font-mono focus:border-edge-accent outline-none disabled:opacity-70"
-              >
-                <option value="OPEN">OPEN (Active Position)</option>
-                <option value="CLOSED">CLOSED (Completed Trade)</option>
-                <option value="PLANNED">PLANNED (Order Limit / Setup)</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Trade Date Section (Defaults to Today) */}
-          <div className="bg-edge-surface-secondary/40 p-3 rounded border border-edge-border/60 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-1.5 font-mono text-[10px] text-edge-text-secondary uppercase tracking-wider font-semibold">
-                <Calendar size={12} className="text-edge-accent" />
-                <span>Trade Date</span>
-              </div>
+          {/* 2 · Timing */}
+          <section className="tw-trade-sec" aria-labelledby="tw-sec-2">
+            <div className="tw-trade-sec-h">
+              <h3 id="tw-sec-2">2 · Timing</h3>
               <button
                 type="button"
+                className="tw-ana-icon-btn"
                 onClick={() => {
                   const today = getLocalTodayDateStr();
                   setTradeDate(today);
                   setExitDate(today);
                 }}
-                className="px-2 py-0.5 rounded bg-edge-accent/15 text-edge-accent border border-edge-accent/40 font-mono text-[10px] font-semibold hover:bg-edge-accent/25 transition-colors"
               >
                 Today ({getLocalTodayDateStr()})
               </button>
             </div>
-
-            <div className={`grid gap-3 ${status === 'CLOSED' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2'}`}>
-              <div>
-                <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                  Entry Date
-                </label>
+            <div className="tw-trade-grid g3">
+              <div className="tw-trade-field">
+                <label htmlFor="tw-tr-date">Entry date</label>
                 <input
+                  id="tw-tr-date"
                   type="date"
+                  className="tw-trade-input"
                   value={tradeDate}
                   onChange={(e) => {
                     setTradeDate(e.target.value);
                     if (!editTrade) setExitDate(e.target.value);
                   }}
-                  className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono text-[11px] focus:border-edge-accent outline-none"
                   required
                 />
+                <span className="tw-trade-hint">&nbsp;</span>
               </div>
 
-              <div>
-                <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                  Entry Time
-                </label>
+              <div className="tw-trade-field">
+                <label htmlFor="tw-tr-time">Entry time</label>
                 <input
+                  id="tw-tr-time"
                   type="time"
+                  className="tw-trade-input"
                   value={entryClock}
                   onChange={(e) => setEntryClock(e.target.value)}
-                  className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono text-[11px] focus:border-edge-accent outline-none"
                 />
+                <span className="tw-trade-hint">&nbsp;</span>
+              </div>
+
+              <div className="tw-trade-field">
+                <label htmlFor="tw-tr-sess">Session</label>
+                <select
+                  id="tw-tr-sess"
+                  className="tw-trade-input"
+                  value={session}
+                  onChange={(e) => setSession(e.target.value as typeof session)}
+                >
+                  <option value="London">London (08:00 UTC)</option>
+                  <option value="New York">New York (13:30 UTC)</option>
+                  <option value="London Close">London Close (15:30 UTC)</option>
+                  <option value="Asian">Asian (00:00 UTC)</option>
+                  <option value="Sydney">Sydney (21:00 UTC)</option>
+                </select>
+                <span className="tw-trade-hint">&nbsp;</span>
+              </div>
+            </div>
+
+            <div className="tw-trade-grid g3">
+              <div className="tw-trade-field">
+                <label htmlFor="tw-tr-tf">Timeframe</label>
+                <select
+                  id="tw-tr-tf"
+                  className="tw-trade-input"
+                  value={timeframe}
+                  onChange={(e) => setTimeframe(e.target.value)}
+                >
+                  <option value="1M">1 minute</option>
+                  <option value="5M">5 minutes</option>
+                  <option value="15M">15 minutes</option>
+                  <option value="1H">1 hour</option>
+                  <option value="4H">4 hours</option>
+                  <option value="D1">1 day</option>
+                </select>
+                <span className="tw-trade-hint">&nbsp;</span>
               </div>
 
               {status === 'CLOSED' && (
                 <>
-                  <div>
-                    <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                      Exit Date
-                    </label>
+                  <div className="tw-trade-field">
+                    <label htmlFor="tw-tr-exit-date">Exit date</label>
                     <input
+                      id="tw-tr-exit-date"
                       type="date"
+                      className="tw-trade-input"
                       value={exitDate}
                       onChange={(e) => setExitDate(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono text-[11px] focus:border-edge-accent outline-none"
                     />
+                    <span className="tw-trade-hint">&nbsp;</span>
                   </div>
-                  <div>
-                    <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                      Exit Time
-                    </label>
+                  <div className="tw-trade-field">
+                    <label htmlFor="tw-tr-exit-time">Exit time</label>
                     <input
+                      id="tw-tr-exit-time"
                       type="time"
+                      className="tw-trade-input"
                       value={exitClock}
                       onChange={(e) => setExitClock(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono text-[11px] focus:border-edge-accent outline-none"
                     />
+                    <span className="tw-trade-hint">&nbsp;</span>
                   </div>
                 </>
               )}
             </div>
-          </div>
+          </section>
 
-          {/* Pricing Row: Entry, SL, TP, Risk % */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-edge-surface-secondary/40 p-3 rounded border border-edge-border/60">
-            <div>
-              <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                Entry Price
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={entryPrice}
-                onChange={(e) => setEntryPrice(e.target.value)}
-                placeholder="0.00"
-                className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
-                required
-              />
+          {/* 3 · Levels and risk */}
+          <section className="tw-trade-sec" aria-labelledby="tw-sec-3">
+            <div className="tw-trade-sec-h">
+              <h3 id="tw-sec-3">3 · Levels and risk</h3>
+              <span className="tw-trade-lab">{levelsStateText}</span>
             </div>
 
-            <div>
-              <label className="block font-mono text-[10px] text-edge-loss uppercase mb-1">
-                Stop Loss
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={stopLoss}
-                onChange={(e) => setStopLoss(e.target.value)}
-                placeholder="0.00"
-                className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-loss/50 text-edge-loss font-mono focus:border-edge-loss outline-none tabular-nums"
-                required
-              />
-            </div>
+            <div className="tw-trade-grid">
+              <div className="tw-trade-field">
+                <label htmlFor="tw-tr-entry">Entry price</label>
+                <input
+                  id="tw-tr-entry"
+                  type="number"
+                  step="any"
+                  min="0"
+                  inputMode="decimal"
+                  className="tw-trade-input"
+                  value={entryPrice}
+                  onChange={(e) => setEntryPrice(e.target.value)}
+                  placeholder="0.00"
+                  aria-invalid={entryInvalid ? 'true' : undefined}
+                />
+                <span className={`tw-trade-hint ${entryInvalid ? 'err' : ''}`}>{entryHint}</span>
+              </div>
 
-            <div>
-              <label className="block font-mono text-[10px] text-edge-profit uppercase mb-1">
-                Take Profit
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={takeProfit}
-                onChange={(e) => setTakeProfit(e.target.value)}
-                placeholder="0.00 (optional)"
-                className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-profit/50 text-edge-profit font-mono focus:border-edge-profit outline-none tabular-nums"
-              />
-            </div>
+              <div className="tw-trade-field">
+                <label className="sl" htmlFor="tw-tr-stop">Stop loss</label>
+                <input
+                  id="tw-tr-stop"
+                  type="number"
+                  step="any"
+                  min="0"
+                  inputMode="decimal"
+                  className="tw-trade-input"
+                  value={stopLoss}
+                  onChange={(e) => setStopLoss(e.target.value)}
+                  placeholder="0.00"
+                  aria-invalid={stopInvalid ? 'true' : undefined}
+                />
+                <span className={`tw-trade-hint ${stopInvalid ? 'err' : ''}`}>{stopHint}</span>
+              </div>
 
-            <div>
-              <label className="block font-mono text-[10px] text-edge-accent uppercase mb-1">
-                Risk %
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0.1"
-                max="10"
-                value={riskPct}
-                onChange={(e) => setRiskPct(e.target.value)}
-                className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-accent/50 text-edge-accent font-mono focus:border-edge-accent outline-none tabular-nums"
-                required
-              />
-            </div>
-          </div>
-
-          {/* Sizing & Commission */}
-          <div className="grid grid-cols-2 gap-3 bg-edge-surface-secondary/40 p-3 rounded border border-edge-border/60">
-            <div>
-              <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                Position Size (Lots)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={customPositionSize}
-                onChange={(e) => setCustomPositionSize(e.target.value)}
-                placeholder={calcPreview ? `${calcPreview.positionSize} (auto)` : 'Auto'}
-                className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
-              />
-            </div>
-
-            <div>
-              <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                Commission ($)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={commissionInput}
-                onChange={(e) => setCommissionInput(e.target.value)}
-                placeholder={calcPreview ? `Auto ($${previewAutoCommission.toFixed(2)})` : 'Auto'}
-                className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
-              />
-            </div>
-          </div>
-
-          {status === 'CLOSED' && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-edge-surface-secondary/40 p-3 rounded border border-edge-border/60">
-              <div>
-                <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                  Exit Price
+              <div className="tw-trade-field">
+                <label className="tp" htmlFor="tw-tr-tp">
+                  Take profit <span style={{ textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
                 </label>
                 <input
+                  id="tw-tr-tp"
                   type="number"
                   step="any"
-                  value={exitPrice}
-                  onChange={(e) => setExitPrice(e.target.value)}
-                  placeholder="Optional"
-                  className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
+                  min="0"
+                  inputMode="decimal"
+                  className="tw-trade-input"
+                  value={takeProfit}
+                  onChange={(e) => setTakeProfit(e.target.value)}
+                  placeholder="0.00"
+                  aria-invalid={tpInvalid ? 'true' : undefined}
                 />
+                <span className={`tw-trade-hint ${tpInvalid ? 'err' : ''}`}>{tpHint}</span>
               </div>
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-mono text-[10px] text-edge-profit uppercase">
-                    Realized Net P&amp;L ($)
-                  </label>
-                  {isManualNetOverride && numExit > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsManualNetOverride(false);
-                        setRealizedNetInput('');
-                      }}
-                      className="text-[10px] font-mono text-edge-accent hover:underline"
-                    >
-                      Auto
-                    </button>
-                  )}
-                </div>
+
+              <div className="tw-trade-field">
+                <label className="rk" htmlFor="tw-tr-risk">Risk per trade (%)</label>
                 <input
+                  id="tw-tr-risk"
                   type="number"
-                  step="any"
-                  value={realizedNetInput}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setRealizedNetInput(val);
-                    setIsManualNetOverride(val.trim() !== '');
-                  }}
-                  placeholder={
-                    !isManualNetOverride && numExit > 0 && closedCalcPreview
-                      ? `Auto: ${closedCalcPreview.net >= 0 ? '+' : '-'}$${Math.abs(closedCalcPreview.net).toFixed(2)}`
-                      : 'Auto from exit, or enter $'
-                  }
-                  className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
+                  step="0.1"
+                  min="0"
+                  max="10"
+                  inputMode="decimal"
+                  className="tw-trade-input"
+                  value={riskPct}
+                  onChange={(e) => setRiskPct(e.target.value)}
+                  aria-invalid={riskInvalid ? 'true' : undefined}
                 />
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-mono text-[10px] text-edge-accent uppercase">
-                    Realized R-Multiple
-                  </label>
-                  {isManualROverride && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsManualROverride(false);
-                        setRealizedRInput('');
-                      }}
-                      className="text-[10px] font-mono text-edge-accent hover:underline"
-                    >
-                      Auto
-                    </button>
-                  )}
-                </div>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={realizedRInput}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setRealizedRInput(val);
-                    setIsManualROverride(val.trim() !== '');
-                  }}
-                  placeholder={
-                    !isManualROverride && closedCalcPreview
-                      ? `Auto: ${closedCalcPreview.r >= 0 ? '+' : ''}${closedCalcPreview.r.toFixed(2)}R`
-                      : 'e.g. +2.00 or -1.00'
-                  }
-                  className="w-full px-2.5 py-1.5 rounded bg-edge-surface border border-edge-border text-white font-mono focus:border-edge-accent outline-none tabular-nums"
-                />
+                <span className={`tw-trade-hint ${riskTone}`}>{riskHint}</span>
               </div>
             </div>
-          )}
 
-          {/* Account Allocation Selector */}
-          <div>
-            <label className="block font-mono text-[11px] text-edge-text-secondary uppercase mb-1">
-              Allocate Across Accounts
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {status === 'CLOSED' && (
+              <div className="tw-trade-grid g3">
+                <div className="tw-trade-field">
+                  <label htmlFor="tw-tr-exit-price">Exit price</label>
+                  <input
+                    id="tw-tr-exit-price"
+                    type="number"
+                    step="any"
+                    inputMode="decimal"
+                    className="tw-trade-input"
+                    value={exitPrice}
+                    onChange={(e) => setExitPrice(e.target.value)}
+                    placeholder="Optional"
+                  />
+                  <span className="tw-trade-hint">Computes net P&amp;L automatically</span>
+                </div>
+
+                <div className="tw-trade-field">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label className="tp" htmlFor="tw-tr-net">Realized net P&amp;L ($)</label>
+                    {isManualNetOverride && numExit > 0 && (
+                      <button
+                        type="button"
+                        className="tw-ana-link-btn"
+                        onClick={() => {
+                          setIsManualNetOverride(false);
+                          setRealizedNetInput('');
+                        }}
+                      >
+                        Auto
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    id="tw-tr-net"
+                    type="number"
+                    step="any"
+                    inputMode="decimal"
+                    className="tw-trade-input"
+                    value={realizedNetInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setRealizedNetInput(val);
+                      setIsManualNetOverride(val.trim() !== '');
+                    }}
+                    placeholder={
+                      !isManualNetOverride && numExit > 0 && closedCalcPreview
+                        ? `Auto: ${formatMoney(closedCalcPreview.net, true)}`
+                        : 'Auto from exit, or enter $'
+                    }
+                  />
+                  <span className="tw-trade-hint">&nbsp;</span>
+                </div>
+
+                <div className="tw-trade-field">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label htmlFor="tw-tr-realized-r">Realized R-multiple</label>
+                    {isManualROverride && (
+                      <button
+                        type="button"
+                        className="tw-ana-link-btn"
+                        onClick={() => {
+                          setIsManualROverride(false);
+                          setRealizedRInput('');
+                        }}
+                      >
+                        Auto
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    id="tw-tr-realized-r"
+                    type="number"
+                    step="0.01"
+                    inputMode="decimal"
+                    className="tw-trade-input"
+                    value={realizedRInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setRealizedRInput(val);
+                      setIsManualROverride(val.trim() !== '');
+                    }}
+                    placeholder={
+                      !isManualROverride && closedCalcPreview
+                        ? `Auto: ${closedCalcPreview.r >= 0 ? '+' : ''}${closedCalcPreview.r.toFixed(2)}R`
+                        : 'e.g. +2.00 or -1.00'
+                    }
+                  />
+                  <span className="tw-trade-hint">&nbsp;</span>
+                </div>
+              </div>
+            )}
+
+            <div className="tw-trade-calc" aria-live="polite">
+              <div>
+                <span className="tw-trade-lab">Risk per unit</span>
+                <strong>
+                  {riskPerUnit !== null && riskPerUnit > 0
+                    ? riskPerUnit.toLocaleString('en-US', { maximumFractionDigits: 5 })
+                    : '—'}
+                </strong>
+              </div>
+              <div>
+                <span className="tw-trade-lab">Risk amount</span>
+                <strong className={isPnlHidden ? 'tw-pnl-blur' : ''}>
+                  {formatMoney(riskAmountPreview)}
+                </strong>
+              </div>
+              <div>
+                <span className="tw-trade-lab">Size, rounded down</span>
+                <strong>
+                  {numEntry > 0 && (numSl > 0 || explicitLots !== null) && levelsValid
+                    ? sizeOk
+                      ? `${effectiveLotsPreview.toFixed(2)} lots`
+                      : 'Below 0.01 lot'
+                    : '—'}
+                </strong>
+              </div>
+              <div>
+                <span className="tw-trade-lab">Reward : risk</span>
+                <strong className={plannedRrPreview !== null && plannedRrPreview < 1 ? 'rr-low' : ''}>
+                  {plannedRrPreview !== null ? `${plannedRrPreview.toFixed(2)} R` : '—'}
+                </strong>
+              </div>
+
+              {closedCalcPreview && (
+                <div className="tw-trade-calc-closed">
+                  <div>
+                    <span className="tw-trade-lab">Gross P&amp;L</span>
+                    <strong className={isPnlHidden ? 'tw-pnl-blur' : ''}>
+                      {formatMoney(closedCalcPreview.gross, true)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="tw-trade-lab">Commission</span>
+                    <strong className={isPnlHidden ? 'tw-pnl-blur' : ''}>
+                      {formatMoney(-closedCalcPreview.commission)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="tw-trade-lab">Net P&amp;L</span>
+                    <strong className={isPnlHidden ? 'tw-pnl-blur' : ''}>
+                      {formatMoney(closedCalcPreview.net, true)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="tw-trade-lab">Realized R</span>
+                    <strong>
+                      {closedCalcPreview.r >= 0 ? '+' : '−'}
+                      {Math.abs(closedCalcPreview.r).toFixed(2)} R
+                    </strong>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {calcError && (
+              <div className="tw-trade-warnbox" role="alert">
+                {calcError}
+              </div>
+            )}
+
+            <p className="tw-trade-note">
+              Size is rounded down to 0.01 lots, so the risk never exceeds the amount shown. The app confirms the final size on save.
+            </p>
+          </section>
+
+          {/* 4 · Allocate across accounts */}
+          <section className="tw-trade-sec" aria-labelledby="tw-sec-4">
+            <div className="tw-trade-sec-h">
+              <h3 id="tw-sec-4">4 · Allocate across accounts</h3>
+              <span className={`tw-trade-hint ${selectedAccountIds.length === 0 ? 'err' : ''}`}>
+                {selectedAccountIds.length === 0
+                  ? 'Select at least one account'
+                  : `${selectedAccountIds.length} selected`}
+              </span>
+            </div>
+
+            <div className="tw-trade-grid g3">
               {accounts.map((acc) => {
                 const isSelected = selectedAccountIds.includes(acc.id);
                 return (
                   <button
                     key={acc.id}
                     type="button"
+                    className={`tw-trade-acct ${isSelected ? '' : 'off'}`}
+                    aria-pressed={isSelected}
                     onClick={() => {
+                      setIsDirty(true);
                       if (isSelected) {
-                        if (selectedAccountIds.length > 1) {
-                          setSelectedAccountIds(selectedAccountIds.filter((id) => id !== acc.id));
-                        }
+                        setSelectedAccountIds(selectedAccountIds.filter((id) => id !== acc.id));
                       } else {
                         setSelectedAccountIds([...selectedAccountIds, acc.id]);
                       }
                     }}
-                    className={`p-2.5 rounded border text-left flex justify-between items-center transition-colors ${
-                      isSelected
-                        ? 'bg-edge-accent/15 border-edge-accent/60 text-white'
-                        : 'bg-edge-surface-secondary/40 border-edge-border text-edge-text-muted hover:text-edge-text-secondary'
-                    }`}
                   >
-                    <div>
-                      <div className="font-semibold truncate max-w-[140px]">{acc.name}</div>
-                      <div className="text-[10px] text-edge-text-muted font-mono">
-                        Eq: ${acc.currentEquity.toLocaleString('en-US')}
-                      </div>
-                    </div>
-                    {isSelected ? (
-                      <CheckSquare size={16} className="text-edge-accent shrink-0" />
-                    ) : (
-                      <Square size={16} className="text-edge-text-muted shrink-0" />
-                    )}
+                    <span>
+                      <strong>{acc.name}</strong>
+                      <small className={isPnlHidden ? 'tw-pnl-blur' : ''}>
+                        Equity {formatMoney(acc.currentEquity)}
+                      </small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      readOnly
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      style={{ width: 18, height: 18, accentColor: 'var(--tw-gain)', flex: 'none' }}
+                    />
                   </button>
                 );
               })}
             </div>
-          </div>
 
-          {/* Real-time Calculation Card */}
-          {calcPreview && (
-            <div className="p-3 rounded border border-edge-accent/30 bg-edge-accent/5 space-y-2 font-mono">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center space-x-2 text-edge-accent font-semibold">
-                  <Calculator size={15} />
-                  <span>POSITION CALCULATION</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px]">
-                  <div>
-                    <span className="text-edge-text-muted mr-1.5">Lot Size:</span>
-                    <span className="text-white font-bold">{calcPreview.positionSize} Lots</span>
-                  </div>
-                  <div>
-                    <span className="text-edge-text-muted mr-1.5">Monetary Risk:</span>
-                    <span className="text-edge-loss font-bold">
-                      -${calcPreview.potentialLoss.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({calcPreview.riskPctOfEquity}%)
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-edge-text-muted mr-1.5">Potential Reward:</span>
-                    <span className={`font-bold ${(calcPreview.potentialProfit || 0) < 0 ? 'text-edge-loss' : 'text-edge-profit'}`}>
-                      {(calcPreview.potentialProfit || 0) < 0 ? '-' : '+'}$
-                      {Math.abs(calcPreview.potentialProfit || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-edge-text-muted mr-1.5">Planned R:R:</span>
-                    <span className="text-edge-accent font-bold">1:{calcPreview.plannedRr ?? 0}</span>
-                  </div>
-                </div>
+            <div className="tw-trade-grid g2">
+              <div className="tw-trade-field">
+                <label htmlFor="tw-tr-lots">Position size override (lots)</label>
+                <input
+                  id="tw-tr-lots"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  inputMode="decimal"
+                  className="tw-trade-input"
+                  value={customPositionSize}
+                  onChange={(e) => setCustomPositionSize(e.target.value)}
+                  placeholder="Leave blank to size from risk"
+                />
+                <span className="tw-trade-hint">&nbsp;</span>
               </div>
 
-              {closedCalcPreview && (
-                <div className="pt-2 border-t border-edge-border/50 flex flex-wrap items-center justify-between gap-3 text-[11px]">
-                  <span className="text-edge-text-secondary uppercase tracking-wider font-semibold">
-                    {isManualNetOverride ? 'Manual Net Result' : 'Calculated Closed Result'}
-                  </span>
-                  <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-                    <div>
-                      <span className="text-edge-text-muted mr-1.5">Gross:</span>
-                      <span className={closedCalcPreview.gross >= 0 ? 'text-edge-profit font-bold' : 'text-edge-loss font-bold'}>
-                        {closedCalcPreview.gross >= 0 ? '+' : '-'}${Math.abs(closedCalcPreview.gross).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-edge-text-muted mr-1.5">Comm:</span>
-                      <span className="text-edge-text-secondary font-semibold">
-                        -${closedCalcPreview.commission.toFixed(2)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-edge-text-muted mr-1.5">Net P&amp;L:</span>
-                      <span className={closedCalcPreview.net >= 0 ? 'text-edge-profit font-bold' : 'text-edge-loss font-bold'}>
-                        {closedCalcPreview.net >= 0 ? '+' : '-'}${Math.abs(closedCalcPreview.net).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-edge-text-muted mr-1.5">Realized R:</span>
-                      <span className={closedCalcPreview.r >= 0 ? 'text-edge-profit font-bold' : 'text-edge-loss font-bold'}>
-                        {closedCalcPreview.r >= 0 ? '+' : '-'}{Math.abs(closedCalcPreview.r).toFixed(2)}R
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
+              <div className="tw-trade-field">
+                <label htmlFor="tw-tr-comm">Commission ($)</label>
+                <input
+                  id="tw-tr-comm"
+                  type="number"
+                  step="any"
+                  min="0"
+                  inputMode="decimal"
+                  className="tw-trade-input"
+                  value={commissionInput}
+                  onChange={(e) => setCommissionInput(e.target.value)}
+                  placeholder={calcPreview ? `Auto ($${previewAutoCommission.toFixed(2)})` : 'Auto'}
+                />
+                <span className="tw-trade-hint">&nbsp;</span>
+              </div>
             </div>
-          )}
+          </section>
 
-          {directionWarning && (
-            <div className="p-2.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 flex items-center space-x-2 font-mono">
-              <AlertCircle size={15} />
-              <span>{directionWarning}</span>
-            </div>
-          )}
-
-          {calcError && (
-            <div className="p-2.5 rounded bg-edge-loss/15 border border-edge-loss/40 text-edge-loss flex items-center space-x-2 font-mono">
-              <AlertCircle size={15} />
-              <span>{calcError}</span>
-            </div>
-          )}
-
-          {/* Strategy, Setup, Session, Timeframe */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                Strategy
-              </label>
-              <select
-                value={strategyId}
-                onChange={(e) => setStrategyId(e.target.value)}
-                className="w-full px-2.5 py-1.5 rounded bg-edge-surface-secondary border border-edge-border text-white font-mono focus:border-edge-accent outline-none"
-              >
-                <option value="">No Strategy Linked</option>
-                {strategies.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+          {/* 5 · Pre-trade checklist */}
+          <section className="tw-trade-sec" aria-labelledby="tw-sec-5">
+            <div className="tw-trade-sec-h">
+              <h3 id="tw-sec-5">5 · Pre-trade checklist</h3>
+              <span className="tw-trade-lab">{confirmedChecklistCount} of 6 confirmed</span>
             </div>
 
-            <div>
-              <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                Setup Type
-              </label>
-              <input
-                type="text"
-                value={setupType}
-                onChange={(e) => setSetupType(e.target.value)}
-                placeholder="e.g. Liquidity Sweep"
-                className="w-full px-2.5 py-1.5 rounded bg-edge-surface-secondary border border-edge-border text-white font-mono focus:border-edge-accent outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                Session
-              </label>
-              <select
-                value={session}
-                onChange={(e) => setSession(e.target.value as any)}
-                className="w-full px-2.5 py-1.5 rounded bg-edge-surface-secondary border border-edge-border text-white font-mono focus:border-edge-accent outline-none"
-              >
-                <option value="London">London (08:00 UTC)</option>
-                <option value="New York">New York (13:30 UTC)</option>
-                <option value="London Close">London Close (15:30 UTC)</option>
-                <option value="Asian">Asian (00:00 UTC)</option>
-                <option value="Sydney">Sydney (21:00 UTC)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-                Timeframe
-              </label>
-              <select
-                value={timeframe}
-                onChange={(e) => setTimeframe(e.target.value)}
-                className="w-full px-2.5 py-1.5 rounded bg-edge-surface-secondary border border-edge-border text-white font-mono focus:border-edge-accent outline-none"
-              >
-                <option value="1M">1 Minute</option>
-                <option value="5M">5 Minutes</option>
-                <option value="15M">15 Minutes</option>
-                <option value="1H">1 Hour</option>
-                <option value="4H">4 Hours</option>
-                <option value="D1">Daily</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Pre-trade Checklist */}
-          <div className="p-3 rounded border border-edge-border bg-edge-surface-secondary/30 space-y-2">
-            <span className="block font-mono text-[10px] text-edge-text-muted uppercase font-bold tracking-wider">
-              Pre-Trade Execution Checklist
-            </span>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <label className="flex items-center space-x-2 cursor-pointer">
+            <div className="tw-trade-checks" role="group" aria-label="Pre-trade checklist">
+              <label>
                 <input
                   type="checkbox"
                   checked={checklist.biasConfirmed}
                   onChange={(e) => setChecklist({ ...checklist, biasConfirmed: e.target.checked })}
-                  className="rounded border-edge-border text-edge-accent focus:ring-0"
                 />
-                <span className="text-[11px] text-edge-text-secondary">HTF Bias Aligned</span>
+                <span>HTF bias aligned</span>
               </label>
 
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label>
                 <input
                   type="checkbox"
                   checked={checklist.validTrigger}
                   onChange={(e) => setChecklist({ ...checklist, validTrigger: e.target.checked })}
-                  className="rounded border-edge-border text-edge-accent focus:ring-0"
                 />
-                <span className="text-[11px] text-edge-text-secondary">Valid Setup Trigger</span>
+                <span>Valid setup trigger</span>
               </label>
 
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label>
                 <input
                   type="checkbox"
                   checked={checklist.slTechnical}
                   onChange={(e) => setChecklist({ ...checklist, slTechnical: e.target.checked })}
-                  className="rounded border-edge-border text-edge-accent focus:ring-0"
                 />
-                <span className="text-[11px] text-edge-text-secondary">Technical Invalidation SL</span>
+                <span>Technical invalidation SL</span>
               </label>
 
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label>
                 <input
                   type="checkbox"
                   checked={checklist.riskWithinLimits}
                   onChange={(e) => setChecklist({ ...checklist, riskWithinLimits: e.target.checked })}
-                  className="rounded border-edge-border text-edge-accent focus:ring-0"
                 />
-                <span className="text-[11px] text-edge-text-secondary">Risk &lt; Account Limit</span>
+                <span>Risk below account limit</span>
               </label>
 
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label>
                 <input
                   type="checkbox"
                   checked={checklist.noRedFolderNews}
                   onChange={(e) => setChecklist({ ...checklist, noRedFolderNews: e.target.checked })}
-                  className="rounded border-edge-border text-edge-accent focus:ring-0"
                 />
-                <span className="text-[11px] text-edge-text-secondary">No High-Impact News</span>
+                <span>No high-impact news</span>
               </label>
 
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label>
                 <input
                   type="checkbox"
                   checked={checklist.noFomo}
                   onChange={(e) => setChecklist({ ...checklist, noFomo: e.target.checked })}
-                  className="rounded border-edge-border text-edge-accent focus:ring-0"
                 />
-                <span className="text-[11px] text-edge-text-secondary">Zero FOMO / Impatience</span>
+                <span>No FOMO or impatience</span>
               </label>
             </div>
-          </div>
 
-          {/* Thesis / Notes */}
-          <div>
-            <label className="block font-mono text-[10px] text-edge-text-muted uppercase mb-1">
-              Trade Thesis & Technical Bias
-            </label>
-            <textarea
-              rows={2}
-              value={tradeThesis}
-              onChange={(e) => setTradeThesis(e.target.value)}
-              placeholder="Reasoning, confluence, key price level, market structure..."
-              className="w-full px-3 py-2 rounded bg-edge-surface-secondary border border-edge-border text-white text-xs outline-none focus:border-edge-accent"
-            />
-          </div>
+            {!allChecklistPassed && (
+              <div className="tw-trade-warnbox">
+                Some checks are unconfirmed. You can still record the trade; it will be saved with those checks marked open.
+              </div>
+            )}
+          </section>
 
-          {/* Footer Submit */}
-          <div className="flex justify-end space-x-3 pt-2 border-t border-edge-border">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded text-edge-text-secondary hover:text-white font-mono transition-colors"
-            >
-              CANCEL
+          {/* 6 · Thesis and technical bias */}
+          <section className="tw-trade-sec" aria-labelledby="tw-sec-6">
+            <div className="tw-trade-sec-h">
+              <h3 id="tw-sec-6">6 · Thesis and technical bias</h3>
+            </div>
+            <div className="tw-trade-field">
+              <label htmlFor="tw-tr-thesis">Reasoning</label>
+              <textarea
+                id="tw-tr-thesis"
+                className="tw-trade-input"
+                maxLength={600}
+                value={tradeThesis}
+                onChange={(e) => setTradeThesis(e.target.value)}
+                placeholder="Confluence, key price level, market structure…"
+              />
+              <div className="tw-trade-lab" style={{ textAlign: 'right' }}>
+                {tradeThesis.length} / 600
+              </div>
+            </div>
+          </section>
+        </div>
+
+        {/* Sticky Footer Summary + Actions */}
+        <footer className="tw-trade-actions">
+          <div className="tw-trade-summary" aria-label="Trade summary">
+            <span className={`tw-trade-chip ${direction === 'BUY' ? 'dir-l' : 'dir-s'}`}>
+              {direction === 'BUY' ? 'Buy' : 'Sell'}
+            </span>
+            <span className="tw-trade-chip">{symbol}</span>
+            <span className={`tw-trade-chip ${isPnlHidden ? 'tw-pnl-blur' : ''}`}>
+              Risk {formatMoney(riskAmountPreview)}
+            </span>
+            <span className="tw-trade-chip">
+              Size {sizeOk ? `${effectiveLotsPreview.toFixed(2)} lots` : '—'}
+            </span>
+            <span className="tw-trade-chip">
+              {selectedAccountIds.length} account{selectedAccountIds.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="tw-trade-btns">
+            <button type="button" className="tw-trade-ghost" onClick={handleSafeClose}>
+              Cancel
             </button>
-            <button
-              type="submit"
-              className="px-5 py-2 rounded bg-edge-accent text-edge-bg font-mono font-bold tracking-wider hover:bg-edge-accent-light transition-colors shadow-subtle"
-            >
-              {editTrade ? 'SAVE EXECUTION CHANGES' : 'RECORD EXECUTION'}
+            <button type="submit" className="tw-trade-btn" disabled={!canSubmit}>
+              {editTrade ? 'Save execution changes' : 'Record execution'}
             </button>
           </div>
-        </form>
-      </div>
+        </footer>
+      </form>
     </div>
   );
 };

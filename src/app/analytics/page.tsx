@@ -1,11 +1,62 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { useTrading } from '../../context/TradingContext';
-import { TradingAccount, Trade } from '../../lib/types/financial';
-import { filterTradesByPeriod } from '../../lib/data/periodFilter';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import {
+  AlertTriangle,
+  Columns2,
+  Download,
+  Filter,
+  Printer,
+  ShieldAlert,
+  X,
+} from 'lucide-react';
+import { useTrading } from '@/context/TradingContext';
+import type { Trade, TradingAccount } from '@/lib/types/financial';
+import {
+  ANALYTICS_METRIC_DEFINITIONS,
+  type AnalyticsFilterState,
+  type AnalyticsPeriodFilter,
+  type CurveValueMode,
+  type DeskRuleMonitor,
+  buildEquityAndDrawdownSeries,
+  computeBreakdownRows,
+  computeDeskComparisonStats,
+  computeEdgeHeatmap,
+  computeFirmRuleMonitors,
+  computeRDistribution,
+  computeReconciliationConflicts,
+  computeSampleGuard,
+  computeStrategyAttribution,
+  computeStreaksAndClustering,
+  detectTradeQualitySupport,
+  filterTradesByAnalyticsControls,
+  getScopedTradePnl,
+  getShortDeskLabelFromAccount,
+  getTradeDateKey,
+  getTradeWeekdayLabel,
+  isSwingTrade,
+} from '@/lib/analytics/analyticsEngine';
+import {
+  CurrencyText,
+  SampleStatusPill,
+  downloadCsvFile,
+  formatPercentSigned,
+  formatRSigned,
+} from '@/components/analytics/AnalyticsShared';
+import {
+  DirectionSymbolBreakdownModule,
+  EdgeHeatmapModule,
+  EquityDrawdownModule,
+  FirmRuleMonitorModule,
+  RDistributionModule,
+  StrategyAttributionModule,
+  StreaksClusterModule,
+} from '@/components/analytics/AnalyticsCharts';
 
 type CompareMode = 'net' | 'ret' | 'win';
+
+const RULE_OVERRIDES_STORAGE_KEY = 'edgeledger_firm_rule_overrides_v1';
 
 function getAccountDotColor(acc: TradingAccount, index: number): string {
   const idLower = acc.id.toLowerCase();
@@ -13,16 +64,14 @@ function getAccountDotColor(acc: TradingAccount, index: number): string {
   if (idLower.includes('apex') || nameLower.includes('apex')) return 'var(--tw-a-apex)';
   if (idLower.includes('ftmo') || nameLower.includes('ftmo')) return 'var(--tw-a-ftmo)';
   if (idLower.includes('ic') || nameLower.includes('ic markets')) return 'var(--tw-a-ic)';
-  const fallback = ['var(--tw-a-apex)', 'var(--tw-a-ftmo)', 'var(--tw-a-ic)', 'var(--tw-s3)', 'var(--tw-s2)'];
+  const fallback = [
+    'var(--tw-a-apex)',
+    'var(--tw-a-ftmo)',
+    'var(--tw-a-ic)',
+    'var(--tw-s3)',
+    'var(--tw-s2)',
+  ];
   return fallback[index % fallback.length];
-}
-
-function getShortDeskLabel(acc: TradingAccount): string {
-  const nameLower = acc.name.toLowerCase();
-  if (nameLower.includes('apex')) return 'Apex 100K';
-  if (nameLower.includes('ftmo')) return 'FTMO 50K';
-  if (nameLower.includes('ic markets')) return 'IC Markets';
-  return acc.name;
 }
 
 export default function AnalyticsPage() {
@@ -30,772 +79,1349 @@ export default function AnalyticsPage() {
     accounts,
     selectedAccountId,
     setSelectedAccountId,
-    selectedAccount,
     trades,
-    filteredTrades,
+    strategies,
     periodFilter,
-    portfolioMetrics,
+    setPeriodFilter,
     isPnlHidden,
+    isLoaded,
+    syncStatus,
+    lastSyncedAt,
   } = useTrading();
 
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>(() =>
+    selectedAccountId && selectedAccountId !== 'ALL' ? [selectedAccountId] : []
+  );
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriodFilter>(periodFilter);
+  const [customStartDate, setCustomStartDate] = useState<string>('2024-01-01');
+  const [customEndDate, setCustomEndDate] = useState<string>('2026-12-31');
   const [compareMode, setCompareMode] = useState<CompareMode>('net');
+  const [excludeSwingFromSession, setExcludeSwingFromSession] = useState<boolean>(true);
+  const [curveMode, setCurveMode] = useState<CurveValueMode>('equity');
+  const [drilldown, setDrilldown] = useState<AnalyticsFilterState['drilldown']>(undefined);
 
-  const formatSignedCurrency = (val: number) => {
-    if (isPnlHidden) return `${val < 0 ? '−' : '+'}$••••••`;
-    const abs = Math.abs(val).toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+  const [compareOpen, setCompareOpen] = useState<boolean>(false);
+  const [compareDeskA, setCompareDeskA] = useState<string>('');
+  const [compareDeskB, setCompareDeskB] = useState<string>('');
+
+  const [ruleOverrides, setRuleOverrides] = useState<
+    Record<string, Partial<DeskRuleMonitor['config']>>
+  >(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const saved = window.localStorage.getItem(RULE_OVERRIDES_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    setAnalyticsPeriod(periodFilter);
+  }, [periodFilter]);
+
+  useEffect(() => {
+    if (selectedAccountId === 'ALL') {
+      setSelectedAccountIds([]);
+    } else if (selectedAccountId) {
+      setSelectedAccountIds([selectedAccountId]);
+    }
+  }, [selectedAccountId]);
+
+  useEffect(() => {
+    if (accounts.length >= 1 && !compareDeskA) {
+      setCompareDeskA(accounts[0].id);
+    }
+    if (accounts.length >= 2 && !compareDeskB) {
+      setCompareDeskB(accounts[1].id);
+    }
+  }, [accounts, compareDeskA, compareDeskB]);
+
+  const updateDeskRuleOverride = (
+    accountId: string,
+    patch: Partial<DeskRuleMonitor['config']>
+  ) => {
+    setRuleOverrides((prev) => {
+      const next = {
+        ...prev,
+        [accountId]: { ...(prev[accountId] || {}), ...patch },
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(RULE_OVERRIDES_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+      }
+      return next;
     });
-    if (val === 0) return '$0.00';
-    return `${val < 0 ? '−' : '+'}$${abs}`;
   };
 
-  const formatCurrency = (val: number) => {
-    if (isPnlHidden) return '$••••••';
-    return `$${val.toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
+  const resetDeskRuleOverride = (accountId: string) => {
+    setRuleOverrides((prev) => {
+      const next = { ...prev };
+      delete next[accountId];
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(RULE_OVERRIDES_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+      }
+      return next;
+    });
   };
 
-  const closedTrades = useMemo(
-    () => filterTradesByPeriod(filteredTrades, periodFilter).filter((t) => t.status === 'CLOSED'),
-    [filteredTrades, periodFilter]
+  const toggleDeskSelection = (accountId: string) => {
+    setSelectedAccountIds((prev) => {
+      const exists = prev.includes(accountId);
+      const next = exists ? prev.filter((id) => id !== accountId) : [...prev, accountId];
+      if (next.length === 0) {
+        setSelectedAccountId('ALL');
+      } else if (next.length === 1) {
+        setSelectedAccountId(next[0]);
+      }
+      return next;
+    });
+  };
+
+  const selectAllDesks = () => {
+    setSelectedAccountIds([]);
+    setSelectedAccountId('ALL');
+  };
+
+  const handlePeriodSelect = (nextPeriod: AnalyticsPeriodFilter) => {
+    setAnalyticsPeriod(nextPeriod);
+    if (nextPeriod === 'Week' || nextPeriod === 'Month' || nextPeriod === 'All time') {
+      setPeriodFilter(nextPeriod);
+    }
+  };
+
+  const filterState: AnalyticsFilterState = useMemo(
+    () => ({
+      selectedAccountIds,
+      period: analyticsPeriod,
+      customStartDate,
+      customEndDate,
+      excludeSwingFromSession,
+      drilldown: undefined,
+    }),
+    [selectedAccountIds, analyticsPeriod, customStartDate, customEndDate, excludeSwingFromSession]
   );
 
-  const getScopedTradePnl = (t: Trade) =>
-    selectedAccountId === 'ALL'
-      ? t.netPnl
-      : t.allocations.find((a) => a.accountId === selectedAccountId)?.netPnl || 0;
+  const liveScopedClosedTrades = useMemo(
+    () => filterTradesByAnalyticsControls(trades, accounts, filterState),
+    [trades, accounts, filterState]
+  );
 
-  // Per-account comparative statistics across all live accounts
-  const accountComparisonStats = useMemo(() => {
-    return accounts.map((acc, idx) => {
-      const accTrades = trades.filter(
-        (t) => t.status === 'CLOSED' && t.allocations.some((a) => a.accountId === acc.id)
-      );
+  const lastKnownSnapshotRef = useRef<{
+    closedTrades: Trade[];
+    timestampLabel: string;
+  }>({ closedTrades: [], timestampLabel: new Date().toLocaleString() });
 
-      let netPnl = 0;
-      let grossProfit = 0;
-      let grossLoss = 0;
-      let wins = 0;
-
-      accTrades.forEach((t) => {
-        const alloc = t.allocations.find((a) => a.accountId === acc.id);
-        if (!alloc) return;
-        netPnl += alloc.netPnl;
-        if (alloc.netPnl > 0) {
-          wins++;
-          grossProfit += alloc.netPnl;
-        } else if (alloc.netPnl < 0) {
-          grossLoss += Math.abs(alloc.netPnl);
-        }
-      });
-
-      const winRate = accTrades.length > 0 ? (wins / accTrades.length) * 100 : 0;
-      const hasNoLosses = grossLoss === 0 && grossProfit > 0;
-      const profitFactor =
-        grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0;
-      const returnPct =
-        acc.startingBalance > 0
-          ? ((acc.currentEquity - acc.startingBalance) / acc.startingBalance) * 100
-          : 0;
-      const drawdown = Math.max(0, acc.highWaterMark - acc.currentEquity);
-      const drawdownPct =
-        acc.highWaterMark > 0 ? (drawdown / acc.highWaterMark) * 100 : 0;
-
-      return {
-        id: acc.id,
-        name: acc.name,
-        shortLabel: getShortDeskLabel(acc),
-        color: getAccountDotColor(acc, idx),
-        startingBalance: acc.startingBalance,
-        currentEquity: acc.currentEquity,
-        netPnl: Math.round(netPnl * 100) / 100,
-        returnPct: Math.round(returnPct * 100) / 100,
-        winRate: Math.round(winRate * 10) / 10,
-        profitFactor,
-        hasNoLosses,
-        drawdownPct: Math.round(drawdownPct * 10) / 10,
-        equityDelta: acc.currentEquity - acc.startingBalance,
+  useEffect(() => {
+    if (syncStatus !== 'error' && isLoaded) {
+      lastKnownSnapshotRef.current = {
+        closedTrades: liveScopedClosedTrades,
+        timestampLabel: lastSyncedAt
+          ? new Date(lastSyncedAt).toLocaleString()
+          : new Date().toLocaleString(),
       };
-    });
-  }, [accounts, trades]);
-
-  const visibleComparisonStats = useMemo(() => {
-    if (selectedAccountId === 'ALL') return accountComparisonStats;
-    return accountComparisonStats.filter((a) => a.id === selectedAccountId);
-  }, [accountComparisonStats, selectedAccountId]);
-
-  // Real-time reconciliation checks
-  const reconciliationNotes = useMemo(() => {
-    const notes: string[] = [];
-    const allClosed = trades.filter((t) => t.status === 'CLOSED');
-    const consolidatedNet = allClosed.reduce((sum, t) => sum + t.netPnl, 0);
-    const deskAllocationSum = accountComparisonStats.reduce((sum, a) => sum + a.netPnl, 0);
-    const netGap = consolidatedNet - deskAllocationSum;
-
-    if (selectedAccountId === 'ALL' && Math.abs(netGap) >= 0.01) {
-      notes.push(
-        `Per-desk net sums to ${formatSignedCurrency(deskAllocationSum)}. Totals use ${formatSignedCurrency(consolidatedNet)}. Gap: ${formatCurrency(Math.abs(netGap))}.`
-      );
     }
+  }, [liveScopedClosedTrades, syncStatus, isLoaded, lastSyncedAt]);
 
-    const scopedStats =
-      selectedAccountId === 'ALL'
-        ? accountComparisonStats
-        : accountComparisonStats.filter((a) => a.id === selectedAccountId);
+  const scopedClosedTrades =
+    syncStatus === 'error' && liveScopedClosedTrades.length === 0
+      ? lastKnownSnapshotRef.current.closedTrades
+      : liveScopedClosedTrades;
 
-    scopedStats.forEach((desk) => {
-      const expected = desk.startingBalance + desk.netPnl;
-      if (Math.abs(expected - desk.currentEquity) >= 0.01) {
-        notes.push(
-          `${desk.shortLabel}: ${formatCurrency(desk.startingBalance)} ${desk.netPnl >= 0 ? '+' : '−'} ${formatCurrency(Math.abs(desk.netPnl))} net ≠ ${formatCurrency(desk.currentEquity)} equity.`
-        );
-      }
+  const ledgerTrades = useMemo(() => {
+    if (!drilldown) return scopedClosedTrades;
+    return filterTradesByAnalyticsControls(trades, accounts, {
+      ...filterState,
+      drilldown,
     });
+  }, [scopedClosedTrades, trades, accounts, filterState, drilldown]);
 
-    return notes;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trades, accountComparisonStats, selectedAccountId, isPnlHidden]);
+  const sampleGuard = useMemo(
+    () => computeSampleGuard(scopedClosedTrades),
+    [scopedClosedTrades]
+  );
 
-  // Direction breakdown (Long vs Short)
-  const directionStats = useMemo(() => {
-    const longs = closedTrades.filter((t) => t.direction === 'BUY');
-    const shorts = closedTrades.filter((t) => t.direction === 'SELL');
+  const periodClosedAllDesks = useMemo(
+    () =>
+      filterTradesByAnalyticsControls(trades, accounts, {
+        ...filterState,
+        selectedAccountIds: [],
+      }),
+    [trades, accounts, filterState]
+  );
 
-    const longPnl = longs.reduce((sum, t) => sum + getScopedTradePnl(t), 0);
-    const shortPnl = shorts.reduce((sum, t) => sum + getScopedTradePnl(t), 0);
+  const deskComparisonStats = useMemo(
+    () => computeDeskComparisonStats(accounts, periodClosedAllDesks),
+    [accounts, periodClosedAllDesks]
+  );
 
-    const longWins = longs.filter((t) => getScopedTradePnl(t) > 0).length;
-    const shortWins = shorts.filter((t) => getScopedTradePnl(t) > 0).length;
+  const visibleDesks = useMemo(
+    () =>
+      selectedAccountIds.length === 0
+        ? accounts
+        : accounts.filter((a) => selectedAccountIds.includes(a.id)),
+    [accounts, selectedAccountIds]
+  );
 
-    return {
-      totalNet: longPnl + shortPnl,
-      totalWins: longWins + shortWins,
-      totalCount: closedTrades.length,
-      longCount: longs.length,
-      longPnl,
-      longWinRate: longs.length > 0 ? Math.round((longWins / longs.length) * 100) : 0,
-      shortCount: shorts.length,
-      shortPnl,
-      shortWinRate: shorts.length > 0 ? Math.round((shortWins / shorts.length) * 100) : 0,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closedTrades, selectedAccountId]);
+  const visibleDeskStats = useMemo(
+    () =>
+      selectedAccountIds.length === 0
+        ? deskComparisonStats
+        : deskComparisonStats.filter((d) => selectedAccountIds.includes(d.id)),
+    [deskComparisonStats, selectedAccountIds]
+  );
 
-  // KPI metrics scoped cleanly
-  const kpiStats = useMemo(() => {
-    let grossWin = 0;
+  const dateRangeLabel = useMemo(() => {
+    if (scopedClosedTrades.length === 0) return analyticsPeriod;
+    const dates = scopedClosedTrades.map(getTradeDateKey).sort();
+    const first = dates[0];
+    const last = dates[dates.length - 1];
+    return first === last ? first : `${first} to ${last}`;
+  }, [scopedClosedTrades, analyticsPeriod]);
+
+  const reconciliation = useMemo(
+    () =>
+      computeReconciliationConflicts({
+        allClosedTrades: periodClosedAllDesks,
+        deskStats: deskComparisonStats,
+        selectedAccountIds,
+        allAccountsCount: accounts.length,
+        reportYear: new Date().getFullYear(),
+      }),
+    [periodClosedAllDesks, deskComparisonStats, selectedAccountIds, accounts.length]
+  );
+
+  const headlineMetrics = useMemo(() => {
+    let netPnl = 0;
+    let grossProfit = 0;
     let grossLoss = 0;
     let wins = 0;
-    let losses = 0;
+    let totalR = 0;
+    let rWins = 0;
+    let rLosses = 0;
+    let winCount = 0;
+    let lossCount = 0;
 
-    closedTrades.forEach((t) => {
-      const pnl = getScopedTradePnl(t);
-      if (pnl > 0) {
-        grossWin += pnl;
+    for (const t of scopedClosedTrades) {
+      const p = getScopedTradePnl(t, selectedAccountIds, accounts.length);
+      const rVal = Number.isFinite(t.realizedR) ? t.realizedR : 0;
+      netPnl += p;
+      totalR += rVal;
+      if (p > 0) {
         wins++;
-      } else if (pnl < 0) {
-        grossLoss += Math.abs(pnl);
-        losses++;
+        winCount++;
+        grossProfit += p;
+        rWins += rVal;
+      } else if (p < 0) {
+        lossCount++;
+        grossLoss += Math.abs(p);
+        rLosses += Math.abs(rVal);
       }
-    });
+    }
 
-    const net = grossWin - grossLoss;
-    const count = closedTrades.length;
-    const avgWin = wins > 0 ? grossWin / wins : 0;
-    const avgLoss = losses > 0 ? grossLoss / losses : 0;
-    const expectancy = count > 0 ? net / count : 0;
-    const profitFactor =
-      grossLoss > 0 ? (grossWin / grossLoss).toFixed(2) : grossWin > 0 ? '∞' : '0.00';
-    const winLossRatio =
-      avgLoss > 0 ? `${(avgWin / avgLoss).toFixed(2)}:1` : avgWin > 0 ? '∞:1' : '0.00:1';
+    const n = scopedClosedTrades.length;
+    const startCap = visibleDesks.reduce((s, a) => s + a.startingBalance, 0);
+    const totalEquity = visibleDesks.reduce((s, a) => s + a.currentEquity, 0);
+    const returnPct = startCap > 0 ? (netPnl / startCap) * 100 : 0;
+    const winRatePct = n > 0 ? (wins / n) * 100 : 0;
+    const expectancyUsd = n > 0 ? netPnl / n : 0;
+    const expectancyR = n > 0 ? totalR / n : 0;
+    const avgWinUsd = winCount > 0 ? grossProfit / winCount : 0;
+    const avgLossUsd = lossCount > 0 ? grossLoss / lossCount : 0;
+    const avgWinR = winCount > 0 ? rWins / winCount : 0;
+    const avgLossR = lossCount > 0 ? rLosses / lossCount : 0;
 
-    const maxDdDollars =
-      (portfolioMetrics.totalEquity * portfolioMetrics.maxDrawdownPct) / 100;
-    const recoveryFactor =
-      maxDdDollars > 0
-        ? (net / maxDdDollars).toFixed(2)
-        : net > 0
-        ? 'No DD'
-        : '0.00';
+    let profitFactorLabel = '—';
+    if (n === 0) {
+      profitFactorLabel = '—';
+    } else if (grossLoss === 0 && grossProfit > 0) {
+      profitFactorLabel = 'No losing trades';
+    } else if (sampleGuard.isInsufficientForRatio) {
+      profitFactorLabel = 'Insufficient sample';
+    } else {
+      profitFactorLabel = (grossProfit / grossLoss).toFixed(2);
+    }
 
     return {
-      net,
+      n,
+      netPnl,
+      grossProfit,
+      grossLoss,
       wins,
-      losses,
-      avgWin,
-      avgLoss,
-      expectancy,
-      profitFactor,
-      winLossRatio,
-      recoveryFactor,
+      winCount,
+      lossCount,
+      startCap,
+      totalEquity,
+      returnPct,
+      winRatePct,
+      expectancyUsd,
+      expectancyR,
+      avgWinUsd,
+      avgLossUsd,
+      avgWinR,
+      avgLossR,
+      profitFactorLabel,
+      winRateLabel: sampleGuard.isInsufficientForRatio ? 'Insufficient sample' : `${winRatePct.toFixed(1)}%`,
+      sharpeLabel: sampleGuard.hasEnoughTradingDays ? 'Active' : 'Needs 30 trading days',
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closedTrades, selectedAccountId, portfolioMetrics]);
+  }, [scopedClosedTrades, selectedAccountIds, accounts.length, visibleDesks, sampleGuard]);
 
-  // Session breakdown
+  const equityDrawdown = useMemo(
+    () => buildEquityAndDrawdownSeries(accounts, scopedClosedTrades, selectedAccountIds),
+    [accounts, scopedClosedTrades, selectedAccountIds]
+  );
+
+  const firmRuleMonitors = useMemo(
+    () => computeFirmRuleMonitors(visibleDesks, scopedClosedTrades, ruleOverrides),
+    [visibleDesks, scopedClosedTrades, ruleOverrides]
+  );
+
+  const rDist = useMemo(
+    () => computeRDistribution(scopedClosedTrades, selectedAccountIds, accounts.length),
+    [scopedClosedTrades, selectedAccountIds, accounts.length]
+  );
+
+  const edgeHeatmap = useMemo(
+    () => computeEdgeHeatmap(scopedClosedTrades, excludeSwingFromSession),
+    [scopedClosedTrades, excludeSwingFromSession]
+  );
+
+  const strategyAttribution = useMemo(
+    () => computeStrategyAttribution(strategies, scopedClosedTrades, selectedAccountIds, accounts.length),
+    [strategies, scopedClosedTrades, selectedAccountIds, accounts.length]
+  );
+
+  const streaksCluster = useMemo(
+    () => computeStreaksAndClustering(scopedClosedTrades, selectedAccountIds, accounts.length),
+    [scopedClosedTrades, selectedAccountIds, accounts.length]
+  );
+
+  const directionBreakdown = useMemo(
+    () =>
+      computeBreakdownRows(
+        scopedClosedTrades,
+        (t) => ({ key: t.direction, label: t.direction === 'BUY' ? 'Long (BUY)' : 'Short (SELL)' }),
+        selectedAccountIds,
+        accounts.length
+      ),
+    [scopedClosedTrades, selectedAccountIds, accounts.length]
+  );
+
+  const symbolBreakdown = useMemo(
+    () =>
+      computeBreakdownRows(
+        scopedClosedTrades,
+        (t) => ({ key: t.instrumentSymbol, label: t.instrumentSymbol }),
+        selectedAccountIds,
+        accounts.length
+      ),
+    [scopedClosedTrades, selectedAccountIds, accounts.length]
+  );
+
+  const tradeQuality = useMemo(
+    () => detectTradeQualitySupport(scopedClosedTrades),
+    [scopedClosedTrades]
+  );
+
   const sessionColumns = useMemo(() => {
-    const order = ['London', 'New York', 'Asia'];
-    const map: Record<string, { pnl: number; hasHtfSwing: boolean }> = {};
+    const names = ['London', 'New York', 'Asian', 'Sydney'] as const;
+    const tradesForSessions = excludeSwingFromSession
+      ? scopedClosedTrades.filter((t) => !isSwingTrade(t))
+      : scopedClosedTrades;
 
-    closedTrades.forEach((t) => {
-      const sess = t.session || 'London';
-      if (!map[sess]) map[sess] = { pnl: 0, hasHtfSwing: false };
-      map[sess].pnl += getScopedTradePnl(t);
-      if (t.strategyId === 'strat-htf-orderflow') {
-        map[sess].hasHtfSwing = true;
+    const map = new Map<string, { total: number; count: number }>();
+    for (const n of names) map.set(n, { total: 0, count: 0 });
+
+    for (const t of tradesForSessions) {
+      const s = t.session === 'London Close' ? 'New York' : t.session;
+      const cur = map.get(s);
+      if (cur) {
+        cur.total += getScopedTradePnl(t, selectedAccountIds, accounts.length);
+        cur.count += 1;
       }
-    });
-
-    const entries = Object.entries(map).sort((a, b) => {
-      const ia = order.indexOf(a[0]);
-      const ib = order.indexOf(b[0]);
-      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-    });
-
-    const maxAbs = Math.max(1, ...entries.map(([, v]) => Math.abs(v.pnl)));
-
-    return {
-      maxAbs,
-      hasHtfInNy: Boolean(map['New York']?.hasHtfSwing),
-      items: entries.map(([name, v], idx) => ({
+    }
+    const maxAbs = Math.max(
+      1,
+      ...Array.from(map.values()).map((v) => Math.abs(v.total))
+    );
+    return names.map((name) => {
+      const entry = map.get(name) || { total: 0, count: 0 };
+      return {
         name,
-        pnl: v.pnl,
-        color:
-          name === 'London'
-            ? 'var(--tw-s1)'
-            : name === 'New York'
-            ? 'var(--tw-s2)'
-            : STRATEGY_COLOR_FALLBACK(idx),
-        heightPct: Math.max(2, Math.round((Math.abs(v.pnl) / maxAbs) * 84)),
-      })),
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closedTrades, selectedAccountId]);
+        total: entry.total,
+        count: entry.count,
+        heightPct: entry.count === 0 ? 4 : Math.max(10, Math.round((Math.abs(entry.total) / maxAbs) * 86)),
+      };
+    });
+  }, [scopedClosedTrades, excludeSwingFromSession, selectedAccountIds, accounts.length]);
 
-  // Weekday breakdown (Mon-Fri using UTC day of closed entry/execution so dates stay deterministic)
   const weekdayColumns = useMemo(() => {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-    const totals: Record<string, number> = {
-      Mon: 0,
-      Tue: 0,
-      Wed: 0,
-      Thu: 0,
-      Fri: 0,
-    };
-
-    closedTrades.forEach((t) => {
-      const d = new Date(t.createdAt);
-      const utcDay = d.getUTCDay(); // 0=Sun..6=Sat
-      const idx = utcDay - 1;
-      if (idx >= 0 && idx < 5) {
-        totals[days[idx]] += getScopedTradePnl(t);
+    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const;
+    const map = new Map<string, { total: number; count: number }>();
+    for (const n of names) map.set(n, { total: 0, count: 0 });
+    for (const t of scopedClosedTrades) {
+      const w = getTradeWeekdayLabel(t);
+      const cur = map.get(w);
+      if (cur) {
+        cur.total += getScopedTradePnl(t, selectedAccountIds, accounts.length);
+        cur.count += 1;
       }
-    });
-
-    const maxAbs = Math.max(1, ...Object.values(totals).map((v) => Math.abs(v)));
-
-    return days.map((day) => {
-      const pnl = totals[day];
+    }
+    const maxAbs = Math.max(
+      1,
+      ...Array.from(map.values()).map((v) => Math.abs(v.total))
+    );
+    return names.map((name) => {
+      const entry = map.get(name) || { total: 0, count: 0 };
       return {
-        day,
-        pnl,
-        heightPct: pnl === 0 ? 1 : Math.max(4, Math.round((Math.abs(pnl) / maxAbs) * 84)),
+        name,
+        total: entry.total,
+        count: entry.count,
+        heightPct: entry.count === 0 ? 4 : Math.max(10, Math.round((Math.abs(entry.total) / maxAbs) * 86)),
       };
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closedTrades, selectedAccountId]);
+  }, [scopedClosedTrades, selectedAccountIds, accounts.length]);
 
-  // Horizontal divergence chart scale
   const matrixScale = useMemo(() => {
+    if (visibleDeskStats.length === 0) return 1;
     if (compareMode === 'net') {
-      const vals = accountComparisonStats.map((a) => a.netPnl);
-      const min = Math.min(-500, ...vals);
-      const max = Math.max(1000, ...vals) * 1.08;
-      return {
-        min,
-        max,
-        label: 'Net realized P&L ($)',
-        format: (v: number) => formatSignedCurrency(v),
-        getValue: (a: (typeof accountComparisonStats)[number]) => a.netPnl,
-      };
+      return Math.max(1, ...visibleDeskStats.map((d) => Math.abs(d.netPnl)));
     }
     if (compareMode === 'ret') {
-      const vals = accountComparisonStats.map((a) => a.returnPct);
-      const min = Math.min(0, ...vals);
-      return {
-        min,
-        max: Math.max(10, ...vals.map((x) => Math.ceil(x * 1.15))),
-        label: 'Growth on starting base (%)',
-        format: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`,
-        getValue: (a: (typeof accountComparisonStats)[number]) => a.returnPct,
-      };
+      return Math.max(1, ...visibleDeskStats.map((d) => Math.abs(d.returnPct)));
     }
-    return {
-      min: 0,
-      max: 100,
-      label: 'Win rate (%)',
-      format: (v: number) => `${v.toFixed(1)}%`,
-      getValue: (a: (typeof accountComparisonStats)[number]) => a.winRate,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compareMode, accountComparisonStats, isPnlHidden]);
+    return 100;
+  }, [visibleDeskStats, compareMode]);
 
-  const pctOnScale = (x: number) => {
-    const span = Math.max(1, matrixScale.max - matrixScale.min);
-    return Math.min(100, Math.max(0, ((x - matrixScale.min) / span) * 100));
+  const deskAStat = deskComparisonStats.find((d) => d.id === compareDeskA);
+  const deskBStat = deskComparisonStats.find((d) => d.id === compareDeskB);
+
+  const hasAquaDeskInState = accounts.some((a) =>
+    a.name.toLowerCase().includes('aqua') || a.id.toLowerCase().includes('aqua')
+  );
+
+  const exportFullLedgerCsv = () => {
+    const headers = [
+      'Trade ID',
+      'Date',
+      'Weekday',
+      'Session',
+      'Symbol',
+      'Direction',
+      'Strategy',
+      'Realized R',
+      'Scoped Net USD',
+      'Status',
+    ];
+    const rows = ledgerTrades.map((t) => [
+      t.id,
+      getTradeDateKey(t),
+      getTradeWeekdayLabel(t),
+      t.session || 'Unassigned',
+      t.instrumentSymbol,
+      t.direction,
+      t.strategyName || t.strategyId || '—',
+      (Number.isFinite(t.realizedR) ? t.realizedR : 0).toFixed(2),
+      getScopedTradePnl(t, selectedAccountIds, accounts.length).toFixed(2),
+      t.status,
+    ]);
+    downloadCsvFile('edgeledger-analytics-ledger.csv', headers, rows);
   };
-
-  const zeroPct = pctOnScale(0);
-  const overallWinRatePct =
-    directionStats.totalCount > 0
-      ? ((directionStats.totalWins / directionStats.totalCount) * 100).toFixed(1)
-      : '0.0';
 
   return (
     <div className="tw-page-wrap">
-      {/* Page Header */}
       <section className="tw-page-head">
         <div>
-          <div className="tw-eyebrow">Analytics · single desk and multi-account</div>
-          <h1 className="tw-page-title">Quantitative performance</h1>
+          <div className="tw-eyebrow">EdgeLedger Quantitative Desk</div>
+          <h1 className="tw-page-title">Performance Analytics</h1>
           <p className="tw-page-lede">
-            Diagnostics and comparison across desks. Every figure states its sample and source.
+            Single-ledger multi-desk attribution, equity/drawdown landmarks, firm-rule monitors, and R-multiple analysis.
           </p>
         </div>
-        <span className="tw-sample-pill">
-          Sample: {closedTrades.length} closed {closedTrades.length === 1 ? 'trade' : 'trades'}
-        </span>
+        <div>
+          <SampleStatusPill
+            n={headlineMetrics.n}
+            insufficientLabel={sampleGuard.isInsufficientForRatio ? 'Insufficient sample (< 5) for ratios' : undefined}
+          />
+        </div>
       </section>
 
-      <main className="tw-bento-12">
-        {/* Analytics Scope Bar */}
-        <div className="tw-bento-tile tw-ana-scope" aria-label="Scope">
-          <div className="tw-pill-seg" role="group" aria-label="Analytics scope">
-            <button
-              type="button"
-              aria-pressed={selectedAccountId === 'ALL'}
-              onClick={() => setSelectedAccountId('ALL')}
-            >
-              All desks
-            </button>
-            {accounts.map((acc, idx) => (
+      <main className="tw-bento-12" aria-label="EdgeLedger Quantitative Analytics">
+
+        {!isLoaded && (
+          <div className="tw-bento-tile tw-ana-banner" role="status" aria-live="polite">
+            <span>Loading EdgeLedger desk dataset and computing analytics...</span>
+          </div>
+        )}
+
+        {syncStatus === 'error' && (
+          <div className="tw-ana-banner warn" role="alert">
+            <span>
+              <AlertTriangle size={15} style={{ display: 'inline', marginRight: 6 }} aria-hidden="true" />
+              Cloud sync interrupted. Showing last known computed snapshot from{' '}
+              <strong>{lastKnownSnapshotRef.current.timestampLabel}</strong>.
+            </span>
+          </div>
+        )}
+
+        <section className="tw-bento-tile tw-ana-controls-bar" aria-label="Analytics filters and controls">
+          <div className="tw-ana-controls-row">
+            <div className="tw-ana-desk-pills" role="group" aria-label="Multi-select trading desks">
               <button
-                key={acc.id}
                 type="button"
-                aria-pressed={selectedAccountId === acc.id}
-                onClick={() => setSelectedAccountId(acc.id)}
+                className={`tw-ana-chip-btn ${selectedAccountIds.length === 0 ? 'on' : ''}`}
+                aria-pressed={selectedAccountIds.length === 0}
+                onClick={selectAllDesks}
               >
-                <span
-                  className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
-                  style={{ background: getAccountDotColor(acc, idx) }}
-                />
-                <span>{getShortDeskLabel(acc)}</span>
+                All Desks ({accounts.length})
               </button>
-            ))}
-          </div>
-
-          <span
-            className="font-mono text-[13px]"
-            style={{ color: 'var(--tw-ink-3)' }}
-          >
-            Viewing: {selectedAccountId === 'ALL' ? 'multi-account comparison' : selectedAccount?.name}
-          </span>
-        </div>
-
-        {/* Hero + Reconciliation Card */}
-        <article className="tw-bento-tile tw-ana-hero tw-ana-span8">
-          <div>
-            <div className="tw-alab">
-              Net realized ·{' '}
-              {selectedAccountId === 'ALL' || !selectedAccount
-                ? 'all desks'
-                : getShortDeskLabel(selectedAccount)}
-            </div>
-            <div className="tw-abig">{formatSignedCurrency(directionStats.totalNet)}</div>
-            <p>
-              Win rate {overallWinRatePct}% ({directionStats.totalWins} of {directionStats.totalCount}). Long{' '}
-              {formatSignedCurrency(directionStats.longPnl)} across {directionStats.longCount}{' '}
-              {directionStats.longCount === 1 ? 'trade' : 'trades'}; short{' '}
-              {formatSignedCurrency(directionStats.shortPnl)} from {directionStats.shortCount}{' '}
-              {directionStats.shortCount === 1 ? 'trade' : 'trades'}.
-            </p>
-          </div>
-
-          <div className={`tw-ana-recon ${reconciliationNotes.length === 0 ? 'clean' : ''}`}>
-            <h3>
-              {reconciliationNotes.length > 0
-                ? 'Totals do not reconcile'
-                : 'Ledger & equity reconciled'}
-            </h3>
-            {reconciliationNotes.length > 0 ? (
-              <ul>
-                {reconciliationNotes.map((note, idx) => (
-                  <li key={idx}>{note}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-[13px] m-0" style={{ color: 'var(--tw-ink-2)' }}>
-                Per-desk closed allocations match account balances and consolidated totals.
-              </p>
-            )}
-          </div>
-        </article>
-
-        {/* Chart Metric Toggle Card */}
-        <article className="tw-bento-tile tw-ana-span4" aria-label="Chart controls">
-          <div className="tw-eyebrow !mb-2">Metric</div>
-          <div className="tw-pill-seg w-full mt-2" role="group" aria-label="Chart metric">
-            <button
-              type="button"
-              className="flex-1 justify-center"
-              aria-pressed={compareMode === 'net'}
-              onClick={() => setCompareMode('net')}
-            >
-              Net P&amp;L
-            </button>
-            <button
-              type="button"
-              className="flex-1 justify-center"
-              aria-pressed={compareMode === 'ret'}
-              onClick={() => setCompareMode('ret')}
-            >
-              Return
-            </button>
-            <button
-              type="button"
-              className="flex-1 justify-center"
-              aria-pressed={compareMode === 'win'}
-              onClick={() => setCompareMode('win')}
-            >
-              Win rate
-            </button>
-          </div>
-          <p className="text-xs mt-3 leading-relaxed" style={{ color: 'var(--tw-ink-3)' }}>
-            Bars are drawn from the zero line. Net and return use their own scales.
-          </p>
-        </article>
-
-        {/* Multi-Account Comparison Matrix */}
-        <article className="tw-bento-tile tw-ana-span12">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <div>
-              <h2 className="text-base font-semibold m-0 mb-1" style={{ color: 'var(--tw-ink)' }}>
-                Multi-account comparison
-              </h2>
-              <span className="tw-eyebrow !mb-0">{matrixScale.label}</span>
-            </div>
-          </div>
-
-          {/* Horizontal Zero-Origin Rail Chart */}
-          <div className="tw-ana-rows">
-            {visibleComparisonStats.map((desk) => {
-              const v = matrixScale.getValue(desk);
-              const valPct = pctOnScale(v);
-              const left = Math.min(zeroPct, valPct);
-              const width = Math.max(1.2, Math.abs(valPct - zeroPct));
-
-              return (
-                <div key={desk.id} className="tw-ana-row">
-                  <div className="tw-anm">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
-                      style={{ background: desk.color }}
-                    />
-                    <span className="truncate">{desk.name}</span>
-                  </div>
-                  <div
-                    className="tw-ana-rail"
-                    role="img"
-                    aria-label={`${desk.name}: ${matrixScale.format(v)}`}
+              {accounts.map((acc, idx) => {
+                const isSelected = selectedAccountIds.includes(acc.id);
+                return (
+                  <button
+                    key={acc.id}
+                    type="button"
+                    className={`tw-ana-chip-btn ${isSelected ? 'on' : ''}`}
+                    aria-pressed={isSelected}
+                    onClick={() => toggleDeskSelection(acc.id)}
                   >
-                    <span className="tw-ana-zero" style={{ left: `${zeroPct}%` }} />
                     <span
-                      className="tw-ana-bar"
                       style={{
-                        left: `${left}%`,
-                        width: `${width}%`,
-                        background: desk.color,
+                        width: 8,
+                        height: 8,
+                        borderRadius: 999,
+                        background: getAccountDotColor(acc, idx),
                       }}
+                      aria-hidden="true"
                     />
-                  </div>
-                  <div
-                    className="tw-aval"
-                    style={{ color: v < 0 ? 'var(--tw-loss)' : 'var(--tw-ink)' }}
+                    <span>{getShortDeskLabelFromAccount(acc)}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="tw-seg" role="group" aria-label="Analytics time period">
+              {(['Week', 'Month', 'All time', 'Custom'] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={analyticsPeriod === p ? 'on' : ''}
+                  aria-pressed={analyticsPeriod === p}
+                  onClick={() => handlePeriodSelect(p)}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="tw-ana-controls-row">
+            <div className="tw-ana-desk-pills">
+              {analyticsPeriod === 'Custom' && (
+                <div className="tw-ana-custom-dates">
+                  <label>
+                    <span className="sr-only">Custom start date</span>
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => setCustomStartDate(e.target.value)}
+                      aria-label="Custom range start date"
+                    />
+                  </label>
+                  <span>to</span>
+                  <label>
+                    <span className="sr-only">Custom end date</span>
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => setCustomEndDate(e.target.value)}
+                      aria-label="Custom range end date"
+                    />
+                  </label>
+                </div>
+              )}
+
+              <div className="tw-seg" role="group" aria-label="Comparison metric toggle">
+                <button
+                  type="button"
+                  className={compareMode === 'net' ? 'on' : ''}
+                  aria-pressed={compareMode === 'net'}
+                  onClick={() => setCompareMode('net')}
+                >
+                  Net P&amp;L
+                </button>
+                <button
+                  type="button"
+                  className={compareMode === 'ret' ? 'on' : ''}
+                  aria-pressed={compareMode === 'ret'}
+                  onClick={() => setCompareMode('ret')}
+                >
+                  Growth %
+                </button>
+                <button
+                  type="button"
+                  className={compareMode === 'win' ? 'on' : ''}
+                  aria-pressed={compareMode === 'win'}
+                  onClick={() => setCompareMode('win')}
+                >
+                  Win rate
+                </button>
+              </div>
+            </div>
+
+            <div className="tw-ana-desk-pills">
+              <button
+                type="button"
+                className={`tw-ana-chip-btn ${excludeSwingFromSession ? 'on' : ''}`}
+                aria-pressed={excludeSwingFromSession}
+                onClick={() => setExcludeSwingFromSession((v) => !v)}
+              >
+                Swing Rule: {excludeSwingFromSession ? 'Excluded from Session' : 'Included in Session'}
+              </button>
+
+              <button
+                type="button"
+                className={`tw-ana-chip-btn ${compareOpen ? 'on' : ''}`}
+                aria-pressed={compareOpen}
+                onClick={() => setCompareOpen((v) => !v)}
+              >
+                <Columns2 size={14} aria-hidden="true" />
+                <span>Compare 2 Desks</span>
+              </button>
+
+              <button type="button" className="tw-ana-icon-btn" onClick={exportFullLedgerCsv}>
+                <Download size={13} aria-hidden="true" />
+                <span>Export CSV</span>
+              </button>
+
+              <button
+                type="button"
+                className="tw-ana-icon-btn"
+                onClick={() => typeof window !== 'undefined' && window.print()}
+              >
+                <Printer size={13} aria-hidden="true" />
+                <span>Print 1-Page Summary</span>
+              </button>
+            </div>
+          </div>
+
+          {drilldown && (
+            <div className="tw-ana-controls-row">
+              <div className="tw-ana-desk-pills" role="status">
+                <span className="tw-ana-chip-btn on">
+                  <Filter size={13} aria-hidden="true" />
+                  <span>Active Filter: {drilldown.label}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove filter ${drilldown.label}`}
+                    onClick={() => setDrilldown(undefined)}
+                    style={{
+                      background: 'transparent',
+                      border: 0,
+                      color: 'inherit',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                    }}
                   >
-                    {matrixScale.format(v)}
+                    <X size={14} />
+                  </button>
+                </span>
+                <span className="tw-ana-mod-sub">
+                  Showing {ledgerTrades.length} matching closed trade(s) in Ledger below.
+                </span>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {scopedClosedTrades.length === 0 ? (
+          <section className="tw-bento-tile tw-ana-span12" aria-label="Empty analytics state">
+            <h2 className="tw-h">No closed trades match the selected scope</h2>
+            <p className="tw-ana-mod-sub" style={{ marginTop: 8 }}>
+              Select &ldquo;All time&rdquo; or enable additional trading desks above, or record a closed trade in the journal.
+            </p>
+            <div style={{ marginTop: 14 }}>
+              <Link href="/trades" className="tw-ana-chip-btn on">
+                Open Trade Log
+              </Link>
+            </div>
+          </section>
+        ) : (
+          <>
+            <section className="tw-bento-tile tw-ana-hero tw-ana-span12" aria-label="Portfolio performance summary and reconciliation">
+              <div>
+                <div className="tw-alab">
+                  {selectedAccountIds.length === 1 && visibleDesks[0]
+                    ? `${getShortDeskLabelFromAccount(visibleDesks[0])} · Single-Desk View`
+                    : selectedAccountIds.length > 1
+                    ? `${selectedAccountIds.length} Selected Desks`
+                    : 'All Desks Consolidated'}{' '}
+                  · {dateRangeLabel}
+                </div>
+                <div className="tw-abig">
+                  <CurrencyText amount={headlineMetrics.netPnl} isPnlHidden={isPnlHidden} />
+                </div>
+                <p>
+                  {formatPercentSigned(headlineMetrics.returnPct)} combined return on{' '}
+                  <CurrencyText amount={headlineMetrics.startCap} isPnlHidden={isPnlHidden} signed={false} />{' '}
+                  allocated start · {headlineMetrics.n} closed trade(s) ({headlineMetrics.wins}W / {headlineMetrics.lossCount}L) · Expectancy{' '}
+                  <strong>{formatRSigned(headlineMetrics.expectancyR)}</strong>
+                </p>
+              </div>
+
+              <div className={`tw-ana-recon ${reconciliation.messages.length === 0 ? 'clean' : ''}`}>
+                <h3>
+                  <ShieldAlert size={15} style={{ display: 'inline', marginRight: 6 }} aria-hidden="true" />
+                  Data Reconciliation &amp; Open Conflicts ({reconciliation.messages.length})
+                </h3>
+                {reconciliation.messages.length === 0 ? (
+                  <ul>
+                    <li>All selected desk allocations and ledger totals reconcile without open gaps.</li>
+                  </ul>
+                ) : (
+                  <ul>
+                    {reconciliation.messages.map((msg, i) => (
+                      <li key={i}>{msg}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </section>
+
+            {compareOpen && accounts.length >= 2 && (
+              <section className="tw-bento-tile tw-ana-span12" aria-label="Side-by-side two-desk comparison">
+                <div className="tw-ana-mod-head">
+                  <div className="tw-ana-mod-titles">
+                    <h2 className="tw-h">Compare Two Desks Side-by-Side</h2>
+                    <p className="tw-ana-mod-sub">
+                      Direct quantitative comparison with delta (Desk A − Desk B)
+                    </p>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-
-          {/* Desk Breakdown Table */}
-          <div className="tw-ana-table-wrap">
-            <table className="tw-ana-table">
-              <thead>
-                <tr>
-                  <th>Account desk</th>
-                  <th>Starting base</th>
-                  <th>Current equity</th>
-                  <th>Net realized</th>
-                  <th>Growth</th>
-                  <th>Win rate</th>
-                  <th>Profit factor</th>
-                  <th>Drawdown</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleComparisonStats.map((desk) => (
-                  <tr key={desk.id} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02]">
-                    <td>
-                      <span
-                        className="w-2.5 h-2.5 rounded-full inline-block mr-2 align-middle"
-                        style={{ background: desk.color }}
-                      />
-                      {desk.name}
-                    </td>
-                    <td style={{ color: 'var(--tw-ink-3)' }}>
-                      {formatCurrency(desk.startingBalance)}
-                    </td>
-                    <td>{formatCurrency(desk.currentEquity)}</td>
-                    <td
-                      style={{
-                        color:
-                          desk.netPnl > 0
-                            ? 'var(--tw-gain)'
-                            : desk.netPnl < 0
-                            ? 'var(--tw-loss)'
-                            : 'var(--tw-ink)',
-                      }}
+                <div className="tw-ana-compare-grid">
+                  <label>
+                    <span className="tw-ana-mod-sub">Desk A</span>
+                    <select
+                      className="tw-ana-select"
+                      value={compareDeskA}
+                      onChange={(e) => setCompareDeskA(e.target.value)}
                     >
-                      {formatSignedCurrency(desk.netPnl)}
-                    </td>
-                    <td
-                      style={{
-                        color: desk.returnPct >= 0 ? 'var(--tw-gain)' : 'var(--tw-loss)',
-                      }}
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span className="tw-ana-mod-sub">Desk B</span>
+                    <select
+                      className="tw-ana-select"
+                      value={compareDeskB}
+                      onChange={(e) => setCompareDeskB(e.target.value)}
                     >
-                      {desk.returnPct >= 0 ? '+' : ''}
-                      {desk.returnPct.toFixed(2)}%
-                    </td>
-                    <td>{desk.winRate.toFixed(1)}%</td>
-                    <td
-                      style={{
-                        color: desk.hasNoLosses ? 'var(--tw-ink-3)' : 'var(--tw-ink)',
-                      }}
-                    >
-                      {desk.hasNoLosses
-                        ? 'No losing trades'
-                        : Number.isFinite(desk.profitFactor)
-                        ? desk.profitFactor.toFixed(2)
-                        : '0.00'}
-                    </td>
-                    <td
-                      style={{
-                        color: desk.drawdownPct > 0 ? 'var(--tw-loss)' : 'var(--tw-ink-3)',
-                      }}
-                    >
-                      {desk.drawdownPct.toFixed(1)}%
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
 
-          <p className="text-xs mt-3 mb-0" style={{ color: 'var(--tw-ink-3)' }}>
-            Profit factor shows &ldquo;No losing trades&rdquo; where a desk has no losses, instead of a capped 99.90.
-          </p>
-        </article>
-
-        {/* 6 Quantitative KPI Strip */}
-        <div className="tw-ana-kpis">
-          <article className="tw-bento-tile tw-ana-kpi">
-            <div className="tw-eyebrow !mb-0">Profit factor</div>
-            <div className="tw-kv" style={{ color: 'var(--tw-warn)' }}>
-              {kpiStats.profitFactor}
-            </div>
-            <div className="tw-ks">Gross win ÷ gross loss</div>
-          </article>
-
-          <article className="tw-bento-tile tw-ana-kpi">
-            <div className="tw-eyebrow !mb-0">Expectancy / trade</div>
-            <div
-              className="tw-kv"
-              style={{
-                color: kpiStats.expectancy >= 0 ? 'var(--tw-gain)' : 'var(--tw-loss)',
-              }}
-            >
-              {formatSignedCurrency(kpiStats.expectancy)}
-            </div>
-            <div className="tw-ks">
-              {formatCurrency(Math.abs(kpiStats.net))} ÷ {closedTrades.length}{' '}
-              {closedTrades.length === 1 ? 'trade' : 'trades'}
-            </div>
-          </article>
-
-          <article className="tw-bento-tile tw-ana-kpi">
-            <div className="tw-eyebrow !mb-0">Average win</div>
-            <div className="tw-kv" style={{ color: 'var(--tw-gain)' }}>
-              {formatSignedCurrency(kpiStats.avgWin)}
-            </div>
-            <div className="tw-ks">
-              {kpiStats.wins} winning {kpiStats.wins === 1 ? 'trade' : 'trades'}
-            </div>
-          </article>
-
-          <article className="tw-bento-tile tw-ana-kpi">
-            <div className="tw-eyebrow !mb-0">Average loss</div>
-            <div className="tw-kv" style={{ color: 'var(--tw-loss)' }}>
-              {kpiStats.avgLoss > 0 ? formatSignedCurrency(-kpiStats.avgLoss) : '$0.00'}
-            </div>
-            <div className="tw-ks">
-              {kpiStats.losses} losing {kpiStats.losses === 1 ? 'trade' : 'trades'}
-            </div>
-          </article>
-
-          <article className="tw-bento-tile tw-ana-kpi">
-            <div className="tw-eyebrow !mb-0">Win / loss ratio</div>
-            <div className="tw-kv">{kpiStats.winLossRatio}</div>
-            <div className="tw-ks">Average win ÷ average loss</div>
-          </article>
-
-          <article className="tw-bento-tile tw-ana-kpi">
-            <div className="tw-eyebrow !mb-0">Recovery factor</div>
-            <div className="tw-kv">{kpiStats.recoveryFactor}</div>
-            <div className="tw-ks">Net profit ÷ max drawdown</div>
-          </article>
-        </div>
-
-        {/* Direction Breakdown: Long vs Short */}
-        <article className="tw-bento-tile tw-ana-span6">
-          <div className="tw-eyebrow !mb-1">Direction</div>
-          <h2 className="text-base font-semibold m-0" style={{ color: 'var(--tw-ink)' }}>
-            Long vs short
-          </h2>
-          <div className="tw-ana-split">
-            <div className="tw-ana-metric">
-              <div>
-                <small>
-                  Long · {directionStats.longCount}{' '}
-                  {directionStats.longCount === 1 ? 'trade' : 'trades'}
-                </small>
-                <strong
-                  style={{
-                    color:
-                      directionStats.longPnl >= 0 ? 'var(--tw-gain)' : 'var(--tw-loss)',
-                  }}
-                >
-                  {formatSignedCurrency(directionStats.longPnl)}
-                </strong>
-              </div>
-              <div>
-                <small>Win rate</small>
-                <strong>{directionStats.longWinRate}%</strong>
-              </div>
-            </div>
-
-            <div className="tw-ana-metric">
-              <div>
-                <small>
-                  Short · {directionStats.shortCount}{' '}
-                  {directionStats.shortCount === 1 ? 'trade' : 'trades'}
-                </small>
-                <strong
-                  style={{
-                    color:
-                      directionStats.shortPnl >= 0 ? 'var(--tw-gain)' : 'var(--tw-loss)',
-                  }}
-                >
-                  {formatSignedCurrency(directionStats.shortPnl)}
-                </strong>
-              </div>
-              <div>
-                <small>Win rate</small>
-                <strong>{directionStats.shortWinRate}%</strong>
-              </div>
-            </div>
-          </div>
-        </article>
-
-        {/* Session Performance Column Chart */}
-        <article className="tw-bento-tile tw-ana-span6">
-          <div className="tw-eyebrow !mb-1">Session</div>
-          <h2 className="text-base font-semibold m-0" style={{ color: 'var(--tw-ink)' }}>
-            Net by session
-          </h2>
-
-          <div className="tw-ana-cols">
-            {sessionColumns.items.map((col) => (
-              <div key={col.name} className="tw-ana-col">
-                <span className="tw-cv">{formatSignedCurrency(col.pnl)}</span>
-                <div
-                  className="tw-cb"
-                  style={{
-                    height: `${col.heightPct}%`,
-                    background: col.pnl < 0 ? 'var(--tw-loss)' : col.color,
-                  }}
-                />
-                <span className="tw-cc">{col.name}</span>
-              </div>
-            ))}
-            {sessionColumns.items.length === 0 && (
-              <div className="w-full text-center text-xs pb-6" style={{ color: 'var(--tw-ink-3)' }}>
-                No closed session trades for selected scope.
-              </div>
+                {deskAStat && deskBStat && (
+                  <div className="tw-ana-table-wrap">
+                    <table className="tw-ana-table">
+                      <thead>
+                        <tr>
+                          <th>Metric</th>
+                          <th>{deskAStat.shortLabel}</th>
+                          <th>{deskBStat.shortLabel}</th>
+                          <th>Diff (A − B)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>Closed Trades (n)</td>
+                          <td>{deskAStat.n}</td>
+                          <td>{deskBStat.n}</td>
+                          <td>{deskAStat.n - deskBStat.n >= 0 ? `+${deskAStat.n - deskBStat.n}` : deskAStat.n - deskBStat.n}</td>
+                        </tr>
+                        <tr>
+                          <td>Current Equity</td>
+                          <td>
+                            <CurrencyText amount={deskAStat.currentEquity} isPnlHidden={isPnlHidden} signed={false} />
+                          </td>
+                          <td>
+                            <CurrencyText amount={deskBStat.currentEquity} isPnlHidden={isPnlHidden} signed={false} />
+                          </td>
+                          <td>
+                            <CurrencyText amount={deskAStat.currentEquity - deskBStat.currentEquity} isPnlHidden={isPnlHidden} />
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>Ledger Net P&amp;L</td>
+                          <td>
+                            <CurrencyText amount={deskAStat.netPnl} isPnlHidden={isPnlHidden} />
+                          </td>
+                          <td>
+                            <CurrencyText amount={deskBStat.netPnl} isPnlHidden={isPnlHidden} />
+                          </td>
+                          <td>
+                            <CurrencyText amount={deskAStat.netPnl - deskBStat.netPnl} isPnlHidden={isPnlHidden} />
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>Return %</td>
+                          <td>{formatPercentSigned(deskAStat.returnPct)}</td>
+                          <td>{formatPercentSigned(deskBStat.returnPct)}</td>
+                          <td>{formatPercentSigned(deskAStat.returnPct - deskBStat.returnPct)}</td>
+                        </tr>
+                        <tr>
+                          <td>Win Rate</td>
+                          <td>{deskAStat.n < 5 ? 'Insufficient sample' : `${deskAStat.winRate.toFixed(1)}%`}</td>
+                          <td>{deskBStat.n < 5 ? 'Insufficient sample' : `${deskBStat.winRate.toFixed(1)}%`}</td>
+                          <td>
+                            {deskAStat.n >= 5 && deskBStat.n >= 5
+                              ? formatPercentSigned(deskAStat.winRate - deskBStat.winRate, true, 1)
+                              : 'Insufficient sample'}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>Profit Factor</td>
+                          <td>{deskAStat.profitFactorDisplay}</td>
+                          <td>{deskBStat.profitFactorDisplay}</td>
+                          <td>—</td>
+                        </tr>
+                        <tr>
+                          <td>Expectancy (R)</td>
+                          <td>{formatRSigned(deskAStat.expectancyR)}</td>
+                          <td>{formatRSigned(deskBStat.expectancyR)}</td>
+                          <td>{formatRSigned(deskAStat.expectancyR - deskBStat.expectancyR)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
             )}
-          </div>
 
-          <p className="text-xs mt-3 mb-0" style={{ color: 'var(--tw-ink-3)' }}>
-            {sessionColumns.hasHtfInNy
-              ? 'New York includes HTF Orderflow (+$3,270.00), a swing strategy with no session. Confirm the attribution rule.'
-              : 'Session attribution is grouped from each closed execution session tag.'}
-          </p>
-        </article>
-
-        {/* Calendar / Weekday Performance Column Chart */}
-        <article className="tw-bento-tile tw-ana-span12">
-          <div className="tw-eyebrow !mb-1">Calendar</div>
-          <h2 className="text-base font-semibold m-0" style={{ color: 'var(--tw-ink)' }}>
-            Net by weekday (computed from closed trades)
-          </h2>
-
-          <div className="tw-ana-cols">
-            {weekdayColumns.map((col) => (
-              <div key={col.day} className="tw-ana-col">
-                <span className="tw-cv">
-                  {col.pnl === 0 ? '$0' : formatSignedCurrency(col.pnl)}
-                </span>
-                <div
-                  className="tw-cb"
-                  style={{
-                    height: `${col.heightPct}%`,
-                    background:
-                      col.pnl < 0
-                        ? 'var(--tw-loss)'
-                        : col.pnl === 0
-                        ? 'var(--tw-line-strong)'
-                        : 'var(--tw-s3)',
-                  }}
-                />
-                <span className="tw-cc">{col.day}</span>
+            <section className="tw-bento-tile tw-ana-span12" aria-label="Per-desk performance matrix">
+              <div className="tw-ana-mod-head">
+                <div className="tw-ana-mod-titles">
+                  <div className="tw-ana-mod-toprow">
+                    <h2 className="tw-h">Per-Desk Performance Comparison</h2>
+                    <SampleStatusPill n={headlineMetrics.n} />
+                  </div>
+                  <p className="tw-ana-mod-sub">
+                    Allocated closed-trade P&amp;L per desk ({compareMode === 'net' ? 'Net USD' : compareMode === 'ret' ? 'Return %' : 'Win rate %'})
+                  </p>
+                </div>
+                <div className="tw-ana-mod-actions">
+                  <button
+                    type="button"
+                    className="tw-ana-icon-btn"
+                    onClick={() =>
+                      downloadCsvFile(
+                        'edgeledger-desk-comparison.csv',
+                        ['Desk', 'Start Capital', 'Current Equity', 'n', 'Win Rate', 'Profit Factor', 'Ledger Net USD', 'Return %'],
+                        visibleDeskStats.map((d) => [
+                          d.name,
+                          d.startingBalance.toFixed(2),
+                          d.currentEquity.toFixed(2),
+                          d.n,
+                          d.n < 5 ? 'Insufficient sample' : `${d.winRate.toFixed(1)}%`,
+                          d.profitFactorDisplay,
+                          d.netPnl.toFixed(2),
+                          d.returnPct.toFixed(2),
+                        ])
+                      )
+                    }
+                  >
+                    <span>CSV</span>
+                  </button>
+                </div>
               </div>
-            ))}
-          </div>
 
-          <p className="text-xs mt-3 mb-0" style={{ color: 'var(--tw-ink-3)' }}>
-            Grouped by UTC execution day across closed trades in the active desk filter.
-          </p>
-        </article>
+              <div className="tw-ana-rows">
+                {visibleDeskStats.map((d, idx) => {
+                  const val =
+                    compareMode === 'net' ? d.netPnl : compareMode === 'ret' ? d.returnPct : d.winRate;
+                  const pct = Math.min(48, Math.max(4, Math.round((Math.abs(val) / matrixScale) * 44)));
+                  const isNeg = val < 0;
+                  const winDisplay = d.n < 5 ? 'Insufficient sample' : `${d.winRate.toFixed(1)}%`;
+                  return (
+                    <div key={d.id} className="tw-ana-row">
+                      <div className="tw-anm">
+                        <span
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: 999,
+                            background: getAccountDotColor(
+                              accounts.find((a) => a.id === d.id) || accounts[0],
+                              idx
+                            ),
+                            flexShrink: 0,
+                          }}
+                          aria-hidden="true"
+                        />
+                        <span>{d.shortLabel} (n={d.n})</span>
+                      </div>
+                      <div className="tw-ana-rail">
+                        <div className="tw-ana-zero" style={{ left: '50%' }} />
+                        <div
+                          className="tw-ana-bar"
+                          style={{
+                            left: isNeg ? `${50 - pct}%` : '50%',
+                            width: `${pct}%`,
+                            background: isNeg ? 'var(--tw-loss)' : 'var(--tw-gain)',
+                          }}
+                        />
+                      </div>
+                      <div className={`tw-aval ${isNeg ? 'tw-neg' : 'tw-pos'}`}>
+                        {compareMode === 'net' ? (
+                          <CurrencyText amount={d.netPnl} isPnlHidden={isPnlHidden} />
+                        ) : compareMode === 'ret' ? (
+                          formatPercentSigned(d.returnPct)
+                        ) : (
+                          winDisplay
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="tw-ana-table-wrap">
+                <table className="tw-ana-table">
+                  <thead>
+                    <tr>
+                      <th>Desk</th>
+                      <th>Start Capital</th>
+                      <th>Reported Equity</th>
+                      <th>Implied Equity</th>
+                      <th>n</th>
+                      <th>Win Rate</th>
+                      <th>Profit Factor</th>
+                      <th>Ledger Net</th>
+                      <th>Return</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleDeskStats.map((d) => (
+                      <tr key={d.id}>
+                        <td>{d.name}</td>
+                        <td>
+                          <CurrencyText amount={d.startingBalance} isPnlHidden={isPnlHidden} signed={false} />
+                        </td>
+                        <td>
+                          <CurrencyText amount={d.currentEquity} isPnlHidden={isPnlHidden} signed={false} />
+                        </td>
+                        <td>
+                          <CurrencyText amount={d.impliedEquity} isPnlHidden={isPnlHidden} signed={false} />
+                        </td>
+                        <td>{d.n}</td>
+                        <td>{d.n < 5 ? 'Insufficient sample' : `${d.winRate.toFixed(1)}%`}</td>
+                        <td>{d.profitFactorDisplay}</td>
+                        <td className={d.netPnl >= 0 ? 'tw-pos' : 'tw-neg'}>
+                          <CurrencyText amount={d.netPnl} isPnlHidden={isPnlHidden} />
+                        </td>
+                        <td className={d.returnPct >= 0 ? 'tw-pos' : 'tw-neg'}>
+                          {formatPercentSigned(d.returnPct)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="tw-ana-kpis" aria-label="Core KPI metrics with sample-size guards">
+              <div className="tw-bento-tile tw-ana-kpi">
+                <div className="tw-eyebrow">Win Rate (n={headlineMetrics.n})</div>
+                <div className="tw-kv">{headlineMetrics.winRateLabel}</div>
+                <div className="tw-ks">
+                  {headlineMetrics.wins}W / {headlineMetrics.lossCount}L ·{' '}
+                  {sampleGuard.isInsufficientForRatio
+                    ? 'Needs >= 5 trades'
+                    : `Actual ${headlineMetrics.winRatePct.toFixed(1)}%`}
+                </div>
+              </div>
+
+              <div className="tw-bento-tile tw-ana-kpi">
+                <div className="tw-eyebrow">Profit Factor (n={headlineMetrics.n})</div>
+                <div className="tw-kv">{headlineMetrics.profitFactorLabel}</div>
+                <div className="tw-ks">
+                  {sampleGuard.isInsufficientForRatio
+                    ? 'Insufficient sample (< 5)'
+                    : 'Never capped on zero-loss desks'}
+                </div>
+              </div>
+
+              <div className="tw-bento-tile tw-ana-kpi">
+                <div className="tw-eyebrow">Expectancy (n={headlineMetrics.n})</div>
+                <div className="tw-kv">
+                  <CurrencyText amount={headlineMetrics.expectancyUsd} isPnlHidden={isPnlHidden} />
+                </div>
+                <div className="tw-ks">{formatRSigned(headlineMetrics.expectancyR)} per trade</div>
+              </div>
+
+              <div className="tw-bento-tile tw-ana-kpi">
+                <div className="tw-eyebrow">Average Win (n={headlineMetrics.winCount})</div>
+                <div className="tw-kv tw-pos">
+                  <CurrencyText amount={headlineMetrics.avgWinUsd} isPnlHidden={isPnlHidden} />
+                </div>
+                <div className="tw-ks">{formatRSigned(headlineMetrics.avgWinR)} mean winner</div>
+              </div>
+
+              <div className="tw-bento-tile tw-ana-kpi">
+                <div className="tw-eyebrow">Average Loss (n={headlineMetrics.lossCount})</div>
+                <div className="tw-kv tw-neg">
+                  <CurrencyText amount={-headlineMetrics.avgLossUsd} isPnlHidden={isPnlHidden} />
+                </div>
+                <div className="tw-ks">
+                  {headlineMetrics.lossCount > 0 ? formatRSigned(-headlineMetrics.avgLossR) : '0 losing trades'}
+                </div>
+              </div>
+
+              <div className="tw-bento-tile tw-ana-kpi">
+                <div className="tw-eyebrow">Sharpe / Sortino ({sampleGuard.tradingDaysCount}d)</div>
+                <div className="tw-kv" style={{ fontSize: 15 }}>
+                  {headlineMetrics.sharpeLabel}
+                </div>
+                <div className="tw-ks">
+                  Requires &ge; 30 daily returns ({sampleGuard.tradingDaysCount}/30)
+                </div>
+              </div>
+            </section>
+
+            <section className="tw-bento-tile tw-ana-span6" aria-label="Net P&L by trading session">
+              <div className="tw-ana-mod-head">
+                <div className="tw-ana-mod-titles">
+                  <div className="tw-ana-mod-toprow">
+                    <h2 className="tw-h">Net P&amp;L by Session</h2>
+                    <span className="tw-ana-unit-tag">USD · Click bar to filter</span>
+                  </div>
+                  <p className="tw-ana-mod-sub">
+                    {excludeSwingFromSession
+                      ? `Swing rule ON: ${edgeHeatmap.excludedSwingTrades.length} swing trade(s) excluded from session attribution`
+                      : 'Swing rule OFF: Swing trades attributed to their session label'}
+                  </p>
+                </div>
+              </div>
+              <div className="tw-ana-cols">
+                {sessionColumns.map((col) => {
+                  const isPos = col.total >= 0;
+                  const isActive = drilldown?.type === 'session' && drilldown.value === col.name;
+                  return (
+                    <button
+                      key={col.name}
+                      type="button"
+                      className="tw-ana-col"
+                      onClick={() =>
+                        col.count > 0 &&
+                        setDrilldown(
+                          isActive
+                            ? undefined
+                            : { type: 'session', value: col.name, label: `Session: ${col.name}` }
+                        )
+                      }
+                      style={{
+                        background: 'transparent',
+                        border: isActive ? '1px solid var(--tw-focus)' : '1px solid transparent',
+                        borderRadius: 12,
+                        cursor: col.count > 0 ? 'pointer' : 'default',
+                      }}
+                    >
+                      <span className="tw-cv">
+                        {col.count === 0 ? (
+                          '$0.00'
+                        ) : (
+                          <CurrencyText amount={col.total} isPnlHidden={isPnlHidden} />
+                        )}
+                      </span>
+                      <div
+                        className="tw-cb"
+                        style={{
+                          height: `${col.heightPct}%`,
+                          background:
+                            col.count === 0
+                              ? 'var(--tw-line-strong)'
+                              : isPos
+                              ? 'var(--tw-gain)'
+                              : 'var(--tw-loss)',
+                        }}
+                      />
+                      <span className="tw-cc">
+                        {col.name} (n={col.count})
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="tw-bento-tile tw-ana-span6" aria-label="Net P&L by weekday">
+              <div className="tw-ana-mod-head">
+                <div className="tw-ana-mod-titles">
+                  <div className="tw-ana-mod-toprow">
+                    <h2 className="tw-h">Net P&amp;L by Weekday</h2>
+                    <span className="tw-ana-unit-tag">USD · Computed from ledger</span>
+                  </div>
+                  <p className="tw-ana-mod-sub">
+                    Derived dynamically from trade timestamps · Click bar to filter
+                  </p>
+                </div>
+              </div>
+              <div className="tw-ana-cols">
+                {weekdayColumns.map((col) => {
+                  const isPos = col.total >= 0;
+                  const isActive = drilldown?.type === 'weekday' && drilldown.value === col.name;
+                  return (
+                    <button
+                      key={col.name}
+                      type="button"
+                      className="tw-ana-col"
+                      onClick={() =>
+                        col.count > 0 &&
+                        setDrilldown(
+                          isActive
+                            ? undefined
+                            : { type: 'weekday', value: col.name, label: `Weekday: ${col.name}` }
+                        )
+                      }
+                      style={{
+                        background: 'transparent',
+                        border: isActive ? '1px solid var(--tw-focus)' : '1px solid transparent',
+                        borderRadius: 12,
+                        cursor: col.count > 0 ? 'pointer' : 'default',
+                      }}
+                    >
+                      <span className="tw-cv">
+                        {col.count === 0 ? (
+                          '$0.00'
+                        ) : (
+                          <CurrencyText amount={col.total} isPnlHidden={isPnlHidden} />
+                        )}
+                      </span>
+                      <div
+                        className="tw-cb"
+                        style={{
+                          height: `${col.heightPct}%`,
+                          background:
+                            col.count === 0
+                              ? 'var(--tw-line-strong)'
+                              : isPos
+                              ? 'var(--tw-gain)'
+                              : 'var(--tw-loss)',
+                        }}
+                      />
+                      <span className="tw-cc">
+                        {col.name} (n={col.count})
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <EquityDrawdownModule
+              combined={equityDrawdown.combined}
+              perDesk={equityDrawdown.perDesk}
+              curveMode={curveMode}
+              onChangeCurveMode={setCurveMode}
+              isPnlHidden={isPnlHidden}
+              dateRangeLabel={dateRangeLabel}
+            />
+
+            <FirmRuleMonitorModule
+              monitors={firmRuleMonitors}
+              onUpdateConfig={updateDeskRuleOverride}
+              onResetConfig={resetDeskRuleOverride}
+            />
+
+            <RDistributionModule
+              bins={rDist.bins}
+              meanR={rDist.meanR}
+              medianR={rDist.medianR}
+              expectancyUsd={rDist.expectancyUsd}
+              n={rDist.n}
+              isPnlHidden={isPnlHidden}
+              activeDrilldown={drilldown}
+              onSelectDrilldown={setDrilldown}
+              dateRangeLabel={dateRangeLabel}
+            />
+
+            <EdgeHeatmapModule
+              weekdays={edgeHeatmap.weekdays}
+              sessions={edgeHeatmap.sessions}
+              cells={edgeHeatmap.cells}
+              excludedSwingCount={edgeHeatmap.excludedSwingTrades.length}
+              excludeSwingFromSession={excludeSwingFromSession}
+              onToggleExcludeSwing={setExcludeSwingFromSession}
+              isPnlHidden={isPnlHidden}
+              activeDrilldown={drilldown}
+              onSelectDrilldown={setDrilldown}
+              dateRangeLabel={dateRangeLabel}
+            />
+
+            <StrategyAttributionModule
+              rows={strategyAttribution}
+              totalN={headlineMetrics.n}
+              isPnlHidden={isPnlHidden}
+              activeDrilldown={drilldown}
+              onSelectDrilldown={setDrilldown}
+            />
+
+            <StreaksClusterModule stats={streaksCluster} n={headlineMetrics.n} />
+
+            <DirectionSymbolBreakdownModule
+              directionRows={directionBreakdown}
+              symbolRows={symbolBreakdown}
+              n={headlineMetrics.n}
+              isPnlHidden={isPnlHidden}
+              activeDrilldown={drilldown}
+              onSelectDrilldown={setDrilldown}
+            />
+
+            <section className="tw-bento-tile tw-ana-span12" aria-label="Filtered trade ledger">
+              <div className="tw-ana-mod-head">
+                <div className="tw-ana-mod-titles">
+                  <div className="tw-ana-mod-toprow">
+                    <h2 className="tw-h">Scoped Trade Ledger</h2>
+                    <span className="tw-ana-n-chip">{ledgerTrades.length} trade(s)</span>
+                    {drilldown && (
+                      <button
+                        type="button"
+                        className="tw-ana-chip-btn on"
+                        onClick={() => setDrilldown(undefined)}
+                      >
+                        <span>Filter: {drilldown.label}</span>
+                        <X size={13} aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
+                  <p className="tw-ana-mod-sub">
+                    Interactive drill-down list synchronized with all filters and clicked chart elements above.
+                  </p>
+                </div>
+                <div className="tw-ana-mod-actions">
+                  <button type="button" className="tw-ana-icon-btn" onClick={exportFullLedgerCsv}>
+                    <Download size={13} aria-hidden="true" />
+                    <span>CSV</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="tw-ana-table-wrap">
+                <table className="tw-ana-table">
+                  <thead>
+                    <tr>
+                      <th>Trade</th>
+                      <th>Date</th>
+                      <th>Weekday</th>
+                      <th>Session</th>
+                      <th>Symbol</th>
+                      <th>Dir</th>
+                      <th>Strategy</th>
+                      <th>R</th>
+                      <th>Scoped Net P&amp;L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ledgerTrades.map((t) => {
+                      const pnl = getScopedTradePnl(t, selectedAccountIds, accounts.length);
+                      const rVal = Number.isFinite(t.realizedR) ? t.realizedR : 0;
+                      return (
+                        <tr key={t.id}>
+                          <td>{t.id}</td>
+                          <td>{getTradeDateKey(t)}</td>
+                          <td>{getTradeWeekdayLabel(t)}</td>
+                          <td>{isSwingTrade(t) ? `${t.session || '—'} (Swing)` : t.session || '—'}</td>
+                          <td>{t.instrumentSymbol}</td>
+                          <td>{t.direction}</td>
+                          <td>{t.strategyName || t.strategyId || '—'}</td>
+                          <td>{formatRSigned(rVal)}</td>
+                          <td className={pnl >= 0 ? 'tw-pos' : 'tw-neg'}>
+                            <CurrencyText amount={pnl} isPnlHidden={isPnlHidden} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="tw-bento-tile tw-ana-span6" aria-label="Trade quality needs fields and open decisions">
+              <h2 className="tw-h">8. Trade Quality &amp; Open Decisions</h2>
+              <div className="tw-ana-recon" style={{ marginTop: 12 }}>
+                <h3>Needs Fields — Module 8 Hidden</h3>
+                <ul>
+                  <li>
+                    MAE, MFE, and Capture Ratio cannot be computed because closed trades lack required excursion fields:{' '}
+                    <code>{tradeQuality.missingFields.join(', ')}</code>.
+                  </li>
+                </ul>
+              </div>
+              <div className="tw-ana-recon" style={{ marginTop: 12 }}>
+                <h3>Open Decisions Log</h3>
+                <ul>
+                  {!hasAquaDeskInState && (
+                    <li>
+                      <strong>Aqua_Funded_01 (equity $5,021.37):</strong> Appears when created locally in form/context, absent from default 3-desk seed (<code>SEED_ACCOUNTS</code>). Included dynamically whenever present in state.
+                    </li>
+                  )}
+                  <li>
+                    <strong>$60.00 Consolidation Gap:</strong> Consolidated net (<code>+$7,071.00</code>) differs from per-desk sum (<code>+$7,011.00</code>) in seed trade <code>tr-001</code> until source reconciliation is resolved.
+                  </li>
+                  <li>
+                    <strong>Swing Session Attribution Rule:</strong> Default ON excludes swing setups (<code>HTF Orderflow</code>) from intraday sessions; toggleable in the top controls.
+                  </li>
+                </ul>
+              </div>
+            </section>
+
+            <section className="tw-bento-tile tw-ana-span6" aria-label="Metric definitions reference">
+              <h2 className="tw-h">Metric Definitions &amp; Sample Rules</h2>
+              <p className="tw-ana-mod-sub" style={{ marginTop: 4 }}>
+                Shared source of truth synced with <code>docs/analytics-metrics.md</code>
+              </p>
+              <div className="tw-ana-table-wrap">
+                <table className="tw-ana-table">
+                  <thead>
+                    <tr>
+                      <th>Metric</th>
+                      <th>Formula</th>
+                      <th>Unit</th>
+                      <th>Sample Rule</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ANALYTICS_METRIC_DEFINITIONS.slice(0, 7).map((def) => (
+                      <tr key={def.id}>
+                        <td>{def.name}</td>
+                        <td style={{ whiteSpace: 'normal', maxWidth: 220 }}>{def.formula}</td>
+                        <td>{def.unit}</td>
+                        <td style={{ whiteSpace: 'normal', maxWidth: 180 }}>{def.sampleRule}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </>
+        )}
       </main>
     </div>
   );
-}
-
-function STRATEGY_COLOR_FALLBACK(idx: number): string {
-  const palette = ['var(--tw-s1)', 'var(--tw-s2)', 'var(--tw-s3)', 'var(--tw-gain)'];
-  return palette[idx % palette.length];
 }
