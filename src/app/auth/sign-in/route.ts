@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  ACCESS_TTL_SECONDS,
   attachSessionCookies,
   authenticateUserCredentials,
   issueSessionTokens,
@@ -26,7 +27,14 @@ export async function POST(req: NextRequest) {
     }
 
     const issued = issueSessionTokens(auth.userId, auth.email, deviceId);
-    const res = NextResponse.json({ session: issued.session }, { status: 200 });
+    const res = NextResponse.json(
+      {
+        session: issued.session,
+        tokenType: 'Bearer',
+        expiresInSeconds: ACCESS_TTL_SECONDS,
+      },
+      { status: 200 }
+    );
     return attachSessionCookies(res, issued.accessToken, issued.refreshToken, req);
   } catch (err) {
     safeLog('error', 'POST /auth/sign-in unexpected error', { error: err });

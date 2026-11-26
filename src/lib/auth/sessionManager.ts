@@ -65,7 +65,7 @@ export class SessionManager {
   }) {
     this.transport = options.transport;
     this.callbacks = options.callbacks;
-    this.idleTimeoutMs = options.idleTimeoutMs ?? 15 * 60 * 1000;
+    this.idleTimeoutMs = options.idleTimeoutMs ?? 4 * 60 * 60 * 1000;
     this.unlockVerifier =
       options.unlockVerifier ??
       (async ({ method, passcode }) => {

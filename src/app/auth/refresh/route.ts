@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  ACCESS_TTL_SECONDS,
   attachSessionCookies,
   clearSessionCookies,
   issueSessionTokens,
@@ -20,6 +21,13 @@ export async function POST(req: NextRequest) {
   // Rotate refresh token on use
   revokeRefreshToken(refreshCookie);
   const issued = issueSessionTokens(claims.sub, claims.email, claims.deviceId);
-  const res = NextResponse.json({ session: issued.session }, { status: 200 });
+  const res = NextResponse.json(
+    {
+      session: issued.session,
+      tokenType: 'Bearer',
+      expiresInSeconds: ACCESS_TTL_SECONDS,
+    },
+    { status: 200 }
+  );
   return attachSessionCookies(res, issued.accessToken, issued.refreshToken, req);
 }

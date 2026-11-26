@@ -6,7 +6,8 @@ import { redactSensitive } from './redact';
 export const ACCESS_COOKIE_NAME = 'el_access';
 export const REFRESH_COOKIE_NAME = 'el_refresh';
 
-const ACCESS_TTL_MS = 15 * 60 * 1000;
+export const ACCESS_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours per JWT token
+export const ACCESS_TTL_SECONDS = ACCESS_TTL_MS / 1000; // 14400 seconds
 const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface SessionTokenClaims {
@@ -303,6 +304,12 @@ export function clearSessionCookies(res: NextResponse, req?: NextRequest): NextR
 }
 
 export function requireAuthenticatedClaims(req: NextRequest): SessionTokenClaims | null {
+  const authHeader = req.headers.get('authorization');
+  if (authHeader && /^Bearer\s+/i.test(authHeader)) {
+    const bearerToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+    const bearerClaims = verifySessionToken(bearerToken, 'access');
+    if (bearerClaims) return bearerClaims;
+  }
   const accessCookie = req.cookies.get(ACCESS_COOKIE_NAME)?.value;
   return verifySessionToken(accessCookie, 'access');
 }

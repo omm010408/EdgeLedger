@@ -443,16 +443,38 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
     });
     const signInRes = await signInPost(signInReq);
     expect(signInRes.status).toBe(200);
+    const signInJson = await signInRes.json();
+    expect(signInJson.tokenType).toBe('Bearer');
+    expect(signInJson.expiresInSeconds).toBe(14400); // 4 hours per JWT token
+
     const accessCookie = signInRes.cookies.get('el_access');
     const refreshCookie = signInRes.cookies.get('el_refresh');
     expect(accessCookie?.httpOnly).toBe(true);
     expect(accessCookie?.sameSite).toBe('lax');
+    expect(accessCookie?.maxAge).toBe(14400);
     expect(refreshCookie?.httpOnly).toBe(true);
     expect(refreshCookie?.sameSite).toBe('lax');
+
+    // Verify JWT payload has 4-hour lifetime (exp - iat = 14,400,000 ms)
+    const jwtParts = String(accessCookie?.value || '').split('.');
+    expect(jwtParts).toHaveLength(3);
+    const jwtHeader = JSON.parse(Buffer.from(jwtParts[0], 'base64url').toString('utf8'));
+    const jwtPayload = JSON.parse(Buffer.from(jwtParts[1], 'base64url').toString('utf8'));
+    expect(jwtHeader.typ).toBe('JWT');
+    expect(jwtHeader.alg).toBe('HS256');
+    expect(jwtPayload.exp - jwtPayload.iat).toBe(4 * 60 * 60 * 1000);
 
     // 2. Unauthenticated /sync/changes -> 401
     const unauthChanges = await changesGet(new NextRequest('http://localhost:3000/sync/changes?cursor='));
     expect(unauthChanges.status).toBe(401);
+
+    // Bearer JWT authentication also succeeds cleanly
+    const bearerChanges = await changesGet(
+      new NextRequest('http://localhost:3000/sync/changes?cursor=', {
+        headers: { Authorization: `Bearer ${accessCookie!.value}` },
+      })
+    );
+    expect(bearerChanges.status).toBe(200);
 
     // 3. Authenticated /sync/push + /sync/changes
     const pushReq = new NextRequest('http://localhost:3000/sync/push', {

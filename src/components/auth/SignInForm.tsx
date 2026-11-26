@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { KeyRound, Mail, AlertCircle } from 'lucide-react';
+import { KeyRound, Mail, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useSessionSync } from '../../context/SessionSyncContext';
 import { EdgeLedgerLogo } from '../ui/EdgeLedgerLogo';
 
@@ -19,6 +19,8 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showEmail, setShowEmail] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
 
@@ -85,7 +87,7 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
               Sign in to EdgeLedger
             </h1>
             <p className="text-xs" style={{ color: 'var(--tw-ink-2)' }}>
-              Email &amp; password session authentication
+              4-hour JWT session authentication
             </p>
           </div>
         </div>
@@ -148,21 +150,31 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
             <input
               ref={emailRef}
               id={emailId}
-              type="email"
-              autoComplete="email"
+              type={showEmail ? 'text' : 'password'}
+              inputMode="email"
+              autoComplete="off"
               required
               aria-invalid={Boolean(fieldErrors.email)}
               aria-describedby={fieldErrors.email ? errorBannerId : undefined}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="ommroshan@gmail.com"
-              className="w-full h-11 pl-10 pr-3.5 rounded-2xl text-sm"
+              placeholder="Enter your email"
+              className="w-full h-11 pl-10 pr-10 rounded-2xl text-sm"
               style={{
                 background: 'var(--tw-bg)',
                 color: 'var(--tw-ink)',
                 border: `1px solid ${fieldErrors.email ? 'var(--tw-loss)' : 'var(--tw-line-strong)'}`,
               }}
             />
+            <button
+              type="button"
+              onClick={() => setShowEmail((prev) => !prev)}
+              aria-label={showEmail ? 'Hide email' : 'Show email'}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:opacity-80"
+              style={{ color: 'var(--tw-ink-3)' }}
+            >
+              {showEmail ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
+            </button>
           </div>
         </div>
 
@@ -184,7 +196,7 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
             <input
               ref={passwordRef}
               id={passwordId}
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               autoComplete="current-password"
               required
               aria-invalid={Boolean(fieldErrors.password)}
@@ -192,13 +204,22 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your password"
-              className="w-full h-11 pl-10 pr-3.5 rounded-2xl text-sm"
+              className="w-full h-11 pl-10 pr-10 rounded-2xl text-sm"
               style={{
                 background: 'var(--tw-bg)',
                 color: 'var(--tw-ink)',
                 border: `1px solid ${fieldErrors.password ? 'var(--tw-loss)' : 'var(--tw-line-strong)'}`,
               }}
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:opacity-80"
+              style={{ color: 'var(--tw-ink-3)' }}
+            >
+              {showPassword ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
+            </button>
           </div>
         </div>
 
