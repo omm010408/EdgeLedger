@@ -48,7 +48,7 @@ interface SessionSyncContextValue {
   cancelSignOut: () => void;
   exportPendingOutbox: () => Promise<string | null>;
   lockSession: () => void;
-  unlockSession: (input: { method: 'biometric' | 'passcode'; passcode?: string }) => Promise<boolean>;
+  unlockSession: (input: { method: 'passcode'; passcode?: string }) => Promise<boolean>;
   triggerSync: () => Promise<boolean>;
   resolveConflictKeepRemote: (conflictId: string) => Promise<void>;
   resolveConflictRetryLocal: (conflictId: string) => Promise<void>;
@@ -229,7 +229,7 @@ export const SessionSyncProvider: React.FC<{ children: ReactNode }> = ({ childre
   }, []);
 
   const unlockSession = useCallback(
-    async (input: { method: 'biometric' | 'passcode'; passcode?: string }) => {
+    async (input: { method: 'passcode'; passcode?: string }) => {
       return managerRef.current!.unlock(input);
     },
     []

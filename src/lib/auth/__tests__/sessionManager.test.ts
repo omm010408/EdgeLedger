@@ -96,7 +96,7 @@ describe('SessionManager State Machine & Redaction', () => {
     expect(states).toEqual(['signedIn', 'refreshing', 'signedIn', 'refreshing', 'signedOut']);
   });
 
-  it('supports signedIn <-> locked (manual and idle timeout) and blocks biometric unlock when signedOut', async () => {
+  it('supports signedIn <-> locked (manual and idle timeout), disables biometric unlock, and requires passcode 1973', async () => {
     const transport: SessionTransport = {
       signIn: vi.fn(async () => ({ ok: true, session: makeSession() })),
       refresh: vi.fn(async () => ({ ok: true, session: makeSession() })),
@@ -112,25 +112,30 @@ describe('SessionManager State Machine & Redaction', () => {
       idleTimeoutMs: 5000,
     });
 
-    // Biometric / passcode unlock CANNOT replace sign-in when signedOut
+    // Passcode / biometric unlock CANNOT replace sign-in when signedOut
+    expect(await manager.unlock({ method: 'passcode', passcode: '1973' })).toBe(false);
     expect(await manager.unlock({ method: 'biometric' })).toBe(false);
     expect(manager.getState()).toBe('signedOut');
 
-    await manager.signIn({ email: 'trader@edgeledger.io', method: 'passkey', credentialId: 'pk-123456' });
+    await manager.signIn({ email: 'ommroshan@gmail.com', method: 'password', password: 'EdgeLedger@010408' });
     expect(manager.getState()).toBe('signedIn');
 
-    // Manual lock -> biometric unlock
+    // Manual lock -> biometric unlock is disabled; wrong passcodes fail; 1973 unlocks
     expect(manager.lock()).toBe(true);
     expect(manager.getState()).toBe('locked');
-    expect(await manager.unlock({ method: 'biometric' })).toBe(true);
+    expect(await manager.unlock({ method: 'biometric' })).toBe(false);
+    expect(manager.getState()).toBe('locked');
+    expect(await manager.unlock({ method: 'passcode', passcode: '2026' })).toBe(false);
+    expect(manager.getState()).toBe('locked');
+    expect(await manager.unlock({ method: 'passcode', passcode: '1973' })).toBe(true);
     expect(manager.getState()).toBe('signedIn');
 
-    // Idle timeout locks -> wrong passcode fails -> valid passcode unlocks
+    // Idle timeout locks -> wrong passcode fails -> 1973 unlocks
     vi.advanceTimersByTime(5000);
     expect(manager.getState()).toBe('locked');
     expect(await manager.unlock({ method: 'passcode', passcode: '12' })).toBe(false);
     expect(manager.getState()).toBe('locked');
-    expect(await manager.unlock({ method: 'passcode', passcode: '2026' })).toBe(true);
+    expect(await manager.unlock({ method: 'passcode', passcode: '1973' })).toBe(true);
     expect(manager.getState()).toBe('signedIn');
   });
 

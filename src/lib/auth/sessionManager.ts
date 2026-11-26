@@ -38,7 +38,9 @@ export interface SessionSnapshot {
   pendingOutboxWarningCount: number | null;
 }
 
-export type UnlockVerifier = (input: { method: 'biometric' | 'passcode'; passcode?: string }) => Promise<boolean> | boolean;
+export const DESK_UNLOCK_PASSCODE = '1973';
+
+export type UnlockVerifier = (input: { method: 'passcode'; passcode?: string }) => Promise<boolean> | boolean;
 
 export class SessionManager {
   private state: SessionState = 'signedOut';
@@ -69,8 +71,8 @@ export class SessionManager {
     this.unlockVerifier =
       options.unlockVerifier ??
       (async ({ method, passcode }) => {
-        if (method === 'biometric') return true;
-        return Boolean(passcode && passcode.trim().length >= 4);
+        if (method !== 'passcode') return false;
+        return passcode === DESK_UNLOCK_PASSCODE;
       });
 
     if (options.initialSession) {
@@ -249,16 +251,21 @@ export class SessionManager {
   }
 
   /**
-   * Biometric or passcode unlock gates the UI only and ONLY transitions locked -> signedIn.
-   * It NEVER replaces sign-in when signedOut.
+   * Passcode unlock gates the UI only and ONLY transitions locked -> signedIn.
+   * Biometric unlock is disabled. Never replaces sign-in when signedOut.
    */
-  async unlock(input: { method: 'biometric' | 'passcode'; passcode?: string }): Promise<boolean> {
+  async unlock(input: { method: 'passcode' | 'biometric'; passcode?: string }): Promise<boolean> {
     if (this.state !== 'locked' || !this.session) {
       return false;
     }
-    const verified = await this.unlockVerifier(input);
+    if (input.method !== 'passcode') {
+      this.error = 'Biometric unlock is disabled. Enter unlock passcode.';
+      this.emit();
+      return false;
+    }
+    const verified = await this.unlockVerifier({ method: 'passcode', passcode: input.passcode });
     if (!verified) {
-      this.error = input.method === 'passcode' ? 'Incorrect passcode.' : 'Biometric check was not verified.';
+      this.error = 'Incorrect passcode.';
       this.emit();
       return false;
     }

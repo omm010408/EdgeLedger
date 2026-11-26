@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useId, useRef, useState } from 'react';
-import { Fingerprint, Lock, LogOut } from 'lucide-react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { Lock, LogOut } from 'lucide-react';
 import { useSessionSync } from '../../context/SessionSyncContext';
 
 export const LockScreenOverlay: React.FC = () => {
@@ -16,24 +16,26 @@ export const LockScreenOverlay: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (sessionSnapshot.state === 'locked') {
+      inputRef.current?.focus();
+    } else {
+      setPasscode('');
+      setError(null);
+    }
+  }, [sessionSnapshot.state]);
+
   if (sessionSnapshot.state !== 'locked') return null;
 
   const handlePasscodeUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
     const ok = await unlockSession({ method: 'passcode', passcode });
     if (!ok) {
-      setError('Passcode must be at least 4 characters.');
+      setError('Incorrect passcode.');
       inputRef.current?.focus();
     } else {
       setPasscode('');
       setError(null);
-    }
-  };
-
-  const handleBiometricUnlock = async () => {
-    const ok = await unlockSession({ method: 'biometric' });
-    if (!ok) {
-      setError('Biometric check failed.');
     }
   };
 
@@ -81,10 +83,15 @@ export const LockScreenOverlay: React.FC = () => {
               ref={inputRef}
               id={passcodeId}
               type="password"
+              inputMode="numeric"
+              autoComplete="off"
               value={passcode}
-              onChange={(e) => setPasscode(e.target.value)}
-              placeholder="Enter 4+ character passcode"
-              className="w-full h-11 px-3.5 rounded-2xl text-sm"
+              onChange={(e) => {
+                setPasscode(e.target.value);
+                if (error) setError(null);
+              }}
+              placeholder="Enter unlock passcode"
+              className="w-full h-11 px-3.5 rounded-2xl text-sm font-mono tracking-widest"
               style={{
                 background: 'var(--tw-bg)',
                 color: 'var(--tw-ink)',
@@ -101,24 +108,11 @@ export const LockScreenOverlay: React.FC = () => {
           </button>
         </form>
 
-        <div className="flex items-center gap-2 pt-1">
-          <button
-            type="button"
-            onClick={handleBiometricUnlock}
-            className="flex-1 h-10 rounded-full text-xs font-semibold inline-flex items-center justify-center gap-1.5"
-            style={{
-              background: 'var(--tw-pill)',
-              color: 'var(--tw-ink)',
-              border: '1px solid var(--tw-line-strong)',
-            }}
-          >
-            <Fingerprint size={14} aria-hidden="true" />
-            <span>Biometric unlock</span>
-          </button>
+        <div className="pt-1">
           <button
             type="button"
             onClick={() => void requestSignOut()}
-            className="h-10 px-4 rounded-full text-xs font-semibold inline-flex items-center gap-1.5"
+            className="w-full h-10 px-4 rounded-full text-xs font-semibold inline-flex items-center justify-center gap-1.5"
             style={{
               color: 'var(--tw-loss)',
               border: '1px solid color-mix(in srgb, var(--tw-loss) 45%, transparent)',
