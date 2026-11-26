@@ -20,6 +20,7 @@ import {
   X
 } from 'lucide-react';
 import { NewAccountModal } from '../../components/modals/NewAccountModal';
+import { DestructiveConfirmModal } from '../../components/modals/DestructiveConfirmModal';
 import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
 import { TradingAccount, AccountRule } from '../../lib/types/financial';
 
@@ -57,6 +58,7 @@ export default function AccountsPage() {
   }, [accounts, setSelectedAccountId]);
 
   const [newAccountModalOpen, setNewAccountModalOpen] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState<TradingAccount | null>(null);
   const [editingRuleAccount, setEditingRuleAccount] = useState<TradingAccount | null>(null);
   const [editingAccount, setEditingAccount] = useState<TradingAccount | null>(null);
   const [editAccName, setEditAccName] = useState('');
@@ -535,14 +537,15 @@ export default function AccountsPage() {
                   <Settings size={15} />
                 </button>
 
-                <DeleteConfirmButton
-                  variant="icon"
-                  size={15}
+                <button
+                  type="button"
+                  onClick={() => setDeletingAccount(acc)}
+                  className="w-10 h-10 rounded-full flex items-center justify-center bg-[var(--tw-pill)] border border-[var(--tw-line)] text-[var(--tw-ink-3)] hover:text-[var(--tw-loss)] hover:border-[var(--tw-loss)]/60 transition-all cursor-pointer"
                   title="Delete Account"
-                  ariaLabel={`Remove ${acc.name}`}
-                  className="min-w-10 h-10 rounded-full bg-[var(--tw-pill)] border border-[var(--tw-line)]"
-                  onConfirm={() => deleteAccount(acc.id)}
-                />
+                  aria-label={`Remove ${acc.name}`}
+                >
+                  <Trash2 size={15} />
+                </button>
               </div>
             </div>
           );
@@ -937,6 +940,20 @@ export default function AccountsPage() {
       <NewAccountModal
         isOpen={newAccountModalOpen}
         onClose={() => setNewAccountModalOpen(false)}
+      />
+
+      {/* Permanent Account Delete Confirmation */}
+      <DestructiveConfirmModal
+        isOpen={Boolean(deletingAccount)}
+        title="Delete Account"
+        description="This will permanently delete this trading account and related allocations, drawdown configurations, and risk rules."
+        entityName={deletingAccount?.name || ''}
+        confirmPhrase="delete my account"
+        confirmButtonLabel="Delete Account"
+        onConfirm={() => {
+          if (deletingAccount) deleteAccount(deletingAccount.id);
+        }}
+        onClose={() => setDeletingAccount(null)}
       />
     </div>
   );

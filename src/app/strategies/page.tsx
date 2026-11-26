@@ -2,9 +2,9 @@
 
 import React, { useMemo, useState } from 'react';
 import { useTrading } from '../../context/TradingContext';
-import { CheckCircle2, ArrowRight, Plus, X, Pencil } from 'lucide-react';
+import { CheckCircle2, ArrowRight, Plus, X, Pencil, Trash2 } from 'lucide-react';
 import { Strategy } from '../../lib/data/seedData';
-import { DeleteConfirmButton } from '../../components/ui/DeleteConfirmButton';
+import { DestructiveConfirmModal } from '../../components/modals/DestructiveConfirmModal';
 import { filterTradesByPeriod } from '../../lib/data/periodFilter';
 
 const STRATEGY_COLORS = ['var(--tw-s1)', 'var(--tw-s2)', 'var(--tw-s3)', 'var(--tw-gain)', 'var(--tw-warn)'];
@@ -53,6 +53,7 @@ export default function StrategiesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
+  const [deletingStrategy, setDeletingStrategy] = useState<Strategy | null>(null);
 
   // Create / Edit Strategy Form State
   const [name, setName] = useState('');
@@ -379,14 +380,15 @@ export default function StrategiesPage() {
                   >
                     <Pencil size={15} />
                   </button>
-                  <DeleteConfirmButton
-                    variant="icon"
-                    size={15}
+                  <button
+                    type="button"
+                    onClick={() => setDeletingStrategy(strategy)}
                     title={`Delete ${strategy.name}`}
-                    ariaLabel={`Delete ${strategy.name}`}
-                    className="!w-10 !h-10 !rounded-full !border !border-[var(--tw-line-strong)] !bg-transparent hover:!bg-[var(--tw-pill)]"
-                    onConfirm={() => deleteStrategy(strategy.id)}
-                  />
+                    aria-label={`Delete ${strategy.name}`}
+                    className="w-10 h-10 rounded-full border border-[var(--tw-line-strong)] bg-transparent hover:bg-[var(--tw-loss)]/10 text-[var(--tw-ink-3)] hover:text-[var(--tw-loss)] hover:border-[var(--tw-loss)]/60 flex items-center justify-center transition-colors cursor-pointer"
+                  >
+                    <Trash2 size={15} />
+                  </button>
                 </div>
               </div>
 
@@ -616,15 +618,14 @@ export default function StrategiesPage() {
               className="flex items-center justify-between pt-4"
               style={{ borderTop: '1px solid var(--tw-line)' }}
             >
-              <DeleteConfirmButton
-                variant="button"
-                label="Delete strategy"
-                confirmLabel="Confirm delete"
-                onConfirm={() => {
-                  deleteStrategy(selectedStrategy.id);
-                  setSelectedStrategy(null);
-                }}
-              />
+              <button
+                type="button"
+                onClick={() => setDeletingStrategy(selectedStrategy)}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold border border-[var(--tw-loss)]/45 text-[var(--tw-loss)] hover:bg-[var(--tw-loss)]/15 transition-colors cursor-pointer"
+              >
+                <Trash2 size={14} />
+                <span>Delete strategy</span>
+              </button>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -922,6 +923,25 @@ export default function StrategiesPage() {
           </div>
         </div>
       )}
+
+      {/* Permanent Strategy Delete Confirmation */}
+      <DestructiveConfirmModal
+        isOpen={Boolean(deletingStrategy)}
+        title="Delete Strategy"
+        description="This will permanently delete this strategy playbook, rules, and checklist from your setup library."
+        entityName={deletingStrategy?.name || ''}
+        confirmPhrase="delete my strategy"
+        confirmButtonLabel="Delete Strategy"
+        onConfirm={() => {
+          if (deletingStrategy) {
+            deleteStrategy(deletingStrategy.id);
+            if (selectedStrategy?.id === deletingStrategy.id) {
+              setSelectedStrategy(null);
+            }
+          }
+        }}
+        onClose={() => setDeletingStrategy(null)}
+      />
     </div>
   );
 }
