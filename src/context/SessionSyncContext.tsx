@@ -34,6 +34,7 @@ export type StatusChipDisplay = {
 
 interface SessionSyncContextValue {
   sessionSnapshot: SessionSnapshot;
+  isRestoringSession: boolean;
   syncSnapshot: SyncStatusSnapshot;
   statusDisplay: StatusChipDisplay;
   isSignInModalOpen: boolean;
@@ -104,6 +105,7 @@ export const SessionSyncProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [sessionSnapshot, setSessionSnapshot] = useState<SessionSnapshot>(() =>
     managerRef.current!.getSnapshot()
   );
+  const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [syncSnapshot, setSyncSnapshot] = useState<SyncStatusSnapshot>(INITIAL_SYNC_SNAPSHOT);
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false);
   const [isConflictInboxOpen, setIsConflictInboxOpen] = useState(false);
@@ -120,9 +122,13 @@ export const SessionSyncProvider: React.FC<{ children: ReactNode }> = ({ childre
       setSessionSnapshot(snap);
     });
 
-    void manager.restoreSessionFromCookie();
+    let active = true;
+    void manager.restoreSessionFromCookie().finally(() => {
+      if (active) setIsRestoringSession(false);
+    });
 
     return () => {
+      active = false;
       unsubSession();
       uninstallTransport();
     };
@@ -300,6 +306,7 @@ export const SessionSyncProvider: React.FC<{ children: ReactNode }> = ({ childre
     <SessionSyncContext.Provider
       value={{
         sessionSnapshot,
+        isRestoringSession,
         syncSnapshot,
         statusDisplay,
         isSignInModalOpen,

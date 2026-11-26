@@ -5,9 +5,11 @@ import { useSessionSync } from '../../context/SessionSyncContext';
 import { SignInForm } from './SignInForm';
 
 export const SignInModal: React.FC = () => {
-  const { isSignInModalOpen, closeSignInModal } = useSessionSync();
+  const { isSignInModalOpen, closeSignInModal, sessionSnapshot } = useSessionSync();
 
-  if (!isSignInModalOpen) return null;
+  if (!isSignInModalOpen || sessionSnapshot.state === 'signedOut' || sessionSnapshot.state === 'signingIn') {
+    return null;
+  }
 
   return (
     <div

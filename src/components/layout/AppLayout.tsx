@@ -1,15 +1,25 @@
 'use client';
 
 import React, { useState, useEffect, ReactNode } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { Moon, Sun } from 'lucide-react';
 import { Header } from './Header';
 import { QuickTradeModal } from '../modals/QuickTradeModal';
 import { NewAccountModal } from '../modals/NewAccountModal';
 import { RiskAlertsDrawer } from '../modals/RiskAlertsDrawer';
 import { CommandPalette } from './CommandPalette';
+import { SignInForm } from '../auth/SignInForm';
+import { EdgeLedgerLogo } from '../ui/EdgeLedgerLogo';
+import { useSessionSync } from '../../context/SessionSyncContext';
 
 export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
   const pathname = usePathname();
+  const router = useRouter();
+  const { sessionSnapshot, isRestoringSession } = useSessionSync();
+  const isAuthenticated =
+    sessionSnapshot.state === 'signedIn' ||
+    sessionSnapshot.state === 'locked' ||
+    sessionSnapshot.state === 'refreshing';
   const isStaticBoard =
     pathname === '/' ||
     pathname === '/calendar' ||
@@ -42,8 +52,9 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
     document.documentElement.setAttribute('data-theme', next);
   };
 
-  // Global Cmd+K / Ctrl+K listener
+  // Global Cmd+K / Ctrl+K listener (active only after sign-in)
   useEffect(() => {
+    if (!isAuthenticated) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -52,7 +63,64 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isAuthenticated]);
+
+  if (isRestoringSession || !isAuthenticated) {
+    return (
+      <div
+        data-theme={theme}
+        className={`min-h-screen w-full bg-[var(--tw-bg)] text-[var(--tw-ink)] flex flex-col font-sans selection:bg-[#9BF3DF] selection:text-[#03211C] relative overflow-hidden ${theme}`}
+      >
+        <svg className="tw-ripple" viewBox="0 0 600 600" aria-hidden="true">
+          <circle cx="300" cy="300" r="120" />
+          <circle cx="300" cy="300" r="200" />
+          <circle cx="300" cy="300" r="280" />
+        </svg>
+
+        <div className="relative z-10 flex items-center justify-end px-6 pt-5">
+          <button
+            className="tw-btn quiet shrink-0 !w-[34px] !px-0 justify-center"
+            type="button"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to Light theme' : 'Switch to Dark theme'}
+            aria-label={theme === 'dark' ? 'Switch to Light theme' : 'Switch to Dark theme'}
+          >
+            {theme === 'dark' ? <Sun size={14} className="text-[#FFD56B]" /> : <Moon size={14} className="text-[#0A4D4C]" />}
+          </button>
+        </div>
+
+        <main className="relative z-10 flex-1 flex items-center justify-center px-4 pb-10">
+          {isRestoringSession ? (
+            <div
+              className="w-full max-w-sm rounded-[32px] p-6 text-center space-y-3"
+              style={{
+                background: 'var(--tw-tile)',
+                color: 'var(--tw-ink)',
+                border: '1px solid var(--tw-line-strong)',
+                boxShadow: 'var(--tw-shadow-dropdown)',
+              }}
+            >
+              <div className="flex justify-center">
+                <EdgeLedgerLogo size={32} />
+              </div>
+              <p className="text-sm font-semibold">Checking EdgeLedger session...</p>
+              <p className="text-xs" style={{ color: 'var(--tw-ink-2)' }}>
+                Sign in is required to view workspace data.
+              </p>
+            </div>
+          ) : (
+            <SignInForm
+              onSuccess={() => {
+                if (pathname === '/sign-in') {
+                  router.replace('/');
+                }
+              }}
+            />
+          )}
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div
