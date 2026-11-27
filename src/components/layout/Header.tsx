@@ -148,7 +148,8 @@ export const Header: React.FC<HeaderProps> = ({
           {moreNavOpen && (
             <div
               role="menu"
-              className="absolute left-0 mt-2 w-44 rounded-2xl bg-[var(--tw-tile)] border border-[var(--tw-line-strong)] shadow-2xl p-1.5 z-50"
+              className="tw-dropdown absolute left-0 mt-2 w-44 rounded-2xl bg-[var(--tw-tile)] border border-[var(--tw-line-strong)] p-1.5 z-50 flex flex-col gap-0.5"
+              style={{ boxShadow: 'var(--tw-shadow-dropdown)' }}
             >
               {MORE_NAV.map((item) => {
                 const isActive = pathname.startsWith(item.href);
@@ -204,29 +205,41 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           {accountDropdownOpen && (
-            <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-[#0B1415] border border-[#34544F] shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-              <div className="px-3 py-1.5 text-[11px] font-mono text-[#A9C1BD] uppercase tracking-wider border-b border-[#34544F]/60">
+            <div
+              className="tw-dropdown absolute right-0 mt-2 w-72 rounded-2xl bg-[var(--tw-tile)] text-[var(--tw-ink)] border border-[var(--tw-line-strong)] p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
+              style={{ boxShadow: 'var(--tw-shadow-dropdown)' }}
+            >
+              <div
+                className="px-3 py-1.5 text-[11px] font-mono uppercase tracking-wider border-b"
+                style={{ color: 'var(--tw-ink-3)', borderColor: 'var(--tw-line)' }}
+              >
                 Select Active Desk
               </div>
 
-              <div className="py-1 space-y-0.5" role="listbox">
+              <div className="py-1.5 space-y-1" role="listbox" aria-label="Select active desk">
                 <button
                   type="button"
+                  role="option"
+                  aria-selected={selectedAccountId === 'ALL'}
                   onClick={() => {
                     setSelectedAccountId('ALL');
                     setAccountDropdownOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-sans transition-all text-left ${
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-sans transition-colors text-left border ${
                     selectedAccountId === 'ALL'
-                      ? 'bg-[#13211F] text-white font-semibold border border-[#4F7470]'
-                      : 'text-[#CFE2DE] hover:bg-white/5 hover:text-white'
+                      ? 'bg-[var(--tw-pill)] text-[var(--tw-ink)] font-semibold border-[var(--tw-line-strong)]'
+                      : 'text-[var(--tw-ink)] hover:bg-[var(--tw-pill)] border-transparent'
                   }`}
                 >
                   <div className="flex flex-col">
                     <span className="font-medium">All accounts (Consolidated)</span>
-                    <span className="text-[11px] text-[#A9C1BD] font-mono">{accounts.length} linked accounts</span>
+                    <span className="text-[11px] font-mono" style={{ color: 'var(--tw-ink-2)' }}>
+                      {accounts.length} {accounts.length === 1 ? 'linked account' : 'linked accounts'}
+                    </span>
                   </div>
-                  {selectedAccountId === 'ALL' && <Check size={14} className="text-[#9BF3DF]" />}
+                  {selectedAccountId === 'ALL' && (
+                    <Check size={14} style={{ color: 'var(--tw-focus)' }} aria-hidden="true" />
+                  )}
                 </button>
 
                 {accounts.map((acc) => {
@@ -235,36 +248,47 @@ export const Header: React.FC<HeaderProps> = ({
                     <button
                       key={acc.id}
                       type="button"
+                      role="option"
+                      aria-selected={isSelected}
                       onClick={() => {
                         setSelectedAccountId(acc.id);
                         setAccountDropdownOpen(false);
                       }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-sans transition-all text-left ${
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-sans transition-colors text-left border ${
                         isSelected
-                          ? 'bg-[#13211F] text-white font-semibold border border-[#4F7470]'
-                          : 'text-[#CFE2DE] hover:bg-white/5 hover:text-white'
+                          ? 'bg-[var(--tw-pill)] text-[var(--tw-ink)] font-semibold border-[var(--tw-line-strong)]'
+                          : 'text-[var(--tw-ink)] hover:bg-[var(--tw-pill)] border-transparent'
                       }`}
                     >
-                      <div className="flex flex-col">
+                      <div className="flex flex-col min-w-0">
                         <span className="font-medium truncate max-w-[180px]">{acc.name}</span>
-                        <span className="text-[11px] text-[#A9C1BD] font-mono">
-                          {acc.brokerOrFirm} · {isPnlHidden ? '$••••••' : `$${acc.currentBalance.toLocaleString('en-US')}`}
+                        <span className="text-[11px] font-mono truncate max-w-[210px]" style={{ color: 'var(--tw-ink-2)' }}>
+                          {acc.brokerOrFirm} ·{' '}
+                          <span className={isPnlHidden ? 'tw-pnl-blur' : ''}>
+                            {isPnlHidden ? '$••••••' : `$${acc.currentBalance.toLocaleString('en-US')}`}
+                          </span>
                         </span>
                       </div>
-                      {isSelected && <Check size={14} className="text-[#9BF3DF]" />}
+                      {isSelected && (
+                        <Check size={14} style={{ color: 'var(--tw-focus)' }} aria-hidden="true" />
+                      )}
                     </button>
                   );
                 })}
               </div>
 
-              <div className="pt-1.5 mt-1 border-t border-[#34544F]/60 flex items-center justify-between px-1 text-xs">
+              <div
+                className="pt-1.5 mt-1 border-t flex items-center justify-between px-1 text-xs"
+                style={{ borderColor: 'var(--tw-line)' }}
+              >
                 <Link
                   href="/accounts"
                   onClick={() => setAccountDropdownOpen(false)}
-                  className="flex items-center gap-1.5 text-[#9BF3DF] hover:underline px-2 py-1 text-[11px] font-medium"
+                  className="flex items-center gap-1.5 hover:underline px-2 py-1 text-[11px] font-medium"
+                  style={{ color: 'var(--tw-focus)' }}
                 >
                   <span>Manage Accounts</span>
-                  <ExternalLink size={11} />
+                  <ExternalLink size={11} aria-hidden="true" />
                 </Link>
                 <button
                   type="button"
@@ -272,9 +296,10 @@ export const Header: React.FC<HeaderProps> = ({
                     setAccountDropdownOpen(false);
                     onOpenNewAccount();
                   }}
-                  className="flex items-center gap-1 text-[#CFE2DE] hover:text-white px-2 py-1 text-[11px] font-medium"
+                  className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-lg hover:bg-[var(--tw-pill)] transition-colors"
+                  style={{ color: 'var(--tw-ink-2)' }}
                 >
-                  <Plus size={12} />
+                  <Plus size={12} aria-hidden="true" />
                   <span>New</span>
                 </button>
               </div>

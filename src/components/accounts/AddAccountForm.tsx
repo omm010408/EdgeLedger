@@ -59,7 +59,8 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
 
   const [notes, setNotes] = useState('');
 
-  // Submission State
+  // Stepper & Submission State
+  const [activeStep, setActiveStep] = useState<'identity' | 'limits' | 'review'>('identity');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverErrors, setServerErrors] = useState<Array<{ name: string; reason: string }>>([]);
   const [generalError, setGeneralError] = useState<string | null>(null);
@@ -253,13 +254,56 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
     }
   };
 
+  const validateIdentityStep = (): boolean => {
+    const errs: Array<{ name: string; reason: string }> = [];
+    if (!label.trim()) {
+      errs.push({ name: 'label', reason: 'Account label is required.' });
+    }
+    if (!brokerOrFirm.trim()) {
+      errs.push({ name: 'brokerOrFirm', reason: 'Broker or prop firm name is required.' });
+    }
+    const parsedBal = parseFloat(startingBalance);
+    if (!Number.isFinite(parsedBal) || parsedBal < 100) {
+      errs.push({ name: 'startingBalance', reason: 'Enter a starting balance of at least 100.' });
+    }
+    if (errs.length > 0) {
+      setServerErrors(errs);
+      setActiveStep('identity');
+      return false;
+    }
+    setServerErrors([]);
+    return true;
+  };
+
+  const handleGoToStep = (nextStep: 'identity' | 'limits' | 'review') => {
+    setGeneralError(null);
+    if (nextStep === 'identity') {
+      setServerErrors([]);
+      setActiveStep('identity');
+      return;
+    }
+    if (!validateIdentityStep()) return;
+    if (nextStep === 'review' && !localValidation.isValid) {
+      setServerErrors(localValidation.errors);
+      setActiveStep('limits');
+      return;
+    }
+    setServerErrors([]);
+    setActiveStep(nextStep);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setServerErrors([]);
     setGeneralError(null);
 
+    if (!validateIdentityStep()) {
+      return;
+    }
+
     if (!localValidation.isValid) {
       setServerErrors(localValidation.errors);
+      setActiveStep('limits');
       return;
     }
 
@@ -450,11 +494,35 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
             Set the account's phase, your own loss limits, and whether a breach blocks new trades.
           </p>
         </div>
-        <div className="tw-controls">
-          <div className="tw-steps hidden md:flex" role="list" aria-label="Steps">
-            <span role="listitem"><b>1</b>Identity</span>
-            <span role="listitem" aria-current="step"><b>2</b>Limits</span>
-            <span role="listitem"><b>3</b>Review</span>
+        <div className="tw-controls flex-wrap">
+          <div className="tw-steps" role="tablist" aria-label="Account setup steps">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeStep === 'identity'}
+              aria-current={activeStep === 'identity' ? 'step' : undefined}
+              onClick={() => handleGoToStep('identity')}
+            >
+              <b>1</b>Identity
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeStep === 'limits'}
+              aria-current={activeStep === 'limits' ? 'step' : undefined}
+              onClick={() => handleGoToStep('limits')}
+            >
+              <b>2</b>Limits
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeStep === 'review'}
+              aria-current={activeStep === 'review' ? 'step' : undefined}
+              onClick={() => handleGoToStep('review')}
+            >
+              <b>3</b>Review
+            </button>
           </div>
           <button
             onClick={handleCancel}
@@ -463,21 +531,31 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
           >
             Cancel
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="btn dark px-5 py-2 rounded-full bg-[var(--ink)] text-[var(--tile)] font-semibold text-xs sm:text-sm flex items-center gap-2 hover:opacity-90 disabled:opacity-50 cursor-pointer"
-            type="button"
-          >
-            {isSubmitting ? (
-              <>
-                <RefreshCw size={14} className="animate-spin" />
-                <span>Validating...</span>
-              </>
-            ) : (
-              'Create account'
-            )}
-          </button>
+          {activeStep === 'review' ? (
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="btn dark px-5 py-2 rounded-full bg-[var(--ink)] text-[var(--tile)] font-semibold text-xs sm:text-sm flex items-center gap-2 hover:opacity-90 disabled:opacity-50 cursor-pointer"
+              type="button"
+            >
+              {isSubmitting ? (
+                <>
+                  <RefreshCw size={14} className="animate-spin" />
+                  <span>Validating...</span>
+                </>
+              ) : (
+                'Create account'
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={() => handleGoToStep(activeStep === 'identity' ? 'limits' : 'review')}
+              className="btn dark px-5 py-2 rounded-full bg-[var(--ink)] text-[var(--tile)] font-semibold text-xs sm:text-sm flex items-center gap-2 hover:opacity-90 cursor-pointer"
+              type="button"
+            >
+              {activeStep === 'identity' ? 'Continue to Limits' : 'Review account'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -500,8 +578,11 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
       {/* 12-Column Grid */}
       <form onSubmit={handleSubmit} className="tw-grid mt-6">
 
-        {/* Section 1: Account Identity (Cols 1-7) */}
-        <section className="tw-tile tw-ident" aria-label="Account identity">
+        {/* STEP 1: IDENTITY (Account Identity + Capital & Phase) */}
+        {activeStep === 'identity' && (
+          <>
+            {/* Section 1: Account Identity (Cols 1-7) */}
+            <section className="tw-tile tw-ident" aria-label="Account identity">
           <div className="tw-thead">
             <span className="tw-lbl">Account identity</span>
             <span className="tw-sub">Required fields are marked by their label</span>
@@ -670,6 +751,34 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
           </div>
         </section>
 
+        {/* Identity Step Footer Bar */}
+        <section className="tw-tile col-span-12" aria-label="Identity step actions">
+          <div className="tw-actionbar !mt-0">
+            <span>Step 1 of 3 · Define desk label, firm, currency, and starting balance before setting loss gates.</span>
+            <div>
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="btn quiet hover:bg-[var(--pill)] px-4 py-2 rounded-full border border-[var(--line-strong)] text-[var(--ink-2)] text-xs sm:text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleGoToStep('limits')}
+                className="btn dark px-5 py-2 rounded-full bg-[var(--ink)] text-[var(--tile)] font-semibold text-xs sm:text-sm hover:opacity-90 cursor-pointer"
+              >
+                Next: Risk &amp; limits
+              </button>
+            </div>
+          </div>
+        </section>
+          </>
+        )}
+
+        {/* STEP 2: LIMITS (Loss Limits, Live Gate Preview, Firm Rules, Notes) */}
+        {activeStep === 'limits' && (
+          <>
         {/* Section 3: Personal Loss & Prop Firm Profit Limits (Cols 1-6) */}
         <section className="tw-tile tw-limits" aria-label="Your loss and profit limits">
           <div className="tw-thead">
@@ -1025,25 +1134,184 @@ export const AddAccountForm: React.FC<AddAccountFormProps> = ({
             placeholder="e.g. Trailing drawdown from peak, scale down after 3 losing days, no trading during the first 15 minutes of London."
           />
           <div className="tw-actionbar">
-            <span>Limits are saved as your rules and sent to the server for enforcement.</span>
+            <span>Step 2 of 3 · Review your identity and risk gates next before creating.</span>
             <div>
               <button
                 type="button"
-                onClick={handleCancel}
+                onClick={() => handleGoToStep('identity')}
                 className="btn quiet hover:bg-[var(--pill)] px-4 py-2 rounded-full border border-[var(--line-strong)] text-[var(--ink-2)] text-xs sm:text-sm font-medium"
               >
-                Cancel
+                Back: Identity
               </button>
               <button
-                type="submit"
-                disabled={isSubmitting}
-                className="btn dark px-5 py-2 rounded-full bg-[var(--ink)] text-[var(--tile)] font-semibold text-xs sm:text-sm hover:opacity-90 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                type="button"
+                onClick={() => handleGoToStep('review')}
+                className="btn dark px-5 py-2 rounded-full bg-[var(--ink)] text-[var(--tile)] font-semibold text-xs sm:text-sm hover:opacity-90 flex items-center gap-2 cursor-pointer"
               >
-                {isSubmitting ? 'Saving...' : 'Create account'}
+                Next: Review
               </button>
             </div>
           </div>
         </section>
+          </>
+        )}
+
+        {/* STEP 3: REVIEW (Full Summary before Account Provisioning) */}
+        {activeStep === 'review' && (
+          <>
+            {/* Identity Review Summary (Cols 1-5) */}
+            <section className="tw-tile col-span-12 lg:col-span-5" aria-label="Review account identity">
+              <div className="tw-thead">
+                <span className="tw-lbl">Account identity</span>
+                <button
+                  type="button"
+                  onClick={() => handleGoToStep('identity')}
+                  className="text-xs font-semibold hover:underline"
+                  style={{ color: 'var(--tw-focus)' }}
+                >
+                  Edit identity
+                </button>
+              </div>
+              <div className="space-y-1">
+                <div className="tw-review-row">
+                  <span className="tw-review-k">Desk / Account Label</span>
+                  <span className="tw-review-v">{label.trim() || '—'}</span>
+                </div>
+                <div className="tw-review-row">
+                  <span className="tw-review-k">Broker / Prop Firm</span>
+                  <span className="tw-review-v">{brokerOrFirm.trim() || '—'}</span>
+                </div>
+                <div className="tw-review-row">
+                  <span className="tw-review-k">Account Type</span>
+                  <span className="tw-review-v capitalize">{accountType}</span>
+                </div>
+                <div className="tw-review-row">
+                  <span className="tw-review-k">Stage / Phase</span>
+                  <span className="tw-review-v">
+                    {accountType === 'evaluation' ? `Phase ${phase || 1}` : accountType === 'payout' ? 'Payout' : accountType === 'live' ? 'Live' : 'Funded'}
+                  </span>
+                </div>
+                <div className="tw-review-row">
+                  <span className="tw-review-k">Base Currency</span>
+                  <span className="tw-review-v font-mono">{baseCurrency}</span>
+                </div>
+                <div className="tw-review-row">
+                  <span className="tw-review-k">Starting Balance</span>
+                  <span className="tw-review-v font-mono">
+                    {Number(calculatedLimits.startBal).toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{' '}
+                    {baseCurrency}
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            {/* Risk Limits & Firm Rules Summary (Cols 6-12) */}
+            <section className="tw-tile col-span-12 lg:col-span-7" aria-label="Review risk limits and enforcement">
+              <div className="tw-thead">
+                <span className="tw-lbl">Limits, profit target &amp; enforcement</span>
+                <button
+                  type="button"
+                  onClick={() => handleGoToStep('limits')}
+                  className="text-xs font-semibold hover:underline"
+                  style={{ color: 'var(--tw-focus)' }}
+                >
+                  Edit limits
+                </button>
+              </div>
+              <div className="space-y-1">
+                <div className="tw-review-row">
+                  <span className="tw-review-k">Daily Loss Limit</span>
+                  <span className="tw-review-v font-mono" style={{ color: 'var(--tw-loss)' }}>
+                    −${calculatedLimits.dailyLimitDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                    ({dailyLossMode === 'pct_day_start' ? `${parseFloat(dailyLossValue) || 5}% of day start` : 'Fixed'})
+                  </span>
+                </div>
+                <div className="tw-review-row">
+                  <span className="tw-review-k">Total Loss Limit</span>
+                  <span className="tw-review-v font-mono" style={{ color: 'var(--tw-loss)' }}>
+                    Floor ${calculatedLimits.totalFloorDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                    ({parseFloat(totalLossValue) || 10}% · {totalLossMode === 'trailing_peak' ? 'Trailing peak' : 'Static start'})
+                  </span>
+                </div>
+                <div className="tw-review-row">
+                  <span className="tw-review-k">Daily Reset Window</span>
+                  <span className="tw-review-v font-mono">
+                    {dailyResetLocalTime} {dailyResetTimezone}
+                  </span>
+                </div>
+                <div className="tw-review-row">
+                  <span className="tw-review-k">Warning Alert Threshold</span>
+                  <span className="tw-review-v font-mono">{warnThresholdPct}% of limit</span>
+                </div>
+                <div className="tw-review-row">
+                  <span className="tw-review-k">Profit Target</span>
+                  <span className="tw-review-v font-mono" style={{ color: 'var(--tw-gain)' }}>
+                    {accountType === 'live'
+                      ? 'Trader-defined (Live)'
+                      : `+$${calculatedLimits.targetDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${calculatedLimits.targetPct.toFixed(1)}%)`}
+                  </span>
+                </div>
+                <div className="tw-review-row">
+                  <span className="tw-review-k">Gate Enforcement</span>
+                  <span className="tw-review-v">
+                    {enforcement === 'enforce' ? 'Enforce (blocks new trades on breach)' : 'Warn only'}
+                  </span>
+                </div>
+                <div className="tw-review-row">
+                  <span className="tw-review-k">News Trading Restriction</span>
+                  <span className="tw-review-v">{newsRestricted ? 'Restricted around red-folder news' : 'Allowed'}</span>
+                </div>
+              </div>
+            </section>
+
+            {/* Gate Readiness & Strategy Notes + Final Create Action (Cols 1-12) */}
+            <section className="tw-tile col-span-12" aria-label="Confirm and create account">
+              <div className="tw-thead">
+                <span className="tw-lbl">Ready to provision · Review notes &amp; confirm</span>
+                <span className="tw-sub">
+                  {previewGateState?.status === 'allowed' ? 'Gate Status: Allowed' : `Gate Status: ${previewGateState?.status || 'Allowed'}`}
+                </span>
+              </div>
+
+              <div
+                className="p-3.5 rounded-2xl text-xs mb-4"
+                style={{
+                  background: 'var(--pill)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--ink-2)',
+                }}
+              >
+                <span className="font-semibold block mb-1" style={{ color: 'var(--ink)' }}>
+                  Strategy &amp; rules notes
+                </span>
+                {notes.trim() ? notes.trim() : 'No optional notes provided.'}
+              </div>
+
+              <div className="tw-actionbar !mt-0">
+                <span>Step 3 of 3 · Creating this desk persists rules across Overview, Accounts, Risk &amp; Trades.</span>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => handleGoToStep('limits')}
+                    className="btn quiet hover:bg-[var(--pill)] px-4 py-2 rounded-full border border-[var(--line-strong)] text-[var(--ink-2)] text-xs sm:text-sm font-medium"
+                  >
+                    Back: Limits
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="btn dark px-5 py-2 rounded-full bg-[var(--ink)] text-[var(--tile)] font-semibold text-xs sm:text-sm hover:opacity-90 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                  >
+                    {isSubmitting ? 'Saving...' : 'Create account'}
+                  </button>
+                </div>
+              </div>
+            </section>
+          </>
+        )}
 
       </form>
     </div>
