@@ -103,10 +103,26 @@ function resolveServerAuthSecret(): string {
     return process.env.EDGELEDGER_AUTH_SECRET;
   }
   if (!process.env[RUNTIME_SECRET_ENV_KEY]) {
-    process.env[RUNTIME_SECRET_ENV_KEY] = crypto.randomBytes(32).toString('hex');
+    // Derive a process-stable secret across Next.js route bundles and serverless lambdas
+    // when EDGELEDGER_AUTH_SECRET is not explicitly configured.
+    const material =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+      'edgeledger-local-dev-auth-key-v1';
+    process.env[RUNTIME_SECRET_ENV_KEY] = crypto
+      .createHash('sha256')
+      .update(`edgeledger-jwt-hmac:${material}`)
+      .digest('hex');
   }
   return process.env[RUNTIME_SECRET_ENV_KEY]!;
 }
+
+const SINGLE_AUTH_USER = {
+  userId: 'usr-edgeledger-primary',
+  email: 'ommroshan@gmail.com',
+  passwordHash: hashSecretInput('EdgeLedger@010408'),
+  passkeyIds: [] as string[],
+};
 
 function getStore(): ServerAuthAndSyncStore {
   const runtimeSecret = resolveServerAuthSecret();
@@ -115,12 +131,7 @@ function getStore(): ServerAuthAndSyncStore {
       string,
       { userId: string; email: string; passwordHash: string; passkeyIds: string[] }
     >();
-    users.set('ommroshan@gmail.com', {
-      userId: 'usr-edgeledger-primary',
-      email: 'ommroshan@gmail.com',
-      passwordHash: hashSecretInput('EdgeLedger@010408'),
-      passkeyIds: [],
-    });
+    users.set(SINGLE_AUTH_USER.email, SINGLE_AUTH_USER);
 
     g.__edgeledger_auth_sync_store__ = {
       secret: runtimeSecret,
@@ -131,8 +142,13 @@ function getStore(): ServerAuthAndSyncStore {
       changesByUser: new Map(),
       idempotencyByUser: new Map(),
     };
-  } else if (g.__edgeledger_auth_sync_store__.secret !== runtimeSecret) {
-    g.__edgeledger_auth_sync_store__.secret = runtimeSecret;
+  } else {
+    if (g.__edgeledger_auth_sync_store__.secret !== runtimeSecret) {
+      g.__edgeledger_auth_sync_store__.secret = runtimeSecret;
+    }
+    if (!g.__edgeledger_auth_sync_store__.usersByEmail.has(SINGLE_AUTH_USER.email)) {
+      g.__edgeledger_auth_sync_store__.usersByEmail.set(SINGLE_AUTH_USER.email, SINGLE_AUTH_USER);
+    }
   }
   return g.__edgeledger_auth_sync_store__;
 }
@@ -209,13 +225,18 @@ export function authenticateUserCredentials(params: {
     return { ok: false, error: 'Email and password login only.' };
   }
 
-  const password = params.password || '';
-  if (password.length < 6) {
+  const rawPassword = params.password || '';
+  const trimmedPassword = rawPassword.trim();
+  if (rawPassword.length < 6 && trimmedPassword.length < 6) {
     return { ok: false, error: 'Password must be at least 6 characters.' };
   }
 
   const existing = store.usersByEmail.get(normalizedEmail);
-  if (!existing || existing.passwordHash !== hashSecretInput(password)) {
+  const passwordMatches =
+    Boolean(existing) &&
+    (existing!.passwordHash === hashSecretInput(rawPassword) ||
+      existing!.passwordHash === hashSecretInput(trimmedPassword));
+  if (!existing || !passwordMatches) {
     return { ok: false, error: 'Invalid email or password.' };
   }
 

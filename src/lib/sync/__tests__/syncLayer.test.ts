@@ -488,6 +488,15 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
 
     // 1. Sign in -> sets session-only (no maxAge/expires) httpOnly SameSite=Lax cookies bound to that browser session
     const browserSessionA = 'bs-test-session-a';
+    const trimmedSignInRes = await signInPost(
+      new NextRequest('http://localhost:3000/auth/sign-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: '  OmmRoshan@gmail.com ', password: ' EdgeLedger@010408 ' }),
+      })
+    );
+    expect(trimmedSignInRes.status).toBe(200);
+
     const signInReq = new NextRequest('http://localhost:3000/auth/sign-in', {
       method: 'POST',
       headers: {

@@ -347,13 +347,14 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Search / Command Palette Button */}
         <button
-          className="tw-btn quiet shrink-0 !w-[38px] !px-0 justify-center"
+          className="tw-btn quiet shrink-0 !px-3 gap-1.5 justify-center"
           type="button"
           onClick={onOpenCommandPalette}
           title="Search or command palette (⌘K)"
           aria-label="Search or command palette"
         >
-          <kbd>⌘K</kbd>
+          <span className="hidden sm:inline text-xs font-medium">Search</span>
+          <kbd className="font-mono text-[11px] opacity-75">⌘K</kbd>
         </button>
       </div>
     </header>

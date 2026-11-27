@@ -189,7 +189,7 @@ export class SessionManager {
   }
 
   async signIn(creds: SignInCredentials): Promise<boolean> {
-    if (this.state !== 'signedOut') {
+    if (this.state !== 'signedOut' && this.state !== 'refreshing') {
       return false;
     }
 

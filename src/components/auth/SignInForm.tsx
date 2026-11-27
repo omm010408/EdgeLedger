@@ -30,20 +30,21 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
   const isBusy = sessionSnapshot.state === 'signingIn';
 
   useEffect(() => {
-    if (sessionSnapshot.error && !errorMessage) {
+    if (sessionSnapshot.state === 'signedOut' && sessionSnapshot.error) {
       setErrorMessage(sessionSnapshot.error);
     }
-  }, [sessionSnapshot.error, errorMessage]);
+  }, [sessionSnapshot.state, sessionSnapshot.error]);
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: { email?: string; password?: string } = {};
     const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
 
     if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       errs.email = 'Enter a valid email address.';
     }
-    if (!password || password.length < 6) {
+    if (!trimmedPassword || trimmedPassword.length < 6) {
       errs.password = 'Enter a password of at least 6 characters.';
     }
 
@@ -60,7 +61,7 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
 
     setFieldErrors({});
     setErrorMessage(null);
-    const ok = await signIn({ email: trimmedEmail, password, method: 'password' });
+    const ok = await signIn({ email: trimmedEmail, password: trimmedPassword, method: 'password' });
     if (ok) {
       onSuccess?.();
     } else {
@@ -150,16 +151,22 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
             <input
               ref={emailRef}
               id={emailId}
-              type={showEmail ? 'text' : 'password'}
+              type="email"
               inputMode="email"
-              autoComplete="off"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               required
               aria-invalid={Boolean(fieldErrors.email)}
               aria-describedby={fieldErrors.email ? errorBannerId : undefined}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (errorMessage) setErrorMessage(null);
+              }}
               placeholder="Enter your email"
-              className="w-full h-11 pl-10 pr-10 rounded-2xl text-sm"
+              className={`w-full h-11 pl-10 pr-10 rounded-2xl text-sm ${showEmail ? '' : 'tw-masked-input'}`}
               style={{
                 background: 'var(--tw-bg)',
                 color: 'var(--tw-ink)',
@@ -202,7 +209,10 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
               aria-invalid={Boolean(fieldErrors.password)}
               aria-describedby={fieldErrors.password ? errorBannerId : undefined}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (errorMessage) setErrorMessage(null);
+              }}
               placeholder="Enter your password"
               className="w-full h-11 pl-10 pr-10 rounded-2xl text-sm"
               style={{

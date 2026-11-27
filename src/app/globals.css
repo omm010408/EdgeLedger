@@ -8867,6 +8867,287 @@ textarea.tw-trade-input {
   outline-offset: 2px;
 }
 
+/* Masked email input preserving native email keyboard & autofill */
+.tw-masked-input {
+  -webkit-text-security: disc;
+}
+
+/* ========================================================================== */
+/* Minimal Editorial Command Palette (Search ⌘K)                              */
+/* ========================================================================== */
+.tw-cmd-veil {
+  --cmd-veil: rgba(0, 0, 0, 0.6);
+  --cmd-sheet: #0F1514;
+  --cmd-ink: #EEF3F2;
+  --cmd-ink-2: #B5C4C1;
+  --cmd-ink-3: #8FA19D;
+  --cmd-rule: #1F2D2B;
+  --cmd-wash: #162120;
+  --cmd-accent: #7CE3C7;
+  --cmd-mark: #4A3D0E;
+  --cmd-mark-ink: #FFF1C2;
+  --cmd-gain: #5BE6AE;
+  --cmd-loss: #FF8F80;
+  --cmd-lift: 0 1px 0 var(--cmd-rule), 0 30px 80px rgba(0, 0, 0, 0.5);
+  position: fixed;
+  inset: 0;
+  background: var(--cmd-veil);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 14vh 16px 16px;
+  z-index: 50;
+}
+
+[data-theme="light"] .tw-cmd-veil,
+.light .tw-cmd-veil {
+  --cmd-veil: rgba(16, 20, 19, 0.22);
+  --cmd-sheet: #FFFFFF;
+  --cmd-ink: #101413;
+  --cmd-ink-2: #4B5654;
+  --cmd-ink-3: #5F6B69;
+  --cmd-rule: #E6E5DF;
+  --cmd-wash: #F2F1EC;
+  --cmd-accent: #0D4A4A;
+  --cmd-mark: #FCEFB4;
+  --cmd-mark-ink: #1A1400;
+  --cmd-gain: #13784E;
+  --cmd-loss: #B3263E;
+  --cmd-lift: 0 1px 0 var(--cmd-rule), 0 30px 80px rgba(0, 0, 0, 0.16);
+}
+
+.tw-cmd-sheet {
+  width: min(600px, 100%);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--cmd-sheet);
+  color: var(--cmd-ink);
+  border-radius: 16px;
+  box-shadow: var(--cmd-lift);
+  overflow: hidden;
+  font-family: "Instrument Sans", system-ui, sans-serif;
+}
+
+.tw-cmd-field {
+  flex: none;
+  padding: 20px 22px 14px;
+}
+
+.tw-cmd-field input {
+  width: 100%;
+  border: 0;
+  background: none;
+  font-size: 18px;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+  outline: none;
+  color: var(--cmd-ink);
+}
+
+.tw-cmd-field input::placeholder {
+  color: var(--cmd-ink-3);
+}
+
+.tw-cmd-scopes {
+  flex: none;
+  display: flex;
+  gap: 20px;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--cmd-rule);
+  overflow-x: auto;
+}
+
+.tw-cmd-scope {
+  position: relative;
+  padding: 10px 0 11px;
+  font-size: 13px;
+  color: var(--cmd-ink-3);
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.tw-cmd-scope:hover {
+  color: var(--cmd-ink);
+}
+
+.tw-cmd-scope[aria-pressed="true"] {
+  color: var(--cmd-ink);
+  font-weight: 500;
+}
+
+.tw-cmd-scope[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--cmd-accent);
+  border-radius: 2px;
+}
+
+.tw-cmd-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 10px 8px;
+}
+
+.tw-cmd-grp {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cmd-ink-3);
+  padding: 14px 12px 6px;
+}
+
+.tw-cmd-opt {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  background: none;
+  border: 0;
+}
+
+.tw-cmd-opt[aria-selected="true"] {
+  background: var(--cmd-wash);
+  box-shadow: inset 2px 0 0 var(--cmd-accent);
+}
+
+.tw-cmd-opt-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.tw-cmd-lbl {
+  display: block;
+  font-size: 14.5px;
+  line-height: 1.3;
+  color: var(--cmd-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tw-cmd-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--cmd-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tw-cmd-meta {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+  color: var(--cmd-ink-2);
+  white-space: nowrap;
+}
+
+.tw-cmd-meta.pos {
+  color: var(--cmd-gain);
+}
+
+.tw-cmd-meta.neg {
+  color: var(--cmd-loss);
+}
+
+.tw-cmd-opt mark {
+  background: var(--cmd-mark);
+  color: var(--cmd-mark-ink);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.tw-cmd-none {
+  flex: none;
+  margin: 0;
+  padding: 40px 22px;
+  font-size: 14px;
+  color: var(--cmd-ink-2);
+  line-height: 1.5;
+}
+
+.tw-cmd-none b {
+  font-weight: 500;
+  color: var(--cmd-ink);
+}
+
+.tw-cmd-keys {
+  flex: none;
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 12px 22px;
+  border-top: 1px solid var(--cmd-rule);
+  font-size: 12px;
+  color: var(--cmd-ink-3);
+}
+
+.tw-cmd-note {
+  position: fixed;
+  left: 50%;
+  top: 22px;
+  transform: translate(-50%, -6px);
+  background: var(--tw-tile);
+  color: var(--tw-ink);
+  border: 1px solid var(--tw-line-strong);
+  font-size: 13px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  box-shadow: var(--tw-shadow-dropdown);
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+  z-index: 60;
+}
+
+.tw-cmd-note.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.tw-cmd-veil :focus-visible {
+  outline: 2px solid var(--cmd-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.tw-cmd-field input:focus-visible {
+  outline: none;
+}
+
+@media (max-width: 640px) {
+  .tw-cmd-veil {
+    padding: 0;
+  }
+  .tw-cmd-sheet {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tw-cmd-note {
+    transition: none !important;
+  }
+}
+
 
 
 
