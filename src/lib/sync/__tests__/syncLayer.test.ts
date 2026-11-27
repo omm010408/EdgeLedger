@@ -454,8 +454,9 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
     ).toEqual({ kind: 'synced', label: 'Synced · 13:05', tokenVar: '--gain' });
   });
 
-  it('verifies /auth/sign-in, /auth/refresh, /auth/sign-out, /sync/changes, and /sync/push protocol handlers with httpOnly SameSite=Lax cookies', async () => {
+  it('verifies /auth/sign-in, /auth/session, /auth/refresh, /auth/sign-out, /sync/changes, and /sync/push protocol handlers with session-only httpOnly SameSite=Lax cookies', async () => {
     const { POST: signInPost } = await import('../../../app/auth/sign-in/route');
+    const { GET: sessionGet } = await import('../../../app/auth/session/route');
     const { POST: refreshPost } = await import('../../../app/auth/refresh/route');
     const { POST: signOutPost } = await import('../../../app/auth/sign-out/route');
     const { GET: changesGet } = await import('../../../app/sync/changes/route');
@@ -520,11 +521,27 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
     expect(jwtPayload.exp - jwtPayload.iat).toBe(4 * 60 * 60 * 1000);
     expect(jwtPayload.sid).toBe(browserSessionA);
 
-    // 2. Unauthenticated /sync/changes -> 401
+    // 2. Unauthenticated /sync/changes and /auth/session -> 401
     const unauthChanges = await changesGet(new NextRequest('http://localhost:3000/sync/changes?cursor='));
     expect(unauthChanges.status).toBe(401);
+    const unauthSession = await sessionGet(new NextRequest('http://localhost:3000/auth/session'));
+    expect(unauthSession.status).toBe(401);
 
-    // Token copied into a DIFFERENT browser session (missing or mismatched X-EdgeLedger-Session-Id) -> 401
+    // Repeated /auth/session checks succeed idempotently using the 4-hour el_access cookie
+    const validSession1 = await sessionGet(
+      new NextRequest('http://localhost:3000/auth/session', {
+        headers: { Cookie: `el_access=${accessCookie!.value}; el_refresh=${refreshCookie!.value}` },
+      })
+    );
+    const validSession2 = await sessionGet(
+      new NextRequest('http://localhost:3000/auth/session', {
+        headers: { Cookie: `el_access=${accessCookie!.value}; el_refresh=${refreshCookie!.value}` },
+      })
+    );
+    expect(validSession1.status).toBe(200);
+    expect(validSession2.status).toBe(200);
+
+    // Token copied into a DIFFERENT browser session (mismatched X-EdgeLedger-Session-Id) -> 401
     const wrongBrowserSessionChanges = await changesGet(
       new NextRequest('http://localhost:3000/sync/changes?cursor=', {
         headers: {
@@ -535,12 +552,15 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
     );
     expect(wrongBrowserSessionChanges.status).toBe(401);
 
-    const missingBrowserSessionChanges = await changesGet(
+    // Browser cookie authentication works on reloads/new tabs within the same browser session
+    const cookieChanges = await changesGet(
       new NextRequest('http://localhost:3000/sync/changes?cursor=', {
-        headers: { Authorization: `Bearer ${accessCookie!.value}` },
+        headers: {
+          Cookie: `el_access=${accessCookie!.value}`,
+        },
       })
     );
-    expect(missingBrowserSessionChanges.status).toBe(401);
+    expect(cookieChanges.status).toBe(200);
 
     // Bearer JWT authentication in SAME browser session succeeds cleanly
     const bearerChanges = await changesGet(

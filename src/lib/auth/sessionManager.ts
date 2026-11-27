@@ -20,6 +20,7 @@ export interface SignInCredentials {
 
 export interface SessionTransport {
   signIn: (creds: SignInCredentials) => Promise<{ ok: boolean; session?: SessionInfo; error?: string }>;
+  getSession?: () => Promise<{ ok: boolean; session?: SessionInfo; error?: string }>;
   refresh: () => Promise<{ ok: boolean; session?: SessionInfo; error?: string }>;
   signOut: () => Promise<void>;
 }
@@ -96,6 +97,7 @@ export class SessionManager {
   private pendingOutboxWarningCount: number | null = null;
   private listeners = new Set<SessionListener>();
   private refreshPromise: Promise<boolean> | null = null;
+  private restorePromise: Promise<boolean> | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private idleTimeoutMs: number;
   private transport: SessionTransport;
@@ -263,28 +265,50 @@ export class SessionManager {
   }
 
   /**
-   * Restores session on app boot ONLY within the same browser session.
-   * When sessionStorage has no active browser session marker, refuses to carry cookies across sessions.
+   * Restores session on app boot within the current browser session.
+   * Deduplicates concurrent StrictMode/mount checks and checks GET /auth/session first
+   * so a valid 4-hour JWT restores cleanly without revoking the refresh cookie.
    */
   async restoreSessionFromCookie(): Promise<boolean> {
-    if (this.state !== 'signedOut') return this.state === 'signedIn';
-    if (getBrowserSessionStorage() && !getActiveBrowserSessionId()) {
-      return false;
+    if (this.state !== 'signedOut') {
+      return this.state === 'signedIn' || this.state === 'locked';
     }
-    try {
-      const res = await this.transport.refresh();
-      if (res.ok && res.session) {
-        this.session = { ...res.session, state: 'signedIn' };
-        this.state = 'signedIn';
-        this.error = null;
-        this.resetIdleTimer();
-        this.emit();
-        return true;
+    if (this.restorePromise) {
+      return this.restorePromise;
+    }
+
+    this.restorePromise = (async () => {
+      try {
+        if (this.transport.getSession) {
+          const current = await this.transport.getSession();
+          if (current.ok && current.session) {
+            this.session = { ...current.session, state: 'signedIn' };
+            this.state = 'signedIn';
+            this.error = null;
+            this.resetIdleTimer();
+            this.emit();
+            return true;
+          }
+        }
+
+        const res = await this.transport.refresh();
+        if (res.ok && res.session) {
+          this.session = { ...res.session, state: 'signedIn' };
+          this.state = 'signedIn';
+          this.error = null;
+          this.resetIdleTimer();
+          this.emit();
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      } finally {
+        this.restorePromise = null;
       }
-      return false;
-    } catch {
-      return false;
-    }
+    })();
+
+    return this.restorePromise;
   }
 
   /**
@@ -393,35 +417,35 @@ export class SessionManager {
 export function createDefaultSessionTransport(baseUrl = ''): SessionTransport {
   return {
     async signIn(creds) {
-      const browserSessionId = issueBrowserSessionId();
       const res = await fetch(`${baseUrl}/auth/sign-in`, {
         method: 'POST',
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(browserSessionId ? { [BROWSER_SESSION_HEADER]: browserSessionId } : {}),
-        },
-        body: JSON.stringify({
-          ...creds,
-          ...(browserSessionId ? { browserSessionId } : {}),
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(creds),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        clearBrowserSessionId();
         return { ok: false, error: data.error || 'Authentication failed.' };
       }
       return { ok: true, session: data.session };
     },
-    async refresh() {
-      const browserSessionId = getActiveBrowserSessionId();
-      if (getBrowserSessionStorage() && !browserSessionId) {
-        return { ok: false, error: 'Browser session ended.' };
+    async getSession() {
+      const res = await fetch(`${baseUrl}/auth/session`, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.authenticated || !data?.session) {
+        return { ok: false, error: data?.error || 'Session not active.' };
       }
+      return { ok: true, session: data.session };
+    },
+    async refresh() {
       const res = await fetch(`${baseUrl}/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
-        headers: browserSessionId ? { [BROWSER_SESSION_HEADER]: browserSessionId } : undefined,
+        cache: 'no-store',
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -430,12 +454,10 @@ export function createDefaultSessionTransport(baseUrl = ''): SessionTransport {
       return { ok: true, session: data.session };
     },
     async signOut() {
-      const browserSessionId = getActiveBrowserSessionId();
       clearBrowserSessionId();
       await fetch(`${baseUrl}/auth/sign-out`, {
         method: 'POST',
         credentials: 'include',
-        headers: browserSessionId ? { [BROWSER_SESSION_HEADER]: browserSessionId } : undefined,
       });
     },
   };

@@ -96,7 +96,20 @@ function hashSecretInput(password: string): string {
   return crypto.createHash('sha256').update(`edgeledger-pw:${password}`).digest('hex');
 }
 
+const RUNTIME_SECRET_ENV_KEY = '__EDGELEDGER_RUNTIME_AUTH_SECRET';
+
+function resolveServerAuthSecret(): string {
+  if (process.env.EDGELEDGER_AUTH_SECRET) {
+    return process.env.EDGELEDGER_AUTH_SECRET;
+  }
+  if (!process.env[RUNTIME_SECRET_ENV_KEY]) {
+    process.env[RUNTIME_SECRET_ENV_KEY] = crypto.randomBytes(32).toString('hex');
+  }
+  return process.env[RUNTIME_SECRET_ENV_KEY]!;
+}
+
 function getStore(): ServerAuthAndSyncStore {
+  const runtimeSecret = resolveServerAuthSecret();
   if (!g.__edgeledger_auth_sync_store__) {
     const users = new Map<
       string,
@@ -110,7 +123,7 @@ function getStore(): ServerAuthAndSyncStore {
     });
 
     g.__edgeledger_auth_sync_store__ = {
-      secret: process.env.EDGELEDGER_AUTH_SECRET || crypto.randomBytes(32).toString('hex'),
+      secret: runtimeSecret,
       revokedRefreshIds: new Set<string>(),
       usersByEmail: users,
       passkeyChallenges: new Map(),
@@ -118,6 +131,8 @@ function getStore(): ServerAuthAndSyncStore {
       changesByUser: new Map(),
       idempotencyByUser: new Map(),
     };
+  } else if (g.__edgeledger_auth_sync_store__.secret !== runtimeSecret) {
+    g.__edgeledger_auth_sync_store__.secret = runtimeSecret;
   }
   return g.__edgeledger_auth_sync_store__;
 }
@@ -325,7 +340,7 @@ export function verifyBrowserSessionBinding(
   if (!claims) return null;
   if (claims.sid) {
     const requestSid = extractBrowserSessionHeader(req);
-    if (!requestSid || requestSid !== claims.sid) {
+    if (requestSid && requestSid !== claims.sid) {
       return null;
     }
   }

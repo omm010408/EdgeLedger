@@ -20,8 +20,9 @@ export async function POST(req: NextRequest) {
     if (rawClaims) {
       revokeRefreshToken(refreshCookie);
     }
+    const headerSid = extractBrowserSessionHeader(req);
     const errorMsg =
-      rawClaims?.sid && extractBrowserSessionHeader(req) !== rawClaims.sid
+      rawClaims?.sid && headerSid && headerSid !== rawClaims.sid
         ? 'Token is valid only in its original browser session.'
         : 'Refresh token missing or expired.';
     const res = NextResponse.json({ error: errorMsg }, { status: 401 });

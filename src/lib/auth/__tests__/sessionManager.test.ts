@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  BROWSER_SESSION_STORAGE_KEY,
   SessionInfo,
   SessionManager,
   SessionState,
@@ -198,52 +197,48 @@ describe('SessionManager State Machine & Redaction', () => {
     expect(loggedText).not.toContain('987654321');
   });
 
-  it('restores cookie session ONLY when active browser sessionStorage marker exists', async () => {
-    const store = new Map<string, string>();
-    const mockStorage = {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => {
-        store.set(k, v);
+  it('restores active 4-hour JWT session on reload via getSession without revoking refresh, and deduplicates concurrent calls', async () => {
+    const getSessionSpy = vi.fn(async () => ({ ok: true, session: makeSession() }));
+    const refreshSpy = vi.fn(async () => ({ ok: true, session: makeSession() }));
+
+    const manager = new SessionManager({
+      transport: {
+        signIn: vi.fn(async () => ({ ok: true, session: makeSession() })),
+        getSession: getSessionSpy,
+        refresh: refreshSpy,
+        signOut: vi.fn(async () => {}),
       },
-      removeItem: (k: string) => {
-        store.delete(k);
+      callbacks: {
+        getPendingOutboxCount: async () => 0,
+        clearUserStorage: async () => {},
       },
-      clear: () => store.clear(),
-      key: () => null,
-      get length() {
-        return store.size;
+    });
+
+    // Simulate React StrictMode / simultaneous reload checks
+    const [ok1, ok2] = await Promise.all([
+      manager.restoreSessionFromCookie(),
+      manager.restoreSessionFromCookie(),
+    ]);
+    expect(ok1).toBe(true);
+    expect(ok2).toBe(true);
+    expect(manager.getState()).toBe('signedIn');
+    expect(getSessionSpy).toHaveBeenCalledTimes(1);
+    expect(refreshSpy).not.toHaveBeenCalled();
+
+    // If getSession reports inactive/expired, falls back cleanly to refresh once
+    const manager2 = new SessionManager({
+      transport: {
+        signIn: vi.fn(async () => ({ ok: true, session: makeSession() })),
+        getSession: vi.fn(async () => ({ ok: false, error: 'Expired' })),
+        refresh: refreshSpy,
+        signOut: vi.fn(async () => {}),
       },
-    } as Storage;
-
-    const origStorage = (globalThis as { sessionStorage?: Storage }).sessionStorage;
-    (globalThis as { sessionStorage?: Storage }).sessionStorage = mockStorage;
-
-    try {
-      const refreshSpy = vi.fn(async () => ({ ok: true, session: makeSession() }));
-      const manager = new SessionManager({
-        transport: {
-          signIn: vi.fn(async () => ({ ok: true, session: makeSession() })),
-          refresh: refreshSpy,
-          signOut: vi.fn(async () => {}),
-        },
-        callbacks: {
-          getPendingOutboxCount: async () => 0,
-          clearUserStorage: async () => {},
-        },
-      });
-
-      // Fresh browser/tab session without marker must stay signedOut without restoring stale cookie
-      expect(await manager.restoreSessionFromCookie()).toBe(false);
-      expect(manager.getState()).toBe('signedOut');
-      expect(refreshSpy).not.toHaveBeenCalled();
-
-      // Same browser session after page reload (marker exists in sessionStorage) restores cleanly
-      store.set(BROWSER_SESSION_STORAGE_KEY, 'bs-active-1');
-      expect(await manager.restoreSessionFromCookie()).toBe(true);
-      expect(manager.getState()).toBe('signedIn');
-      expect(refreshSpy).toHaveBeenCalledTimes(1);
-    } finally {
-      (globalThis as { sessionStorage?: Storage }).sessionStorage = origStorage;
-    }
+      callbacks: {
+        getPendingOutboxCount: async () => 0,
+        clearUserStorage: async () => {},
+      },
+    });
+    expect(await manager2.restoreSessionFromCookie()).toBe(true);
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
   });
 });

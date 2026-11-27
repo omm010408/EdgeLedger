@@ -1,8 +1,4 @@
 import { safeLog } from '../auth/redact';
-import {
-  BROWSER_SESSION_HEADER,
-  getActiveBrowserSessionId,
-} from '../auth/sessionManager';
 
 export interface TransportSessionBridge {
   refresh: () => Promise<boolean>;
@@ -18,7 +14,7 @@ export interface TransportAdapterOptions {
   onAuthFailure?: () => void;
 }
 
-const AUTH_EXEMPT_PATHS = ['/auth/sign-in', '/auth/refresh', '/auth/sign-out'];
+const AUTH_EXEMPT_PATHS = ['/auth/sign-in', '/auth/refresh', '/auth/sign-out', '/auth/session'];
 
 function extractUrlString(input: RequestInfo | URL): string {
   if (typeof input === 'string') return input;
@@ -115,14 +111,8 @@ export function createTransportFetch(options: TransportAdapterOptions): typeof f
     }
 
     const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
-    const requestHeaders = extractHeaders(init, input);
-    const activeBrowserSessionId = getActiveBrowserSessionId();
-    if (activeBrowserSessionId && !requestHeaders.has(BROWSER_SESSION_HEADER)) {
-      requestHeaders.set(BROWSER_SESSION_HEADER, activeBrowserSessionId);
-    }
     const requestInit: RequestInit = {
       ...init,
-      headers: requestHeaders,
       credentials: init?.credentials ?? 'include',
     };
 
