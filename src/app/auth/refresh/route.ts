@@ -3,24 +3,34 @@ import {
   ACCESS_TTL_SECONDS,
   attachSessionCookies,
   clearSessionCookies,
+  extractBrowserSessionHeader,
   issueSessionTokens,
   REFRESH_COOKIE_NAME,
   revokeRefreshToken,
+  verifyBrowserSessionBinding,
   verifySessionToken,
 } from '@/lib/auth/serverAuth';
 
 export async function POST(req: NextRequest) {
   const refreshCookie = req.cookies.get(REFRESH_COOKIE_NAME)?.value;
-  const claims = verifySessionToken(refreshCookie, 'refresh');
+  const rawClaims = verifySessionToken(refreshCookie, 'refresh');
+  const claims = verifyBrowserSessionBinding(rawClaims, req);
 
   if (!claims) {
-    const res = NextResponse.json({ error: 'Refresh token missing or expired.' }, { status: 401 });
+    if (rawClaims) {
+      revokeRefreshToken(refreshCookie);
+    }
+    const errorMsg =
+      rawClaims?.sid && extractBrowserSessionHeader(req) !== rawClaims.sid
+        ? 'Token is valid only in its original browser session.'
+        : 'Refresh token missing or expired.';
+    const res = NextResponse.json({ error: errorMsg }, { status: 401 });
     return clearSessionCookies(res, req);
   }
 
-  // Rotate refresh token on use
+  // Rotate refresh token on use, keeping binding to the same browser session
   revokeRefreshToken(refreshCookie);
-  const issued = issueSessionTokens(claims.sub, claims.email, claims.deviceId);
+  const issued = issueSessionTokens(claims.sub, claims.email, claims.deviceId, claims.sid);
   const res = NextResponse.json(
     {
       session: issued.session,

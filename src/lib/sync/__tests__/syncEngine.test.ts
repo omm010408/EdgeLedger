@@ -1,10 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  isSameAccountIdentity,
+  isSameJournalIdentity,
+  isSameStrategyIdentity,
   mergeAccount,
+  mergeJournalEntry,
+  mergeStrategy,
   mergeTrade,
   reconcileEntityLists,
   SyncTombstone,
 } from '../syncEngine';
+import type { JournalEntry, Strategy } from '../../data/seedData';
 import { Trade, TradingAccount } from '../../types/financial';
 
 function makeAccount(overrides: Partial<TradingAccount> = {}): TradingAccount {
@@ -261,5 +267,123 @@ describe('Non-Overriding Sync Engine', () => {
     ]);
     // Because localTrade had an execution missing in remote, sync marks it to push back
     expect(res.toPushToCloud).toHaveLength(1);
+  });
+
+  it('merges Strategy fields completely instead of dropping partial edits or checklists', () => {
+    const localStrat: Strategy = {
+      id: 'strat-1',
+      name: 'London Sweep',
+      description: 'Capitalize on Asia sweep',
+      marketType: 'Forex & Metals',
+      primaryTimeframes: ['15M'],
+      marketRegime: 'reversal',
+      entryConditions: '5M MSS',
+      exitConditions: '2.5R',
+      stopLossMethodology: '1 tick past swing',
+      targetMethodology: '',
+      riskRules: 'Max 1% risk',
+      checklistItems: ['Asia swept', '5M displacement'],
+      currentVersion: 2,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-02-01T10:00:00.000Z',
+    };
+    const remoteStrat: Strategy = {
+      ...localStrat,
+      primaryTimeframes: ['1H'],
+      targetMethodology: 'Previous day high/low',
+      checklistItems: [],
+      currentVersion: 1,
+      updatedAt: '2026-02-01T10:00:00.000Z',
+    };
+
+    const res = reconcileEntityLists<Strategy>({
+      local: [localStrat],
+      remote: [remoteStrat],
+      entityType: 'strategy',
+      getId: (s) => s.id,
+      getUpdatedAt: (s) => s.updatedAt || s.createdAt,
+      mergeItem: mergeStrategy,
+    });
+
+    expect(res.merged[0].primaryTimeframes).toEqual(['15M', '1H']);
+    expect(res.merged[0].targetMethodology).toBe('Previous day high/low');
+    expect(res.merged[0].checklistItems).toEqual(['Asia swept', '5M displacement']);
+    expect(res.merged[0].currentVersion).toBe(2);
+    expect(res.toPushToCloud).toHaveLength(1);
+  });
+
+  it('reconciles JournalEntry changes cleanly and merges partial reflection fields', () => {
+    const localJournal: JournalEntry = {
+      id: 'j-2026-11-27',
+      entryDate: '2026-11-27',
+      marketConditions: 'Trending',
+      macroEnvironment: 'Dovish Fed',
+      higherTimeframeBias: 'Bullish',
+      technicalBias: 'Orderblock',
+      tradingPlan: 'Long pullback',
+      importantEconomicEvents: 'None',
+      emotionalState: 'Disciplined',
+      dailySummary: 'Followed rules',
+      lessonsLearned: 'Wait for confirmation',
+      disciplineScore: 9,
+      preparationScore: 9,
+      executionScore: 9,
+      fomoDetected: false,
+      revengeTrading: false,
+      overtrading: false,
+      movedStopLoss: false,
+      prematureExit: false,
+      ignoredRules: false,
+      updatedAt: '2026-11-27T11:00:00.000Z',
+    };
+    const remoteJournal: JournalEntry = {
+      ...localJournal,
+      lessonsLearned: '',
+      dailySummary: '',
+      updatedAt: '2026-11-27T10:00:00.000Z',
+    };
+
+    const merged = mergeJournalEntry(localJournal, remoteJournal);
+    expect(merged.item.dailySummary).toBe('Followed rules');
+    expect(merged.item.lessonsLearned).toBe('Wait for confirmation');
+    expect(merged.shouldPush).toBe(true);
+  });
+
+  it('identifies existing accounts, strategies, and journal dates across backup restores even with different IDs', () => {
+    const existingAcc = makeAccount({
+      id: 'acc-apex-100k',
+      name: 'Apex Trader Funded 100K',
+      brokerOrFirm: 'Apex Trader Funding',
+      accountSize: 100000,
+    });
+    const backupSameAccDifferentId = makeAccount({
+      id: 'acc-backup-99999',
+      name: '  apex trader funded 100k ',
+      brokerOrFirm: 'apex trader funding',
+      accountSize: 100000,
+    });
+    const distinctSizeAcc = makeAccount({
+      id: 'acc-apex-50k',
+      name: 'Apex Trader Funded 100K',
+      brokerOrFirm: 'Apex Trader Funding',
+      accountSize: 50000,
+    });
+
+    expect(isSameAccountIdentity(existingAcc, backupSameAccDifferentId)).toBe(true);
+    expect(isSameAccountIdentity(existingAcc, distinctSizeAcc)).toBe(false);
+
+    expect(
+      isSameStrategyIdentity(
+        { id: 's1', name: 'London Sweep' } as Strategy,
+        { id: 's2', name: ' london   sweep ' } as Strategy
+      )
+    ).toBe(true);
+    expect(
+      isSameJournalIdentity(
+        { id: 'j1', entryDate: '2026-11-27' } as JournalEntry,
+        { id: 'j2', entryDate: '2026-11-27T08:30:00Z' } as JournalEntry
+      )
+    ).toBe(true);
   });
 });

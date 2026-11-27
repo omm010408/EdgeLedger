@@ -184,8 +184,8 @@ export class SyncCoordinator {
     let op: SyncOperationKind = params.op;
     let payload: Record<string, unknown> = { ...params.payload };
 
-    // Closed trades are append-only: convert update/upsert on a closed trade into a correction record
-    const existingCache = await this.store.getCacheItem('trade', params.entityId);
+    // Look up cached entity record by its actual entity kind so baseVersion resolves accurately for all entities
+    const existingCache = await this.store.getCacheItem(params.entity, params.entityId);
     const existingIsClosed =
       entity === 'trade' &&
       (String(existingCache?.record?.status || '').toUpperCase() === 'CLOSED' ||

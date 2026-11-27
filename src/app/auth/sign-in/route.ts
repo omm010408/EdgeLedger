@@ -3,6 +3,7 @@ import {
   ACCESS_TTL_SECONDS,
   attachSessionCookies,
   authenticateUserCredentials,
+  extractBrowserSessionHeader,
   issueSessionTokens,
 } from '@/lib/auth/serverAuth';
 import { safeLog } from '@/lib/auth/redact';
@@ -10,7 +11,7 @@ import { safeLog } from '@/lib/auth/redact';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { email, password, method = 'password', credentialId, deviceId } = body;
+    const { email, password, method = 'password', credentialId, deviceId, browserSessionId } = body;
 
     const auth = authenticateUserCredentials({
       email,
@@ -26,7 +27,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const issued = issueSessionTokens(auth.userId, auth.email, deviceId);
+    const resolvedBrowserSessionId =
+      extractBrowserSessionHeader(req) ||
+      (typeof browserSessionId === 'string' ? browserSessionId.trim() || undefined : undefined);
+
+    const issued = issueSessionTokens(auth.userId, auth.email, deviceId, resolvedBrowserSessionId);
     const res = NextResponse.json(
       {
         session: issued.session,

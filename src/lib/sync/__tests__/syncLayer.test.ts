@@ -352,6 +352,56 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
     expect(changes.map((c) => c.entity)).toEqual(['trade', 'trade_correction']);
   });
 
+  it('uses cached entity version as baseVersion for strategy, journal, and account mutations after reload', async () => {
+    const userId = 'usr-versions';
+    const adapter: SyncProtocolAdapter = {
+      pullChanges: vi.fn(async (cursor) => serverPullChanges(userId, cursor)),
+      pushBatch: vi.fn(async (items) => serverPushItems(userId, items)),
+    };
+
+    const coord = new SyncCoordinator({
+      userId,
+      store: new MemorySyncStoreBackend(userId),
+      adapter,
+    });
+
+    await coord.enqueueChange({
+      entity: 'journal',
+      entityId: 'j-2026-11-27',
+      op: 'create',
+      baseVersion: 0,
+      payload: { id: 'j-2026-11-27', fomoDetected: true },
+    });
+    await coord.enqueueChange({
+      entity: 'strategy',
+      entityId: 'strat-qa-1',
+      op: 'create',
+      baseVersion: 0,
+      payload: { id: 'strat-qa-1', name: 'QA Strat' },
+    });
+    await coord.syncNow();
+    expect(coord.getSnapshot().conflictCount).toBe(0);
+
+    // Subsequent update/delete without explicit baseVersion must read version=1 from cache, NOT 0
+    await coord.enqueueChange({
+      entity: 'journal',
+      entityId: 'j-2026-11-27',
+      op: 'update',
+      payload: { id: 'j-2026-11-27', fomoDetected: false },
+    });
+    await coord.enqueueChange({
+      entity: 'strategy',
+      entityId: 'strat-qa-1',
+      op: 'delete',
+      payload: { id: 'strat-qa-1' },
+    });
+    await coord.syncNow();
+
+    expect(coord.getSnapshot().conflictCount).toBe(0);
+    expect(coord.getSnapshot().pendingCount).toBe(0);
+    expect(coord.getSnapshot().state).toBe('idle');
+  });
+
   it('derives exact StatusChip labels and approved design tokens', () => {
     expect(
       deriveStatusChipDisplay({
@@ -435,10 +485,14 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
     );
     expect(passkeyAttemptRes.status).toBe(401);
 
-    // 1. Sign in -> sets httpOnly SameSite=Lax cookies
+    // 1. Sign in -> sets session-only (no maxAge/expires) httpOnly SameSite=Lax cookies bound to that browser session
+    const browserSessionA = 'bs-test-session-a';
     const signInReq = new NextRequest('http://localhost:3000/auth/sign-in', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-EdgeLedger-Session-Id': browserSessionA,
+      },
       body: JSON.stringify({ email: 'ommroshan@gmail.com', password: 'EdgeLedger@010408' }),
     });
     const signInRes = await signInPost(signInReq);
@@ -451,11 +505,12 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
     const refreshCookie = signInRes.cookies.get('el_refresh');
     expect(accessCookie?.httpOnly).toBe(true);
     expect(accessCookie?.sameSite).toBe('lax');
-    expect(accessCookie?.maxAge).toBe(14400);
+    expect(accessCookie?.maxAge).toBeUndefined(); // Browser-session cookie only
     expect(refreshCookie?.httpOnly).toBe(true);
     expect(refreshCookie?.sameSite).toBe('lax');
+    expect(refreshCookie?.maxAge).toBeUndefined(); // Browser-session cookie only
 
-    // Verify JWT payload has 4-hour lifetime (exp - iat = 14,400,000 ms)
+    // Verify JWT payload has 4-hour lifetime (exp - iat = 14,400,000 ms) and browser session sid
     const jwtParts = String(accessCookie?.value || '').split('.');
     expect(jwtParts).toHaveLength(3);
     const jwtHeader = JSON.parse(Buffer.from(jwtParts[0], 'base64url').toString('utf8'));
@@ -463,25 +518,48 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
     expect(jwtHeader.typ).toBe('JWT');
     expect(jwtHeader.alg).toBe('HS256');
     expect(jwtPayload.exp - jwtPayload.iat).toBe(4 * 60 * 60 * 1000);
+    expect(jwtPayload.sid).toBe(browserSessionA);
 
     // 2. Unauthenticated /sync/changes -> 401
     const unauthChanges = await changesGet(new NextRequest('http://localhost:3000/sync/changes?cursor='));
     expect(unauthChanges.status).toBe(401);
 
-    // Bearer JWT authentication also succeeds cleanly
-    const bearerChanges = await changesGet(
+    // Token copied into a DIFFERENT browser session (missing or mismatched X-EdgeLedger-Session-Id) -> 401
+    const wrongBrowserSessionChanges = await changesGet(
+      new NextRequest('http://localhost:3000/sync/changes?cursor=', {
+        headers: {
+          Authorization: `Bearer ${accessCookie!.value}`,
+          'X-EdgeLedger-Session-Id': 'bs-different-session',
+        },
+      })
+    );
+    expect(wrongBrowserSessionChanges.status).toBe(401);
+
+    const missingBrowserSessionChanges = await changesGet(
       new NextRequest('http://localhost:3000/sync/changes?cursor=', {
         headers: { Authorization: `Bearer ${accessCookie!.value}` },
       })
     );
+    expect(missingBrowserSessionChanges.status).toBe(401);
+
+    // Bearer JWT authentication in SAME browser session succeeds cleanly
+    const bearerChanges = await changesGet(
+      new NextRequest('http://localhost:3000/sync/changes?cursor=', {
+        headers: {
+          Authorization: `Bearer ${accessCookie!.value}`,
+          'X-EdgeLedger-Session-Id': browserSessionA,
+        },
+      })
+    );
     expect(bearerChanges.status).toBe(200);
 
-    // 3. Authenticated /sync/push + /sync/changes
+    // 3. Authenticated /sync/push + /sync/changes in same browser session
     const pushReq = new NextRequest('http://localhost:3000/sync/push', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Cookie: `el_access=${accessCookie!.value}`,
+        'X-EdgeLedger-Session-Id': browserSessionA,
       },
       body: JSON.stringify({
         items: [
@@ -501,7 +579,10 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
     expect(pushJson.results[0].status).toBe('accepted');
 
     const changesReq = new NextRequest('http://localhost:3000/sync/changes?cursor=0', {
-      headers: { Cookie: `el_access=${accessCookie!.value}` },
+      headers: {
+        Cookie: `el_access=${accessCookie!.value}`,
+        'X-EdgeLedger-Session-Id': browserSessionA,
+      },
     });
     const changesRes = await changesGet(changesReq);
     expect(changesRes.status).toBe(200);
@@ -509,15 +590,31 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
     expect(changesJson.changes).toHaveLength(1);
     expect(changesJson.changes[0].record.name).toBe('HTTP Protocol Desk');
 
-    // 4. Refresh -> rotates cookies; old refresh cookie is revoked
+    // 4. Refresh -> rotates cookies within same browser session; old refresh cookie is revoked
     const refreshReq = new NextRequest('http://localhost:3000/auth/refresh', {
       method: 'POST',
-      headers: { Cookie: `el_refresh=${refreshCookie!.value}` },
+      headers: {
+        Cookie: `el_refresh=${refreshCookie!.value}`,
+        'X-EdgeLedger-Session-Id': browserSessionA,
+      },
     });
     const refreshRes = await refreshPost(refreshReq);
     expect(refreshRes.status).toBe(200);
     const rotatedRefresh = refreshRes.cookies.get('el_refresh');
     expect(rotatedRefresh?.value).not.toBe(refreshCookie!.value);
+    expect(rotatedRefresh?.maxAge).toBeUndefined();
+
+    // Refresh from another browser session fails & revokes token
+    const crossSessionRefresh = await refreshPost(
+      new NextRequest('http://localhost:3000/auth/refresh', {
+        method: 'POST',
+        headers: {
+          Cookie: `el_refresh=${rotatedRefresh!.value}`,
+          'X-EdgeLedger-Session-Id': 'bs-other-browser',
+        },
+      })
+    );
+    expect(crossSessionRefresh.status).toBe(401);
 
     // Reusing revoked refresh fails with 401
     const reuseRes = await refreshPost(refreshReq);

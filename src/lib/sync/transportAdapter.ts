@@ -1,4 +1,8 @@
 import { safeLog } from '../auth/redact';
+import {
+  BROWSER_SESSION_HEADER,
+  getActiveBrowserSessionId,
+} from '../auth/sessionManager';
 
 export interface TransportSessionBridge {
   refresh: () => Promise<boolean>;
@@ -111,8 +115,14 @@ export function createTransportFetch(options: TransportAdapterOptions): typeof f
     }
 
     const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    const requestHeaders = extractHeaders(init, input);
+    const activeBrowserSessionId = getActiveBrowserSessionId();
+    if (activeBrowserSessionId && !requestHeaders.has(BROWSER_SESSION_HEADER)) {
+      requestHeaders.set(BROWSER_SESSION_HEADER, activeBrowserSessionId);
+    }
     const requestInit: RequestInit = {
       ...init,
+      headers: requestHeaders,
       credentials: init?.credentials ?? 'include',
     };
 

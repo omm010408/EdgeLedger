@@ -8,12 +8,15 @@ export const REFRESH_COOKIE_NAME = 'el_refresh';
 
 export const ACCESS_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours per JWT token
 export const ACCESS_TTL_SECONDS = ACCESS_TTL_MS / 1000; // 14400 seconds
-const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const REFRESH_TTL_MS = ACCESS_TTL_MS; // 4 hours max, bound to current browser session only
+
+export const BROWSER_SESSION_HEADER = 'x-edgeledger-session-id';
 
 export interface SessionTokenClaims {
   sub: string;
   email: string;
   deviceId: string;
+  sid?: string;
   typ: 'access' | 'refresh';
   jti: string;
   iat: number;
@@ -30,7 +33,7 @@ export interface SyncEntityRecord {
   payload: Record<string, unknown>;
 }
 
-export type SyncProtocolEntity = 'account' | 'trade' | 'trade_correction' | 'journal' | 'risk_rule' | 'preference';
+export type SyncProtocolEntity = 'account' | 'strategy' | 'trade' | 'trade_correction' | 'journal' | 'risk_rule' | 'preference';
 export type SyncProtocolOp = 'create' | 'update' | 'delete' | 'correction';
 
 export interface SyncPushItemRequest {
@@ -204,9 +207,20 @@ export function authenticateUserCredentials(params: {
   return { ok: true, userId: existing.userId, email: existing.email };
 }
 
-export function issueSessionTokens(userId: string, email: string, deviceId?: string) {
+export function extractBrowserSessionHeader(req: NextRequest): string | undefined {
+  const value = req.headers.get(BROWSER_SESSION_HEADER)?.trim();
+  return value ? value : undefined;
+}
+
+export function issueSessionTokens(
+  userId: string,
+  email: string,
+  deviceId?: string,
+  browserSessionId?: string
+) {
   const now = Date.now();
   const resolvedDeviceId = deviceId || `dev-${crypto.randomUUID().slice(0, 8)}`;
+  const normalizedSid = browserSessionId?.trim() || undefined;
   const accessExp = now + ACCESS_TTL_MS;
   const refreshExp = now + REFRESH_TTL_MS;
 
@@ -214,6 +228,7 @@ export function issueSessionTokens(userId: string, email: string, deviceId?: str
     sub: userId,
     email,
     deviceId: resolvedDeviceId,
+    ...(normalizedSid ? { sid: normalizedSid } : {}),
     typ: 'access',
     jti: crypto.randomUUID(),
     iat: now,
@@ -224,6 +239,7 @@ export function issueSessionTokens(userId: string, email: string, deviceId?: str
     sub: userId,
     email,
     deviceId: resolvedDeviceId,
+    ...(normalizedSid ? { sid: normalizedSid } : {}),
     typ: 'refresh',
     jti: crypto.randomUUID(),
     iat: now,
@@ -267,19 +283,18 @@ export function attachSessionCookies(
   req?: NextRequest
 ): NextResponse {
   const secure = shouldUseSecureCookie(req);
+  // Session-only cookies (no maxAge/expires): automatically discarded when the browser session ends
   res.cookies.set(ACCESS_COOKIE_NAME, accessToken, {
     httpOnly: true,
     secure,
     sameSite: 'lax',
     path: '/',
-    maxAge: Math.floor(ACCESS_TTL_MS / 1000),
   });
   res.cookies.set(REFRESH_COOKIE_NAME, refreshToken, {
     httpOnly: true,
     secure,
     sameSite: 'lax',
     path: '/',
-    maxAge: Math.floor(REFRESH_TTL_MS / 1000),
   });
   return res;
 }
@@ -303,15 +318,29 @@ export function clearSessionCookies(res: NextResponse, req?: NextRequest): NextR
   return res;
 }
 
+export function verifyBrowserSessionBinding(
+  claims: SessionTokenClaims | null,
+  req: NextRequest
+): SessionTokenClaims | null {
+  if (!claims) return null;
+  if (claims.sid) {
+    const requestSid = extractBrowserSessionHeader(req);
+    if (!requestSid || requestSid !== claims.sid) {
+      return null;
+    }
+  }
+  return claims;
+}
+
 export function requireAuthenticatedClaims(req: NextRequest): SessionTokenClaims | null {
   const authHeader = req.headers.get('authorization');
   if (authHeader && /^Bearer\s+/i.test(authHeader)) {
     const bearerToken = authHeader.replace(/^Bearer\s+/i, '').trim();
-    const bearerClaims = verifySessionToken(bearerToken, 'access');
+    const bearerClaims = verifyBrowserSessionBinding(verifySessionToken(bearerToken, 'access'), req);
     if (bearerClaims) return bearerClaims;
   }
   const accessCookie = req.cookies.get(ACCESS_COOKIE_NAME)?.value;
-  return verifySessionToken(accessCookie, 'access');
+  return verifyBrowserSessionBinding(verifySessionToken(accessCookie, 'access'), req);
 }
 
 function getUserRecordMap(userId: string): Map<string, SyncEntityRecord> {

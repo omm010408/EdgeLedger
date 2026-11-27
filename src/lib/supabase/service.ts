@@ -80,6 +80,115 @@ function isOptionalColumnSchemaError(msg?: string): boolean {
   );
 }
 
+const ALLOWED_MARKET_REGIMES = new Set<Strategy['marketRegime']>([
+  'trending',
+  'ranging',
+  'breakout',
+  'reversal',
+  'any',
+]);
+
+function normalizeMarketRegime(regime?: string): Strategy['marketRegime'] {
+  const lower = (regime || '').toLowerCase() as Strategy['marketRegime'];
+  return ALLOWED_MARKET_REGIMES.has(lower) ? lower : 'trending';
+}
+
+function parseStringArray(value: unknown, fallback: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v)).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return fallback;
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.map((v) => String(v)).filter(Boolean);
+      } catch {
+        // Fall through to comma-split
+      }
+    }
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      return trimmed
+        .slice(1, -1)
+        .split(',')
+        .map((s) => s.replace(/^"|"$/g, '').trim())
+        .filter(Boolean);
+    }
+    return trimmed
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  if (value && typeof value === 'object' && Array.isArray((value as { items?: unknown[] }).items)) {
+    return (value as { items: unknown[] }).items.map((v) => String(v)).filter(Boolean);
+  }
+  return fallback;
+}
+
+function clampScore(value: unknown, fallback = 7): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(10, Math.max(1, Math.round(n)));
+}
+
+export function mapSupabaseToStrategy(row: any): Strategy {
+  const checklist = parseStringArray(row.checklist_items, []);
+  const timeframes = parseStringArray(row.primary_timeframes, ['15M', '1H', '4H']);
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || '',
+    marketType: row.market_type || 'Multi-Asset',
+    primaryTimeframes: timeframes.length > 0 ? timeframes : ['15M', '1H', '4H'],
+    marketRegime: normalizeMarketRegime(row.market_regime),
+    entryConditions: row.entry_conditions || '',
+    exitConditions: row.exit_conditions || '',
+    stopLossMethodology: row.stop_loss_methodology || '',
+    targetMethodology: row.target_methodology || '',
+    riskRules: row.risk_rules || '',
+    checklistItems: checklist,
+    currentVersion: Number(row.current_version) || 1,
+    isActive: row.is_active !== false,
+    createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
+  };
+}
+
+export function mapSupabaseToJournalEntry(row: any): JournalEntry {
+  const entryDate = String(row.entry_date || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+  return {
+    id: row.id,
+    entryDate,
+    marketConditions: row.market_conditions || '',
+    macroEnvironment: row.macro_environment || '',
+    higherTimeframeBias: row.higher_timeframe_bias || '',
+    technicalBias: row.technical_bias || '',
+    tradingPlan: row.trading_plan || '',
+    importantEconomicEvents: row.important_economic_events || '',
+    emotionalState: row.emotional_state || 'Disciplined',
+    dailySummary: row.daily_summary || '',
+    lessonsLearned: row.lessonslearned ?? row.lessons_learned ?? '',
+    disciplineScore: clampScore(row.discipline_score, 7),
+    preparationScore: clampScore(row.preparation_score, 7),
+    executionScore: clampScore(row.execution_score, 7),
+    riskManagementScore:
+      row.risk_management_score != null ? clampScore(row.risk_management_score, 8) : undefined,
+    emotionalControlScore:
+      row.emotional_control_score != null ? clampScore(row.emotional_control_score, 8) : undefined,
+    decisionQualityScore:
+      row.decision_quality_score != null ? clampScore(row.decision_quality_score, 8) : undefined,
+    fomoDetected: Boolean(row.fomo_detected),
+    revengeTrading: Boolean(row.revenge_trading),
+    overtrading: Boolean(row.overtrading),
+    movedStopLoss: Boolean(row.moved_stop_loss),
+    prematureExit: Boolean(row.premature_exit),
+    ignoredRules: Boolean(row.ignored_rules),
+    isLocked: Boolean(row.is_locked),
+    updatedAt: row.updated_at || row.created_at || `${entryDate}T23:59:59.000Z`,
+  };
+}
+
 /**
  * Transforms a Supabase trade row and its allocations into the application Trade domain model.
  */
@@ -428,6 +537,7 @@ export class SupabaseService {
         status: account.status,
         is_demo: account.isDemo,
         notes: account.notes,
+        created_at: account.createdAt || new Date().toISOString(),
         updated_at: account.updatedAt || new Date().toISOString(),
       };
 
@@ -454,7 +564,11 @@ export class SupabaseService {
           applicable_timezone: r.applicableTimezone,
         }));
 
-        await supabase.from('account_rules').upsert(rulePayloads);
+        const { error: ruleErr } = await supabase.from('account_rules').upsert(rulePayloads);
+        if (ruleErr) {
+          console.warn('SupabaseService.saveAccount rules error:', ruleErr.message);
+          return false;
+        }
       }
 
       return true;
@@ -474,28 +588,13 @@ export class SupabaseService {
         .from('strategies')
         .select('*')
         .order('created_at', { ascending: true });
-      if (error || !data) return null;
-      return data.map((row) => ({
-        id: row.id,
-        name: row.name,
-        description: row.description || '',
-        marketType: row.market_type || 'Multi-Asset',
-        primaryTimeframes: Array.isArray(row.primary_timeframes)
-          ? row.primary_timeframes
-          : ['15M', '1H', '4H'],
-        marketRegime: row.market_regime || 'any',
-        entryConditions: row.entry_conditions || '',
-        exitConditions: row.exit_conditions || '',
-        stopLossMethodology: row.stop_loss_methodology || '',
-        targetMethodology: row.target_methodology || '',
-        riskRules: row.risk_rules || '',
-        checklistItems: Array.isArray(row.checklist_items) ? row.checklist_items : [],
-        currentVersion: Number(row.current_version) || 1,
-        isActive: row.is_active !== false,
-        createdAt: row.created_at || new Date().toISOString(),
-        updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
-      }));
-    } catch {
+      if (error || !data) {
+        if (error) console.warn('Supabase fetchStrategies error:', error.message);
+        return null;
+      }
+      return data.map(mapSupabaseToStrategy);
+    } catch (err: any) {
+      console.warn('SupabaseService.fetchStrategies exception:', err.message);
       return null;
     }
   }
@@ -504,26 +603,46 @@ export class SupabaseService {
     if (!isSupabaseConfigured || !supabase) return false;
     try {
       const resolvedUserId = await this.resolveUserId();
-      const { error } = await supabase.from('strategies').upsert({
+      const nowIso = new Date().toISOString();
+      const baseStrategyPayload = {
         id: strategy.id,
         user_id: resolvedUserId,
         name: strategy.name,
-        description: strategy.description,
-        market_type: strategy.marketType,
-        primary_timeframes: strategy.primaryTimeframes,
-        market_regime: strategy.marketRegime,
-        entry_conditions: strategy.entryConditions,
-        exit_conditions: strategy.exitConditions,
-        stop_loss_methodology: strategy.stopLossMethodology,
-        target_methodology: strategy.targetMethodology,
-        risk_rules: strategy.riskRules,
-        checklist_items: strategy.checklistItems,
-        current_version: strategy.currentVersion,
-        is_active: strategy.isActive,
-        updated_at: strategy.updatedAt || new Date().toISOString(),
-      });
-      return !error;
-    } catch {
+        description: strategy.description || '',
+        market_type: strategy.marketType || 'Multi-Asset',
+        primary_timeframes:
+          Array.isArray(strategy.primaryTimeframes) && strategy.primaryTimeframes.length > 0
+            ? strategy.primaryTimeframes
+            : ['15M', '1H'],
+        market_regime: normalizeMarketRegime(strategy.marketRegime),
+        entry_conditions: strategy.entryConditions || '',
+        exit_conditions: strategy.exitConditions || '',
+        current_version: Number(strategy.currentVersion) || 1,
+        is_active: strategy.isActive !== false,
+        updated_at: strategy.updatedAt || nowIso,
+      };
+
+      const extendedStrategyPayload = {
+        ...baseStrategyPayload,
+        stop_loss_methodology: strategy.stopLossMethodology || '',
+        target_methodology: strategy.targetMethodology || '',
+        risk_rules: strategy.riskRules || '',
+        checklist_items: Array.isArray(strategy.checklistItems) ? strategy.checklistItems : [],
+        created_at: strategy.createdAt || nowIso,
+      };
+
+      let { error } = await supabase.from('strategies').upsert(extendedStrategyPayload);
+      if (error && isOptionalColumnSchemaError(error.message)) {
+        const retry = await supabase.from('strategies').upsert(baseStrategyPayload);
+        error = retry.error;
+      }
+      if (error) {
+        console.warn('SupabaseService.saveStrategy error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (err: any) {
+      console.warn('SupabaseService.saveStrategy exception:', err.message);
       return false;
     }
   }
@@ -538,32 +657,13 @@ export class SupabaseService {
         .from('journal_entries')
         .select('*')
         .order('entry_date', { ascending: false });
-      if (error || !data) return null;
-      return data.map((row) => ({
-        id: row.id,
-        entryDate: row.entry_date,
-        marketConditions: row.market_conditions || '',
-        macroEnvironment: row.macro_environment || '',
-        higherTimeframeBias: row.higher_timeframe_bias || '',
-        technicalBias: row.technical_bias || '',
-        tradingPlan: row.trading_plan || '',
-        importantEconomicEvents: row.important_economic_events || '',
-        emotionalState: row.emotional_state || 'Disciplined',
-        dailySummary: row.daily_summary || '',
-        lessonsLearned: row.lessonslearned || row.lessons_learned || '',
-        disciplineScore: Number(row.discipline_score) || 7,
-        preparationScore: Number(row.preparation_score) || 7,
-        executionScore: Number(row.execution_score) || 7,
-        fomoDetected: Boolean(row.fomo_detected),
-        revengeTrading: Boolean(row.revenge_trading),
-        overtrading: Boolean(row.overtrading),
-        movedStopLoss: Boolean(row.moved_stop_loss),
-        prematureExit: Boolean(row.premature_exit),
-        ignoredRules: Boolean(row.ignored_rules),
-        isLocked: Boolean(row.is_locked),
-        updatedAt: row.updated_at || row.created_at || `${row.entry_date}T23:59:59.000Z`,
-      }));
-    } catch {
+      if (error || !data) {
+        if (error) console.warn('Supabase fetchJournalEntries error:', error.message);
+        return null;
+      }
+      return data.map(mapSupabaseToJournalEntry);
+    } catch (err: any) {
+      console.warn('SupabaseService.fetchJournalEntries exception:', err.message);
       return null;
     }
   }
@@ -572,27 +672,86 @@ export class SupabaseService {
     if (!isSupabaseConfigured || !supabase) return false;
     try {
       const resolvedUserId = await this.resolveUserId();
-      const { error } = await supabase.from('journal_entries').upsert({
+      const entryDate =
+        String(entry.entryDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+      const updatedAt = entry.updatedAt || new Date().toISOString();
+
+      const corePayload = {
         id: entry.id,
         user_id: resolvedUserId,
-        entry_date: entry.entryDate,
-        market_conditions: entry.marketConditions,
-        macro_environment: entry.macroEnvironment,
-        higher_timeframe_bias: entry.higherTimeframeBias,
-        technical_bias: entry.technicalBias,
-        trading_plan: entry.tradingPlan,
-        important_economic_events: entry.importantEconomicEvents,
-        emotional_state: entry.emotionalState,
-        daily_summary: entry.dailySummary,
-        lessonslearned: entry.lessonsLearned,
-        discipline_score: entry.disciplineScore,
-        preparation_score: entry.preparationScore,
-        execution_score: entry.executionScore,
+        entry_date: entryDate,
+        market_conditions: entry.marketConditions || '',
+        macro_environment: entry.macroEnvironment || '',
+        higher_timeframe_bias: entry.higherTimeframeBias || '',
+        technical_bias: entry.technicalBias || '',
+        trading_plan: entry.tradingPlan || '',
+        important_economic_events: entry.importantEconomicEvents || '',
+        emotional_state: entry.emotionalState || 'Disciplined',
+        daily_summary: entry.dailySummary || '',
+        discipline_score: clampScore(entry.disciplineScore, 7),
+        preparation_score: clampScore(entry.preparationScore, 7),
+        execution_score: clampScore(entry.executionScore, 7),
         is_locked: Boolean(entry.isLocked),
-        updated_at: entry.updatedAt || new Date().toISOString(),
-      });
-      return !error;
-    } catch {
+        updated_at: updatedAt,
+      };
+
+      const fullPayload = {
+        ...corePayload,
+        lessonslearned: entry.lessonsLearned || '',
+        fomo_detected: Boolean(entry.fomoDetected),
+        revenge_trading: Boolean(entry.revengeTrading),
+        overtrading: Boolean(entry.overtrading),
+        moved_stop_loss: Boolean(entry.movedStopLoss),
+        premature_exit: Boolean(entry.prematureExit),
+        ignored_rules: Boolean(entry.ignoredRules),
+      };
+
+      let activePayload: Record<string, unknown> = fullPayload;
+      let { error } = await supabase
+        .from('journal_entries')
+        .upsert(activePayload, { onConflict: 'user_id,entry_date' });
+
+      if (error && isOptionalColumnSchemaError(error.message)) {
+        const lower = error.message.toLowerCase();
+        if (lower.includes('lessonslearned')) {
+          activePayload = {
+            ...fullPayload,
+            lessons_learned: entry.lessonsLearned || '',
+          };
+          delete activePayload.lessonslearned;
+          const retrySnake = await supabase
+            .from('journal_entries')
+            .upsert(activePayload, { onConflict: 'user_id,entry_date' });
+          error = retrySnake.error;
+        }
+        if (error && isOptionalColumnSchemaError(error.message)) {
+          activePayload = {
+            ...corePayload,
+            lessonslearned: entry.lessonsLearned || '',
+          };
+          const retryCore = await supabase
+            .from('journal_entries')
+            .upsert(activePayload, { onConflict: 'user_id,entry_date' });
+          error = retryCore.error;
+        }
+      }
+
+      // If Postgres table lacks the composite unique constraint or id collides across dates, retry by primary id
+      if (
+        error &&
+        error.message.toLowerCase().includes('no unique or exclusion constraint')
+      ) {
+        const retryId = await supabase.from('journal_entries').upsert(activePayload);
+        error = retryId.error;
+      }
+
+      if (error) {
+        console.warn('SupabaseService.saveJournalEntry error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (err: any) {
+      console.warn('SupabaseService.saveJournalEntry exception:', err.message);
       return false;
     }
   }

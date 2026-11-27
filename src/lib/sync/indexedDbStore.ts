@@ -1,5 +1,6 @@
 export type SyncEntityKind =
   | 'account'
+  | 'strategy'
   | 'trade'
   | 'trade_correction'
   | 'journal'

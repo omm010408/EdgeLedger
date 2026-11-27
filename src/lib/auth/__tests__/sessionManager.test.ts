@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  BROWSER_SESSION_STORAGE_KEY,
   SessionInfo,
   SessionManager,
   SessionState,
@@ -195,5 +196,54 @@ describe('SessionManager State Machine & Redaction', () => {
     expect(loggedText).not.toContain('SuperSecretPassword!');
     expect(loggedText).not.toContain('9988776655');
     expect(loggedText).not.toContain('987654321');
+  });
+
+  it('restores cookie session ONLY when active browser sessionStorage marker exists', async () => {
+    const store = new Map<string, string>();
+    const mockStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+      clear: () => store.clear(),
+      key: () => null,
+      get length() {
+        return store.size;
+      },
+    } as Storage;
+
+    const origStorage = (globalThis as { sessionStorage?: Storage }).sessionStorage;
+    (globalThis as { sessionStorage?: Storage }).sessionStorage = mockStorage;
+
+    try {
+      const refreshSpy = vi.fn(async () => ({ ok: true, session: makeSession() }));
+      const manager = new SessionManager({
+        transport: {
+          signIn: vi.fn(async () => ({ ok: true, session: makeSession() })),
+          refresh: refreshSpy,
+          signOut: vi.fn(async () => {}),
+        },
+        callbacks: {
+          getPendingOutboxCount: async () => 0,
+          clearUserStorage: async () => {},
+        },
+      });
+
+      // Fresh browser/tab session without marker must stay signedOut without restoring stale cookie
+      expect(await manager.restoreSessionFromCookie()).toBe(false);
+      expect(manager.getState()).toBe('signedOut');
+      expect(refreshSpy).not.toHaveBeenCalled();
+
+      // Same browser session after page reload (marker exists in sessionStorage) restores cleanly
+      store.set(BROWSER_SESSION_STORAGE_KEY, 'bs-active-1');
+      expect(await manager.restoreSessionFromCookie()).toBe(true);
+      expect(manager.getState()).toBe('signedIn');
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      (globalThis as { sessionStorage?: Storage }).sessionStorage = origStorage;
+    }
   });
 });

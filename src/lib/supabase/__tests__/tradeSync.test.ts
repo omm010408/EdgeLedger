@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Trade } from '../../types/financial';
 
-const upsertCalls: Array<{ table: string; payload: any }> = [];
+const upsertCalls: Array<{ table: string; payload: any; options?: any }> = [];
 const deleteCalls: Array<{ table: string; ids: string[] }> = [];
 let allocUpsertError: { message: string } | null = null;
+let strategyOptionalColError = false;
+let journalSchemaSnakeFallback = false;
 let existingAllocIds: string[] = [];
 let mockSessionUserId: string | null = null;
 
@@ -18,10 +20,26 @@ vi.mock('../client', () => ({
       }),
     },
     from: (table: string) => ({
-      upsert: async (payload: any) => {
-        upsertCalls.push({ table, payload });
+      upsert: async (payload: any, options?: any) => {
+        upsertCalls.push({ table, payload, options });
         if (table === 'trade_allocations' && allocUpsertError) {
           return { error: allocUpsertError };
+        }
+        if (
+          table === 'strategies' &&
+          strategyOptionalColError &&
+          payload &&
+          'stop_loss_methodology' in payload
+        ) {
+          return { error: { message: 'column "stop_loss_methodology" does not exist' } };
+        }
+        if (
+          table === 'journal_entries' &&
+          journalSchemaSnakeFallback &&
+          payload &&
+          'lessonslearned' in payload
+        ) {
+          return { error: { message: 'Could not find the "lessonslearned" column in schema cache' } };
         }
         return { error: null };
       },
@@ -42,7 +60,12 @@ vi.mock('../client', () => ({
   },
 }));
 
-import { SupabaseService, mapSupabaseToTrade } from '../service';
+import {
+  SupabaseService,
+  mapSupabaseToJournalEntry,
+  mapSupabaseToStrategy,
+  mapSupabaseToTrade,
+} from '../service';
 
 const baseTrade: Trade = {
   id: 'tr-sync-1',
@@ -108,6 +131,8 @@ describe('SupabaseService Trade Sync Integrity', () => {
     upsertCalls.length = 0;
     deleteCalls.length = 0;
     allocUpsertError = null;
+    strategyOptionalColError = false;
+    journalSchemaSnakeFallback = false;
     existingAllocIds = [];
     mockSessionUserId = null;
   });
@@ -181,5 +206,98 @@ describe('SupabaseService Trade Sync Integrity', () => {
     expect(mapped.strategyName).toBe('HTF Orderflow');
     expect(mapped.technicalBias).toBe('Bullish');
     expect(mapped.checklistAnswers).toEqual({ noFomo: true });
+  });
+
+  it('syncs full Strategy playbook fields and falls back gracefully if optional columns are absent', async () => {
+    strategyOptionalColError = true;
+    const ok = await SupabaseService.saveStrategy({
+      id: 'strat-1',
+      name: 'London Sweep',
+      description: 'Sweep Asia range',
+      marketType: 'Metals',
+      primaryTimeframes: ['15M', '1H'],
+      marketRegime: 'Reversal' as any,
+      entryConditions: 'MSS + FVG',
+      exitConditions: '2.5R',
+      stopLossMethodology: 'Below swing low',
+      targetMethodology: 'Opposing liquidity',
+      riskRules: 'Max 1% risk',
+      checklistItems: ['Asia swept', '5M MSS'],
+      currentVersion: 2,
+      isActive: true,
+      createdAt: '2026-11-26T00:00:00.000Z',
+      updatedAt: '2026-11-27T00:00:00.000Z',
+    });
+
+    expect(ok).toBe(true);
+    expect(upsertCalls.filter((c) => c.table === 'strategies')).toHaveLength(2);
+    expect(upsertCalls[1].payload.market_regime).toBe('reversal');
+    expect(upsertCalls[1].payload.current_version).toBe(2);
+
+    const mapped = mapSupabaseToStrategy({
+      id: 'strat-1',
+      name: 'London Sweep',
+      primary_timeframes: '{15M,1H}',
+      checklist_items: '["Asia swept","5M MSS"]',
+      market_regime: 'reversal',
+      stop_loss_methodology: 'Below swing low',
+      target_methodology: 'Opposing liquidity',
+      risk_rules: 'Max 1% risk',
+    });
+    expect(mapped.primaryTimeframes).toEqual(['15M', '1H']);
+    expect(mapped.checklistItems).toEqual(['Asia swept', '5M MSS']);
+    expect(mapped.riskRules).toBe('Max 1% risk');
+  });
+
+  it('syncs full JournalEntry including behavioral pitfalls, scores, onConflict (user_id,entry_date), and lessons_learned fallback', async () => {
+    journalSchemaSnakeFallback = true;
+    const ok = await SupabaseService.saveJournalEntry({
+      id: 'j-2026-11-27-1234',
+      entryDate: '2026-11-27T09:00:00.000Z',
+      marketConditions: 'Trending',
+      macroEnvironment: 'Soft USD',
+      higherTimeframeBias: 'Bullish',
+      technicalBias: 'Sweep',
+      tradingPlan: 'Wait for London',
+      importantEconomicEvents: 'CPI',
+      emotionalState: 'Disciplined',
+      dailySummary: 'Executed plan',
+      lessonsLearned: 'Patience paid off',
+      disciplineScore: 11 as any,
+      preparationScore: 9,
+      executionScore: 8,
+      fomoDetected: true,
+      revengeTrading: false,
+      overtrading: true,
+      movedStopLoss: false,
+      prematureExit: false,
+      ignoredRules: true,
+      isLocked: false,
+      updatedAt: '2026-11-27T10:00:00.000Z',
+    });
+
+    expect(ok).toBe(true);
+    const journalCall = upsertCalls.filter((c) => c.table === 'journal_entries').at(-1);
+    expect(journalCall?.options).toEqual({ onConflict: 'user_id,entry_date' });
+    expect(journalCall?.payload.entry_date).toBe('2026-11-27');
+    expect(journalCall?.payload.discipline_score).toBe(10);
+    expect(journalCall?.payload.lessons_learned).toBe('Patience paid off');
+    expect(journalCall?.payload.fomo_detected).toBe(true);
+    expect(journalCall?.payload.overtrading).toBe(true);
+    expect(journalCall?.payload.ignored_rules).toBe(true);
+
+    const mapped = mapSupabaseToJournalEntry({
+      id: 'j-1',
+      entry_date: '2026-11-27',
+      lessons_learned: 'Wait for sweep',
+      fomo_detected: true,
+      ignored_rules: true,
+      discipline_score: 9,
+      preparation_score: 8,
+      execution_score: 9,
+    });
+    expect(mapped.lessonsLearned).toBe('Wait for sweep');
+    expect(mapped.fomoDetected).toBe(true);
+    expect(mapped.ignoredRules).toBe(true);
   });
 });

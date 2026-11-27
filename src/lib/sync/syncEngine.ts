@@ -5,6 +5,7 @@ import {
   TradeExecution,
   TradingAccount,
 } from '../types/financial';
+import type { JournalEntry, Strategy } from '../data/seedData';
 
 export type SyncEntityType = 'account' | 'trade' | 'strategy' | 'journal' | 'alert';
 
@@ -360,6 +361,141 @@ export function mergeTrade(
     changedFromLocal: !preferLocal || allocMerge.changedFromLocal,
     shouldPush: localMs > remoteMs || allocMerge.shouldPush,
   };
+}
+
+/**
+ * Non-overriding merge for Strategy preserving full playbook fields, timeframes,
+ * checklist items, and higher version numbers instead of partial overwrites.
+ */
+export function mergeStrategy(
+  local: Strategy,
+  remote: Strategy
+): { item: Strategy; changedFromLocal: boolean; shouldPush: boolean } {
+  const localMs = parseTimestampMs(local.updatedAt || local.createdAt);
+  const remoteMs = parseTimestampMs(remote.updatedAt || remote.createdAt);
+  const preferLocal = localMs >= remoteMs;
+
+  const base = preferLocal ? local : remote;
+  const fallback = preferLocal ? remote : local;
+
+  const primaryTimeframes = Array.from(
+    new Set([...(local.primaryTimeframes || []), ...(remote.primaryTimeframes || [])])
+  );
+  const baseChecklist = (base.checklistItems || []).filter(Boolean);
+  const fallbackChecklist = (fallback.checklistItems || []).filter(Boolean);
+  const checklistItems = baseChecklist.length > 0 ? baseChecklist : fallbackChecklist;
+
+  const item: Strategy = {
+    ...base,
+    description: base.description || fallback.description || '',
+    marketType: base.marketType || fallback.marketType || 'Multi-Asset',
+    primaryTimeframes: primaryTimeframes.length > 0 ? primaryTimeframes : ['15M', '1H'],
+    marketRegime: base.marketRegime || fallback.marketRegime || 'trending',
+    entryConditions: base.entryConditions || fallback.entryConditions || '',
+    exitConditions: base.exitConditions || fallback.exitConditions || '',
+    stopLossMethodology: base.stopLossMethodology || fallback.stopLossMethodology || '',
+    targetMethodology: base.targetMethodology || fallback.targetMethodology || '',
+    riskRules: base.riskRules || fallback.riskRules || '',
+    checklistItems,
+    currentVersion: Math.max(local.currentVersion || 1, remote.currentVersion || 1),
+    createdAt: local.createdAt || remote.createdAt,
+    updatedAt:
+      localMs >= remoteMs
+        ? local.updatedAt || local.createdAt
+        : remote.updatedAt || remote.createdAt,
+  };
+
+  const differsFromLocal = JSON.stringify(item) !== JSON.stringify(local);
+  const differsFromRemote = JSON.stringify(item) !== JSON.stringify(remote);
+
+  return {
+    item,
+    changedFromLocal: differsFromLocal,
+    shouldPush: localMs > remoteMs || (differsFromRemote && localMs >= remoteMs),
+  };
+}
+
+/**
+ * Non-overriding merge for JournalEntry preserving reflection text, behavioral
+ * pitfalls, scores, and normalized YYYY-MM-DD entryDate.
+ */
+export function mergeJournalEntry(
+  local: JournalEntry,
+  remote: JournalEntry
+): { item: JournalEntry; changedFromLocal: boolean; shouldPush: boolean } {
+  const localMs = parseTimestampMs(local.updatedAt || `${local.entryDate}T23:59:59.000Z`);
+  const remoteMs = parseTimestampMs(remote.updatedAt || `${remote.entryDate}T23:59:59.000Z`);
+  const preferLocal = localMs >= remoteMs;
+
+  const base = preferLocal ? local : remote;
+  const fallback = preferLocal ? remote : local;
+
+  const item: JournalEntry = {
+    ...base,
+    entryDate: String(base.entryDate || fallback.entryDate).slice(0, 10),
+    marketConditions: base.marketConditions || fallback.marketConditions || '',
+    macroEnvironment: base.macroEnvironment || fallback.macroEnvironment || '',
+    higherTimeframeBias: base.higherTimeframeBias || fallback.higherTimeframeBias || '',
+    technicalBias: base.technicalBias || fallback.technicalBias || '',
+    tradingPlan: base.tradingPlan || fallback.tradingPlan || '',
+    importantEconomicEvents: base.importantEconomicEvents || fallback.importantEconomicEvents || '',
+    dailySummary: base.dailySummary || fallback.dailySummary || '',
+    lessonsLearned: base.lessonsLearned || fallback.lessonsLearned || '',
+    fomoDetected: Boolean(base.fomoDetected),
+    revengeTrading: Boolean(base.revengeTrading),
+    overtrading: Boolean(base.overtrading),
+    movedStopLoss: Boolean(base.movedStopLoss),
+    prematureExit: Boolean(base.prematureExit),
+    ignoredRules: Boolean(base.ignoredRules),
+    updatedAt:
+      localMs >= remoteMs
+        ? local.updatedAt || `${local.entryDate}T23:59:59.000Z`
+        : remote.updatedAt || `${remote.entryDate}T23:59:59.000Z`,
+  };
+
+  const differsFromLocal = JSON.stringify(item) !== JSON.stringify(local);
+  const differsFromRemote = JSON.stringify(item) !== JSON.stringify(remote);
+
+  return {
+    item,
+    changedFromLocal: differsFromLocal,
+    shouldPush: localMs > remoteMs || (differsFromRemote && localMs >= remoteMs),
+  };
+}
+
+function normalizeIdentityText(value?: string | null): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+export function isSameAccountIdentity(a: TradingAccount, b: TradingAccount): boolean {
+  if (a.id && b.id && a.id === b.id) return true;
+  const nameA = normalizeIdentityText(a.name);
+  const nameB = normalizeIdentityText(b.name);
+  const firmA = normalizeIdentityText(a.brokerOrFirm);
+  const firmB = normalizeIdentityText(b.brokerOrFirm);
+  return Boolean(
+    nameA &&
+      nameA === nameB &&
+      firmA === firmB &&
+      Number(a.accountSize || 0) === Number(b.accountSize || 0)
+  );
+}
+
+export function isSameStrategyIdentity(a: Strategy, b: Strategy): boolean {
+  if (a.id && b.id && a.id === b.id) return true;
+  const nameA = normalizeIdentityText(a.name);
+  const nameB = normalizeIdentityText(b.name);
+  return Boolean(nameA && nameA === nameB);
+}
+
+export function isSameJournalIdentity(a: JournalEntry, b: JournalEntry): boolean {
+  if (a.id && b.id && a.id === b.id) return true;
+  const dateA = String(a.entryDate || '').slice(0, 10);
+  const dateB = String(b.entryDate || '').slice(0, 10);
+  return Boolean(dateA && dateA === dateB);
 }
 
 function readJsonStorage<T>(key: string, fallback: T): T {

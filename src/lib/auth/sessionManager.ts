@@ -39,6 +39,53 @@ export interface SessionSnapshot {
 }
 
 export const DESK_UNLOCK_PASSCODE = '1973';
+export const BROWSER_SESSION_STORAGE_KEY = 'edgeledger_browser_session_id';
+export const BROWSER_SESSION_HEADER = 'X-EdgeLedger-Session-Id';
+
+function getBrowserSessionStorage(): Storage | null {
+  try {
+    const g = globalThis as unknown as { sessionStorage?: Storage; window?: { sessionStorage?: Storage } };
+    return g.window?.sessionStorage ?? g.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function getActiveBrowserSessionId(): string | null {
+  const storage = getBrowserSessionStorage();
+  if (!storage) return null;
+  try {
+    const value = storage.getItem(BROWSER_SESSION_STORAGE_KEY)?.trim();
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
+export function issueBrowserSessionId(): string | null {
+  const storage = getBrowserSessionStorage();
+  if (!storage) return null;
+  const id =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? `bs-${crypto.randomUUID()}`
+      : `bs-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+  try {
+    storage.setItem(BROWSER_SESSION_STORAGE_KEY, id);
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+export function clearBrowserSessionId(): void {
+  const storage = getBrowserSessionStorage();
+  if (!storage) return;
+  try {
+    storage.removeItem(BROWSER_SESSION_STORAGE_KEY);
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export type UnlockVerifier = (input: { method: 'passcode'; passcode?: string }) => Promise<boolean> | boolean;
 
@@ -216,10 +263,14 @@ export class SessionManager {
   }
 
   /**
-   * Restores session on app boot if an existing httpOnly refresh cookie is valid.
+   * Restores session on app boot ONLY within the same browser session.
+   * When sessionStorage has no active browser session marker, refuses to carry cookies across sessions.
    */
   async restoreSessionFromCookie(): Promise<boolean> {
     if (this.state !== 'signedOut') return this.state === 'signedIn';
+    if (getBrowserSessionStorage() && !getActiveBrowserSessionId()) {
+      return false;
+    }
     try {
       const res = await this.transport.refresh();
       if (res.ok && res.session) {
@@ -313,6 +364,7 @@ export class SessionManager {
     }
     this.inMemoryAccessToken = null;
     this.pendingOutboxWarningCount = null;
+    clearBrowserSessionId();
 
     try {
       await this.transport.signOut();
@@ -341,22 +393,35 @@ export class SessionManager {
 export function createDefaultSessionTransport(baseUrl = ''): SessionTransport {
   return {
     async signIn(creds) {
+      const browserSessionId = issueBrowserSessionId();
       const res = await fetch(`${baseUrl}/auth/sign-in`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(creds),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(browserSessionId ? { [BROWSER_SESSION_HEADER]: browserSessionId } : {}),
+        },
+        body: JSON.stringify({
+          ...creds,
+          ...(browserSessionId ? { browserSessionId } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        clearBrowserSessionId();
         return { ok: false, error: data.error || 'Authentication failed.' };
       }
       return { ok: true, session: data.session };
     },
     async refresh() {
+      const browserSessionId = getActiveBrowserSessionId();
+      if (getBrowserSessionStorage() && !browserSessionId) {
+        return { ok: false, error: 'Browser session ended.' };
+      }
       const res = await fetch(`${baseUrl}/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
+        headers: browserSessionId ? { [BROWSER_SESSION_HEADER]: browserSessionId } : undefined,
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -365,9 +430,12 @@ export function createDefaultSessionTransport(baseUrl = ''): SessionTransport {
       return { ok: true, session: data.session };
     },
     async signOut() {
+      const browserSessionId = getActiveBrowserSessionId();
+      clearBrowserSessionId();
       await fetch(`${baseUrl}/auth/sign-out`, {
         method: 'POST',
         credentials: 'include',
+        headers: browserSessionId ? { [BROWSER_SESSION_HEADER]: browserSessionId } : undefined,
       });
     },
   };

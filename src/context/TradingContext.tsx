@@ -44,9 +44,14 @@ import {
   SyncTombstone,
   clearOutbox,
   enqueueMutation,
+  isSameAccountIdentity,
+  isSameJournalIdentity,
+  isSameStrategyIdentity,
   loadOutbox,
   loadTombstones,
   mergeAccount,
+  mergeJournalEntry,
+  mergeStrategy,
   mergeTrade,
   reconcileEntityLists,
   recordTombstone,
@@ -344,6 +349,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
                 entityType: 'strategy',
                 getId: (s) => s.id,
                 getUpdatedAt: (s) => s.updatedAt || s.createdAt,
+                mergeItem: mergeStrategy,
               })
             : null;
 
@@ -356,6 +362,7 @@ export const TradingProvider: React.FC<{ children: ReactNode }> = ({ children })
                 entityType: 'journal',
                 getId: (j) => j.id,
                 getUpdatedAt: (j) => j.updatedAt || `${j.entryDate}T23:59:59.000Z`,
+                mergeItem: mergeJournalEntry,
               })
             : null;
 
@@ -1422,7 +1429,7 @@ function generatePersonalizedRules(
   const addStrategy = (strategyData: Partial<Strategy>) => {
     const now = new Date().toISOString();
     const newStrategy: Strategy = {
-      id: `strat-${Date.now()}`,
+      id: strategyData.id || `strat-${Date.now()}`,
       name: strategyData.name || 'New Strategy',
       description: strategyData.description || '',
       marketType: strategyData.marketType || 'Multi-Asset',
@@ -1434,12 +1441,23 @@ function generatePersonalizedRules(
       targetMethodology: strategyData.targetMethodology || '',
       riskRules: strategyData.riskRules || '',
       checklistItems: strategyData.checklistItems || ['Confirm bias', 'Check risk limit'],
-      currentVersion: 1,
-      isActive: true,
-      createdAt: now,
+      currentVersion: strategyData.currentVersion || 1,
+      isActive: strategyData.isActive ?? true,
+      createdAt: strategyData.createdAt || now,
       updatedAt: now,
     };
-    setStrategies((prev) => [newStrategy, ...prev]);
+    setStrategies((prev) =>
+      prev.some((s) => s.id === newStrategy.id)
+        ? prev.map((s) => (s.id === newStrategy.id ? newStrategy : s))
+        : [newStrategy, ...prev]
+    );
+    emitSyncBridgeEvent({
+      entity: 'strategy',
+      entityId: newStrategy.id,
+      op: 'create',
+      payload: newStrategy as unknown as Record<string, unknown>,
+      baseVersion: 0,
+    });
     void persistUpsertToCloud('strategy', newStrategy.id, () =>
       SupabaseService.saveStrategy(newStrategy)
     );
@@ -1451,6 +1469,12 @@ function generatePersonalizedRules(
       updatedAt: new Date().toISOString(),
     };
     setStrategies((prev) => prev.map((s) => (s.id === stamped.id ? stamped : s)));
+    emitSyncBridgeEvent({
+      entity: 'strategy',
+      entityId: stamped.id,
+      op: 'update',
+      payload: stamped as unknown as Record<string, unknown>,
+    });
     void persistUpsertToCloud('strategy', stamped.id, () =>
       SupabaseService.saveStrategy(stamped)
     );
@@ -1458,6 +1482,12 @@ function generatePersonalizedRules(
 
   const deleteStrategy = (id: string) => {
     setStrategies((prev) => prev.filter((s) => s.id !== id));
+    emitSyncBridgeEvent({
+      entity: 'strategy',
+      entityId: id,
+      op: 'delete',
+      payload: { id },
+    });
     void persistDeleteToCloud('strategy', id, () => SupabaseService.deleteStrategy(id));
   };
 
@@ -1467,6 +1497,14 @@ function generatePersonalizedRules(
     const exec = entryData.executionScore ?? 8;
     const rm = entryData.riskManagementScore ?? 8;
     const ec = entryData.emotionalControlScore ?? 8;
+    const normalizedDate = (
+      entryData.entryDate || new Date().toISOString().split('T')[0]
+    ).slice(0, 10);
+
+    // Reuse existing entry for the same calendar date so Postgres UNIQUE(user_id, entry_date) stays clean
+    const existingForDate = latestStateRef.current.journalEntries.find(
+      (j) => String(j.entryDate || '').slice(0, 10) === normalizedDate
+    );
 
     // Calculate decision quality score independent of outcome
     const dqScore = calculateDecisionQualityScore({
@@ -1478,8 +1516,8 @@ function generatePersonalizedRules(
     });
 
     const newEntry: JournalEntry = {
-      id: `j-${entryData.entryDate || new Date().toISOString().split('T')[0]}`,
-      entryDate: entryData.entryDate || new Date().toISOString().split('T')[0],
+      id: existingForDate?.id || entryData.id || `j-${normalizedDate}`,
+      entryDate: normalizedDate,
       marketConditions: entryData.marketConditions || 'Normal Market Session',
       macroEnvironment: entryData.macroEnvironment || 'Neutral macro backdrop',
       higherTimeframeBias: entryData.higherTimeframeBias || 'Aligned with HTF structure',
@@ -1501,11 +1539,23 @@ function generatePersonalizedRules(
       movedStopLoss: entryData.movedStopLoss ?? false,
       prematureExit: entryData.prematureExit ?? false,
       ignoredRules: entryData.ignoredRules ?? false,
-      isLocked: false,
+      isLocked: existingForDate?.isLocked ?? false,
       updatedAt: new Date().toISOString(),
     };
-    setJournalEntries((prev) => [newEntry, ...prev]);
-    emitSyncBridgeEvent({ entity: 'journal', entityId: newEntry.id, op: 'create', payload: newEntry as unknown as Record<string, unknown>, baseVersion: 0 });
+    setJournalEntries((prev) => {
+      const idx = prev.findIndex((j) => isSameJournalIdentity(j, newEntry));
+      if (idx >= 0) {
+        return prev.map((j, i) => (i === idx ? newEntry : j));
+      }
+      return [newEntry, ...prev];
+    });
+    emitSyncBridgeEvent({
+      entity: 'journal',
+      entityId: newEntry.id,
+      op: existingForDate ? 'update' : 'create',
+      payload: newEntry as unknown as Record<string, unknown>,
+      ...(existingForDate ? {} : { baseVersion: 0 }),
+    });
     void persistUpsertToCloud('journal', newEntry.id, () =>
       SupabaseService.saveJournalEntry(newEntry)
     );
@@ -1633,48 +1683,127 @@ function generatePersonalizedRules(
     journalEntries?: JournalEntry[];
     riskAlerts?: RiskAlert[];
   }) => {
-    const newAccounts = (Array.isArray(backup.accounts) ? backup.accounts : []).filter(
-      (a) => a && a.id && !accounts.some((cur) => cur.id === a.id)
-    );
-    const newTrades = (Array.isArray(backup.trades) ? backup.trades : []).filter(
-      (t) => t && t.id && !trades.some((cur) => cur.id === t.id)
-    );
-    const newStrategies = (Array.isArray(backup.strategies) ? backup.strategies : []).filter(
-      (s) => s && s.id && !strategies.some((cur) => cur.id === s.id)
-    );
-    const newJournal = (Array.isArray(backup.journalEntries) ? backup.journalEntries : []).filter(
-      (j) => j && j.id && !journalEntries.some((cur) => cur.id === j.id)
-    );
-    const newAlerts = (Array.isArray(backup.riskAlerts) ? backup.riskAlerts : []).filter(
-      (al) => al && al.id && !riskAlerts.some((cur) => cur.id === al.id)
-    );
+    const current = latestStateRef.current;
+
+    // Deduplicate against BOTH current state and duplicates inside the backup payload itself
+    const newAccounts: TradingAccount[] = [];
+    for (const a of Array.isArray(backup.accounts) ? backup.accounts : []) {
+      if (!a || !a.id) continue;
+      if (current.accounts.some((cur) => isSameAccountIdentity(cur, a))) continue;
+      if (newAccounts.some((cur) => isSameAccountIdentity(cur, a))) continue;
+      newAccounts.push(a);
+    }
+
+    const newTrades: Trade[] = [];
+    for (const t of Array.isArray(backup.trades) ? backup.trades : []) {
+      if (!t || !t.id) continue;
+      if (current.trades.some((cur) => cur.id === t.id)) continue;
+      if (newTrades.some((cur) => cur.id === t.id)) continue;
+      newTrades.push(t);
+    }
+
+    const newStrategies: Strategy[] = [];
+    for (const s of Array.isArray(backup.strategies) ? backup.strategies : []) {
+      if (!s || !s.id) continue;
+      if (current.strategies.some((cur) => isSameStrategyIdentity(cur, s))) continue;
+      if (newStrategies.some((cur) => isSameStrategyIdentity(cur, s))) continue;
+      newStrategies.push(s);
+    }
+
+    const newJournal: JournalEntry[] = [];
+    for (const j of Array.isArray(backup.journalEntries) ? backup.journalEntries : []) {
+      if (!j || !j.id) continue;
+      if (current.journalEntries.some((cur) => isSameJournalIdentity(cur, j))) continue;
+      if (newJournal.some((cur) => isSameJournalIdentity(cur, j))) continue;
+      newJournal.push({
+        ...j,
+        entryDate: String(j.entryDate || '').slice(0, 10) || j.entryDate,
+      });
+    }
+
+    const newAlerts: RiskAlert[] = [];
+    for (const al of Array.isArray(backup.riskAlerts) ? backup.riskAlerts : []) {
+      if (!al || !al.id) continue;
+      if (current.riskAlerts.some((cur) => cur.id === al.id)) continue;
+      if (newAlerts.some((cur) => cur.id === al.id)) continue;
+      newAlerts.push(al);
+    }
 
     if (newAccounts.length > 0) {
-      setAccounts((prev) => [...newAccounts, ...prev]);
+      setAccounts((prev) => {
+        const filtered = newAccounts.filter(
+          (a) => !prev.some((cur) => isSameAccountIdentity(cur, a))
+        );
+        return filtered.length > 0 ? [...filtered, ...prev] : prev;
+      });
       newAccounts.forEach((a) => {
+        emitSyncBridgeEvent({
+          entity: 'account',
+          entityId: a.id,
+          op: 'create',
+          payload: a as unknown as Record<string, unknown>,
+          baseVersion: 0,
+        });
         void persistUpsertToCloud('account', a.id, () => SupabaseService.saveAccount(a));
       });
     }
-    if (newTrades.length > 0) {
-      setTrades((prev) => [...newTrades, ...prev]);
-      newTrades.forEach((t) => {
-        void persistUpsertToCloud('trade', t.id, () => SupabaseService.saveTrade(t));
-      });
-    }
     if (newStrategies.length > 0) {
-      setStrategies((prev) => [...newStrategies, ...prev]);
+      setStrategies((prev) => {
+        const filtered = newStrategies.filter(
+          (s) => !prev.some((cur) => isSameStrategyIdentity(cur, s))
+        );
+        return filtered.length > 0 ? [...filtered, ...prev] : prev;
+      });
       newStrategies.forEach((s) => {
+        emitSyncBridgeEvent({
+          entity: 'strategy',
+          entityId: s.id,
+          op: 'create',
+          payload: s as unknown as Record<string, unknown>,
+          baseVersion: 0,
+        });
         void persistUpsertToCloud('strategy', s.id, () => SupabaseService.saveStrategy(s));
       });
     }
+    if (newTrades.length > 0) {
+      setTrades((prev) => {
+        const filtered = newTrades.filter((t) => !prev.some((cur) => cur.id === t.id));
+        return filtered.length > 0 ? [...filtered, ...prev] : prev;
+      });
+      newTrades.forEach((t) => {
+        emitSyncBridgeEvent({
+          entity: 'trade',
+          entityId: t.id,
+          op: 'create',
+          payload: t as unknown as Record<string, unknown>,
+          baseVersion: 0,
+        });
+        void persistUpsertToCloud('trade', t.id, () => SupabaseService.saveTrade(t));
+      });
+    }
     if (newJournal.length > 0) {
-      setJournalEntries((prev) => [...newJournal, ...prev]);
+      setJournalEntries((prev) => {
+        const filtered = newJournal.filter(
+          (j) => !prev.some((cur) => isSameJournalIdentity(cur, j))
+        );
+        return filtered.length > 0 ? [...filtered, ...prev] : prev;
+      });
       newJournal.forEach((j) => {
+        emitSyncBridgeEvent({
+          entity: 'journal',
+          entityId: j.id,
+          op: 'create',
+          payload: j as unknown as Record<string, unknown>,
+          baseVersion: 0,
+        });
         void persistUpsertToCloud('journal', j.id, () => SupabaseService.saveJournalEntry(j));
       });
     }
     if (newAlerts.length > 0) {
-      setRiskAlerts((prev) => [...newAlerts, ...prev]);
+      setRiskAlerts((prev) => {
+        const filtered = newAlerts.filter((al) => !prev.some((cur) => cur.id === al.id));
+        return filtered.length > 0 ? [...filtered, ...prev] : prev;
+      });
       newAlerts.forEach((al) => {
         void persistUpsertToCloud('alert', al.id, () => SupabaseService.saveAlert(al));
       });
