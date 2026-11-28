@@ -117,6 +117,8 @@ function resolveServerAuthSecret(): string {
   return process.env[RUNTIME_SECRET_ENV_KEY]!;
 }
 
+export const DESK_LOCK_PIN = '1973';
+
 const SINGLE_AUTH_USER = {
   userId: 'usr-edgeledger-primary',
   email: 'ommroshan@gmail.com',
@@ -212,9 +214,19 @@ export function verifySessionToken(
 export function authenticateUserCredentials(params: {
   email?: string;
   password?: string;
-  method?: 'password' | 'passkey';
+  method?: 'password' | 'passkey' | 'passcode' | 'pin';
   credentialId?: string;
+  passcode?: string;
+  pin?: string;
 }): { ok: boolean; userId?: string; email?: string; error?: string } {
+  if (params.method === 'passcode' || params.method === 'pin') {
+    const providedPin = (params.passcode ?? params.pin ?? '').trim();
+    if (providedPin !== DESK_LOCK_PIN) {
+      return { ok: false, error: 'Incorrect lock PIN.' };
+    }
+    return { ok: true, userId: SINGLE_AUTH_USER.userId, email: SINGLE_AUTH_USER.email };
+  }
+
   const store = getStore();
   const normalizedEmail = (params.email || '').trim().toLowerCase();
   if (!normalizedEmail || !normalizedEmail.includes('@')) {

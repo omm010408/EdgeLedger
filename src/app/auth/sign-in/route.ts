@@ -11,13 +11,24 @@ import { safeLog } from '@/lib/auth/redact';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { email, password, method = 'password', credentialId, deviceId, browserSessionId } = body;
+    const {
+      email,
+      password,
+      method = 'password',
+      credentialId,
+      passcode,
+      pin,
+      deviceId,
+      browserSessionId,
+    } = body;
 
     const auth = authenticateUserCredentials({
       email,
       password,
-      method,
+      method: passcode !== undefined || pin !== undefined ? 'passcode' : method,
       credentialId,
+      passcode,
+      pin,
     });
 
     if (!auth.ok || !auth.userId || !auth.email) {

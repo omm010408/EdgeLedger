@@ -486,6 +486,26 @@ describe('Transport Adapter, IndexedDB Outbox, Backoff & Sync Coordinator', () =
     );
     expect(passkeyAttemptRes.status).toBe(401);
 
+    // PIN-only desk unlock (1973) succeeds without email/password; wrong PIN rejects with 401
+    const wrongPinRes = await signInPost(
+      new NextRequest('http://localhost:3000/auth/sign-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method: 'passcode', passcode: '0000' }),
+      })
+    );
+    expect(wrongPinRes.status).toBe(401);
+
+    const pinUnlockRes = await signInPost(
+      new NextRequest('http://localhost:3000/auth/sign-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method: 'passcode', passcode: '1973' }),
+      })
+    );
+    expect(pinUnlockRes.status).toBe(200);
+    expect(pinUnlockRes.cookies.get('el_access')?.value).toBeTruthy();
+
     // 1. Sign in -> sets session-only (no maxAge/expires) httpOnly SameSite=Lax cookies bound to that browser session
     const browserSessionA = 'bs-test-session-a';
     const trimmedSignInRes = await signInPost(

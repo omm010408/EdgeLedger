@@ -98,7 +98,7 @@ export const SyncStatusChip: React.FC<{
       aria-live="polite"
       title={
         statusDisplay.kind === 'signedOut'
-          ? 'Sign in to enable multi-device sync'
+          ? 'Enter lock PIN to enable multi-device sync'
           : statusDisplay.kind === 'conflict'
           ? 'Open Conflict Inbox to review'
           : `Sync state: ${statusDisplay.label}`

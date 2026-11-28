@@ -12,10 +12,11 @@ export interface SessionInfo {
 }
 
 export interface SignInCredentials {
-  email: string;
+  email?: string;
   password?: string;
-  method?: 'password' | 'passkey';
+  method?: 'password' | 'passkey' | 'passcode' | 'pin';
   credentialId?: string;
+  passcode?: string;
 }
 
 export interface SessionTransport {

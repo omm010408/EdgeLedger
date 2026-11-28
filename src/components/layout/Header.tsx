@@ -7,7 +7,7 @@ import { useTrading } from '../../context/TradingContext';
 import { useSessionSync } from '../../context/SessionSyncContext';
 import { EdgeLedgerLogo } from '../ui/EdgeLedgerLogo';
 import { SyncStatusChip } from '../sync/SyncStatusChip';
-import { ChevronDown, Check, Plus, ExternalLink, Sun, Moon, Eye, EyeOff, Lock, LogOut } from 'lucide-react';
+import { ChevronDown, Check, Plus, ExternalLink, Sun, Moon, Eye, EyeOff, Lock } from 'lucide-react';
 
 interface HeaderProps {
   onOpenQuickTrade: () => void;
@@ -53,7 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
     isPnlHidden,
     setIsPnlHidden,
   } = useTrading();
-  const { sessionSnapshot, lockSession, requestSignOut } = useSessionSync();
+  const { sessionSnapshot, lockSession } = useSessionSync();
 
   const [isHeaderScanning, setIsHeaderScanning] = useState(false);
 
@@ -348,26 +348,15 @@ export const Header: React.FC<HeaderProps> = ({
         <SyncStatusChip compact />
 
         {sessionSnapshot.state !== 'signedOut' && (
-          <>
-            <button
-              className="tw-btn quiet shrink-0 !w-[34px] !px-0 justify-center"
-              type="button"
-              onClick={lockSession}
-              title="Lock session UI"
-              aria-label="Lock session UI"
-            >
-              <Lock size={14} aria-hidden="true" />
-            </button>
-            <button
-              className="tw-btn quiet shrink-0 !w-[34px] !px-0 justify-center"
-              type="button"
-              onClick={() => void requestSignOut()}
-              title="Sign out"
-              aria-label="Sign out"
-            >
-              <LogOut size={14} aria-hidden="true" />
-            </button>
-          </>
+          <button
+            className="tw-btn quiet shrink-0 !w-[34px] !px-0 justify-center"
+            type="button"
+            onClick={lockSession}
+            title="Lock desk"
+            aria-label="Lock desk"
+          >
+            <Lock size={14} aria-hidden="true" />
+          </button>
         )}
 
         {/* Search / Command Palette Button */}

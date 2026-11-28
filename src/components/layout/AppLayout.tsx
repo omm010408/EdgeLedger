@@ -105,7 +105,7 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
               </div>
               <p className="text-sm font-semibold">Checking EdgeLedger session...</p>
               <p className="text-xs" style={{ color: 'var(--tw-ink-2)' }}>
-                Sign in is required to view workspace data.
+                Lock PIN is required to access workspace data.
               </p>
             </div>
           ) : (

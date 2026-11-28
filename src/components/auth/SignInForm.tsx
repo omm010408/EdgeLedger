@@ -1,78 +1,87 @@
 'use client';
 
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { KeyRound, Mail, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Lock } from 'lucide-react';
 import { useSessionSync } from '../../context/SessionSyncContext';
 import { EdgeLedgerLogo } from '../ui/EdgeLedgerLogo';
 
 interface SignInFormProps {
+  mode?: 'session' | 'resume';
   onSuccess?: () => void;
   onCancel?: () => void;
 }
 
-export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) => {
-  const { signIn, sessionSnapshot } = useSessionSync();
+export const SignInForm: React.FC<SignInFormProps> = ({
+  mode = 'session',
+  onSuccess,
+  onCancel,
+}) => {
+  const { signIn, unlockSession, sessionSnapshot } = useSessionSync();
   const baseId = useId();
-  const emailId = `${baseId}-email`;
-  const passwordId = `${baseId}-password`;
+  const pinId = `${baseId}-pin`;
   const errorBannerId = `${baseId}-error`;
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showEmail, setShowEmail] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [pin, setPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [hasFieldError, setHasFieldError] = useState(false);
 
-  const emailRef = useRef<HTMLInputElement>(null);
-  const passwordRef = useRef<HTMLInputElement>(null);
-
-  const isBusy = sessionSnapshot.state === 'signingIn';
+  const pinRef = useRef<HTMLInputElement>(null);
+  const isBusy = mode === 'session' && sessionSnapshot.state === 'signingIn';
 
   useEffect(() => {
-    if (sessionSnapshot.state === 'signedOut' && sessionSnapshot.error) {
+    pinRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (mode === 'session' && sessionSnapshot.state === 'signedOut' && sessionSnapshot.error) {
       setErrorMessage(sessionSnapshot.error);
     }
-  }, [sessionSnapshot.state, sessionSnapshot.error]);
-
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const errs: { email?: string; password?: string } = {};
-    const trimmedEmail = email.trim();
-    const trimmedPassword = password.trim();
-
-    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      errs.email = 'Enter a valid email address.';
-    }
-    if (!trimmedPassword || trimmedPassword.length < 6) {
-      errs.password = 'Enter a password of at least 6 characters.';
-    }
-
-    if (errs.email || errs.password) {
-      setFieldErrors(errs);
-      setErrorMessage(errs.email || errs.password || 'Check highlighted fields.');
-      if (errs.email) {
-        emailRef.current?.focus();
-      } else if (errs.password) {
-        passwordRef.current?.focus();
+    if (mode === 'resume') {
+      if (sessionSnapshot.state === 'locked') {
+        pinRef.current?.focus();
+      } else {
+        setPin('');
+        setErrorMessage(null);
+        setHasFieldError(false);
       }
+    }
+  }, [mode, sessionSnapshot.state, sessionSnapshot.error]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedPin = pin.trim();
+
+    if (!trimmedPin) {
+      setHasFieldError(true);
+      setErrorMessage('Enter lock PIN.');
+      pinRef.current?.focus();
       return;
     }
 
-    setFieldErrors({});
+    setHasFieldError(false);
     setErrorMessage(null);
-    const ok = await signIn({ email: trimmedEmail, password: trimmedPassword, method: 'password' });
+
+    const ok =
+      mode === 'resume'
+        ? await unlockSession({ method: 'passcode', passcode: trimmedPin })
+        : await signIn({ method: 'passcode', passcode: trimmedPin });
+
     if (ok) {
+      setPin('');
+      setErrorMessage(null);
+      setHasFieldError(false);
       onSuccess?.();
     } else {
-      setErrorMessage('Invalid email or password. Please verify and try again.');
-      passwordRef.current?.focus();
+      setHasFieldError(true);
+      setErrorMessage('Incorrect lock PIN.');
+      pinRef.current?.focus();
     }
   };
 
   return (
     <div
-      className="w-full max-w-md rounded-[32px] p-6 sm:p-7"
+      className="w-full max-w-sm rounded-[32px] p-6 sm:p-7"
       style={{
         background: 'var(--tw-tile)',
         color: 'var(--tw-ink)',
@@ -82,13 +91,24 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
     >
       <div className="flex items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-3">
-          <EdgeLedgerLogo size={32} />
+          {mode === 'resume' ? (
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+              style={{ background: 'var(--tw-pill)', color: 'var(--tw-ink)' }}
+            >
+              <Lock size={18} aria-hidden="true" />
+            </div>
+          ) : (
+            <EdgeLedgerLogo size={32} />
+          )}
           <div>
-            <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--tw-ink)' }}>
-              Sign in to EdgeLedger
+            <h1 className="text-lg font-bold tracking-tight" style={{ color: 'var(--tw-ink)' }}>
+              Desk locked
             </h1>
             <p className="text-xs" style={{ color: 'var(--tw-ink-2)' }}>
-              4-hour JWT session authentication
+              {mode === 'resume'
+                ? 'Enter lock PIN to resume your session'
+                : 'Enter lock PIN to unlock EdgeLedger'}
             </p>
           </div>
         </div>
@@ -108,7 +128,6 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
         )}
       </div>
 
-      {/* Live Error Region */}
       <div
         id={errorBannerId}
         role="alert"
@@ -132,103 +151,53 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
         )}
       </div>
 
-      <form onSubmit={handlePasswordSubmit} noValidate className="space-y-4">
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
         <div>
           <label
-            htmlFor={emailId}
+            htmlFor={pinId}
             className="block text-xs font-semibold mb-1.5"
             style={{ color: 'var(--tw-ink-2)' }}
           >
-            Email address
+            Lock PIN
           </label>
           <div className="relative">
-            <Mail
+            <Lock
               size={15}
               aria-hidden="true"
               className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
               style={{ color: 'var(--tw-ink-3)' }}
             />
             <input
-              ref={emailRef}
-              id={emailId}
-              type="email"
-              inputMode="email"
-              autoComplete="username"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
+              ref={pinRef}
+              id={pinId}
+              type={showPin ? 'text' : 'password'}
+              inputMode="numeric"
+              autoComplete="off"
               required
-              aria-invalid={Boolean(fieldErrors.email)}
-              aria-describedby={fieldErrors.email ? errorBannerId : undefined}
-              value={email}
+              aria-invalid={hasFieldError}
+              aria-describedby={hasFieldError ? errorBannerId : undefined}
+              value={pin}
               onChange={(e) => {
-                setEmail(e.target.value);
+                setPin(e.target.value);
                 if (errorMessage) setErrorMessage(null);
+                if (hasFieldError) setHasFieldError(false);
               }}
-              placeholder="Enter your email"
-              className={`w-full h-11 pl-10 pr-10 rounded-2xl text-sm ${showEmail ? '' : 'tw-masked-input'}`}
+              placeholder="Enter lock PIN"
+              className="w-full h-11 pl-10 pr-10 rounded-2xl text-sm font-mono tracking-widest"
               style={{
                 background: 'var(--tw-bg)',
                 color: 'var(--tw-ink)',
-                border: `1px solid ${fieldErrors.email ? 'var(--tw-loss)' : 'var(--tw-line-strong)'}`,
+                border: `1px solid ${hasFieldError ? 'var(--tw-loss)' : 'var(--tw-line-strong)'}`,
               }}
             />
             <button
               type="button"
-              onClick={() => setShowEmail((prev) => !prev)}
-              aria-label={showEmail ? 'Hide email' : 'Show email'}
+              onClick={() => setShowPin((prev) => !prev)}
+              aria-label={showPin ? 'Hide PIN' : 'Show PIN'}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:opacity-80"
               style={{ color: 'var(--tw-ink-3)' }}
             >
-              {showEmail ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label
-            htmlFor={passwordId}
-            className="block text-xs font-semibold mb-1.5"
-            style={{ color: 'var(--tw-ink-2)' }}
-          >
-            Password
-          </label>
-          <div className="relative">
-            <KeyRound
-              size={15}
-              aria-hidden="true"
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-              style={{ color: 'var(--tw-ink-3)' }}
-            />
-            <input
-              ref={passwordRef}
-              id={passwordId}
-              type={showPassword ? 'text' : 'password'}
-              autoComplete="current-password"
-              required
-              aria-invalid={Boolean(fieldErrors.password)}
-              aria-describedby={fieldErrors.password ? errorBannerId : undefined}
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                if (errorMessage) setErrorMessage(null);
-              }}
-              placeholder="Enter your password"
-              className="w-full h-11 pl-10 pr-10 rounded-2xl text-sm"
-              style={{
-                background: 'var(--tw-bg)',
-                color: 'var(--tw-ink)',
-                border: `1px solid ${fieldErrors.password ? 'var(--tw-loss)' : 'var(--tw-line-strong)'}`,
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((prev) => !prev)}
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:opacity-80"
-              style={{ color: 'var(--tw-ink-3)' }}
-            >
-              {showPassword ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
+              {showPin ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
             </button>
           </div>
         </div>
@@ -243,7 +212,7 @@ export const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onCancel }) =
             border: '1px solid var(--tw-hero)',
           }}
         >
-          {isBusy ? 'Signing in...' : 'Sign in'}
+          {isBusy ? 'Unlocking...' : 'Unlock desk'}
         </button>
       </form>
     </div>
